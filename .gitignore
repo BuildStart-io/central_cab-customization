@@ -1,6 +1,54 @@
+# ==============================================================================
+# Git Ignore Rules for Central Cab Service (BuildStart.io)
+# ==============================================================================
+
+# Environment files (CRITICAL: Never commit secrets or actual env files)
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+!.env.example
+!**/.env.example
+
+# Docker Volumes and Runtime Data (Databases, WhatsApp sessions, Object storage)
+docker/volumes/
+**/volumes/
+volumes/
+waha_sessions/
+minio_data/
+
+# Node dependencies & build outputs
 node_modules/
+**/node_modules/
 dist/
-.DS_Store
+**/dist/
+build/
+.output/
+.vite/
+**/.vite/
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# IDE / Agent generated artifacts
 .gemini/
+.agents/
+.system_generated/
+scratch/

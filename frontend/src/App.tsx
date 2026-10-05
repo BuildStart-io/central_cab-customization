@@ -19,6 +19,8 @@ import AdminSettings from "./pages/AdminSettings";
 import NotFound from "./pages/NotFound";
 import { useFcmToken } from "./hooks/useFcmToken";
 
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+
 const queryClient = new QueryClient();
 
 function AppContent() {
@@ -27,12 +29,13 @@ function AppContent() {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AppContent />
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AppContent />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -53,6 +56,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+</ErrorBoundary>
 );
 
 export default App;

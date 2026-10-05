@@ -1,9 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// NOTE: Endpoint name kept as `webhook-wsender` for backward compatibility with anything
-// that may still reference its URL. It now consumes WAHA webhook payloads.
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -33,7 +30,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    console.log(`[${correlationId}] WAHA webhook:`, JSON.stringify(body).substring(0, 600));
+    console.log(`[${correlationId}] [webhook-wsender-central_cab] Webhook payload:`, JSON.stringify(body).substring(0, 500));
 
     const event = body?.event;
     const sessionName = body?.session;
@@ -45,9 +42,7 @@ serve(async (req) => {
       });
     }
 
-    // Map WAHA session name → owning user. We store the WAHA session name in
-    // user_wsender_sessions.session_id (and a duplicate in session_api_key for
-    // downstream compatibility — that field is now interpreted as the session name).
+    // Map WAHA session name to user in user_wsender_sessions
     const { data: sessionMapping } = await supabase
       .from("user_wsender_sessions")
       .select("user_id, session_id")
@@ -57,14 +52,12 @@ serve(async (req) => {
 
     const userId = sessionMapping?.user_id || null;
 
-    // Handle session.status events: just log + acknowledge.
     if (event === "session.status") {
       console.log(`[${correlationId}] session.status for ${sessionName}: ${wp?.status}`);
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
     }
 
     if (event !== "message" && event !== "message.any") {
-      console.log(`[${correlationId}] Ignoring event: ${event}`);
       return new Response(JSON.stringify({ ok: true, skipped: event }), { headers: jsonHeaders });
     }
 
@@ -72,16 +65,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, skipped: "fromMe" }), { headers: jsonHeaders });
     }
 
+    // STRICT BOT RULE: Direct Chat Only. Completely ignore groups, broadcasts, newsletters.
     const fromJid = String(wp.from || wp._data?.key?.remoteJid || "");
     if (/@g\.us$/i.test(fromJid) || /@broadcast$/i.test(fromJid) || /@newsletter$/i.test(fromJid)) {
-      return new Response(JSON.stringify({ ok: true, skipped: "non_individual" }), { headers: jsonHeaders });
+      console.log(`[${correlationId}] Ignoring group/broadcast message from: ${fromJid}`);
+      return new Response(JSON.stringify({ ok: true, skipped: "group_or_broadcast" }), { headers: jsonHeaders });
     }
 
     let phoneNumber = "";
 
-    // WhatsApp now delivers many chats with a privacy "@lid" identifier instead of the
-    // real phone number. Sending to that raw number fails silently, so resolve it via
-    // WAHA's lid → phone-number mapping first.
+    // Resolve LID if applicable
     if (/@lid$/i.test(fromJid)) {
       const wahaBase = (Deno.env.get("WAHA_BASE_URL") || "").replace(/\/+$/, "");
       const wahaKey = Deno.env.get("WAHA_API_KEY") || "";
@@ -93,14 +86,10 @@ serve(async (req) => {
         if (lidRes.ok) {
           const lidData = await lidRes.json();
           phoneNumber = extractPhoneFromJid(lidData?.pn || "");
-          console.log(`[${correlationId}] Resolved ${fromJid} → ${phoneNumber || "(none)"}`);
-        } else {
-          console.warn(`[${correlationId}] LID lookup failed (${lidRes.status})`);
         }
       } catch (err) {
         console.warn(`[${correlationId}] LID lookup error:`, (err as Error).message);
       }
-      // Fall back to the full lid JID so replies still route to the right chat.
       if (!phoneNumber) phoneNumber = fromJid;
     } else {
       phoneNumber = extractPhoneFromJid(fromJid)
@@ -109,43 +98,66 @@ serve(async (req) => {
     }
 
     if (!phoneNumber) {
-      console.warn(`[${correlationId}] Could not extract phone from`, fromJid);
-      return new Response(JSON.stringify({ error: "No phone number" }), { status: 400, headers: jsonHeaders });
+      return new Response(JSON.stringify({ error: "No phone number extracted" }), { status: 400, headers: jsonHeaders });
     }
 
+    // Location and media detection
+    const wMsg = wp._data?.message || {};
+    const isLocation = Boolean(
+      wp.location ||
+      wp.type === "location" ||
+      wp._data?.type === "location" ||
+      wMsg.locationMessage
+    );
 
-    // Text body — WAHA usually puts it on payload.body
-    const messageText = wp.body
-      || wp._data?.message?.conversation
-      || wp._data?.message?.extendedTextMessage?.text
-      || "";
+    const locLat = wp.location?.latitude || wMsg.locationMessage?.degreesLatitude || wp._data?.lat;
+    const locLng = wp.location?.longitude || wMsg.locationMessage?.degreesLongitude || wp._data?.lng;
+    const locName = wp.location?.name || wp.location?.description || wMsg.locationMessage?.name || wMsg.locationMessage?.address || wp._data?.loc || "";
 
-    // Message type — derive from WAHA `type` or `_data.message.*` keys
+    // Message type detection
     let messageType = wp.type || "text";
     if (messageType === "chat") messageType = "text";
-    
-    const wMsg = wp._data?.message || {};
     if (wMsg.imageMessage) messageType = "image";
     else if (wMsg.videoMessage) messageType = "video";
     else if (wMsg.audioMessage) messageType = wMsg.audioMessage?.ptt ? "ptt" : "audio";
     else if (wMsg.documentMessage) messageType = "document";
     else if (wMsg.stickerMessage) messageType = "sticker";
-    else if (wMsg.locationMessage) messageType = "location";
-    else if (wp.hasMedia && !messageText && messageType === "text") messageType = "image";
+    else if (isLocation) messageType = "location";
 
-    const senderName = wp._data?.pushName || wp._data?.notifyName || wp.notifyName || "Unknown";
-    const wahaMessageId = wp.id || wp._data?.key?.id || `${phoneNumber}-${Date.now()}`;
-
-    if (!userId) {
-      console.error(`[${correlationId}] No user mapped to WAHA session "${sessionName}"`);
-      return new Response(JSON.stringify({ error: "No user mapped to this session" }), {
-        status: 200, headers: jsonHeaders, // 200 so WAHA doesn't retry forever
-      });
+    // Message text extraction (do NOT pick base64 thumbnail string for location messages)
+    let messageText = "";
+    if (isLocation) {
+      messageText = locName.trim() || (locLat && locLng ? `Location: ${Number(locLat).toFixed(4)}, ${Number(locLng).toFixed(4)}` : "WhatsApp Location Pin");
+    } else {
+      messageText = wp.body
+        || wp._data?.message?.conversation
+        || wp._data?.message?.extendedTextMessage?.text
+        || wp._data?.message?.imageMessage?.caption
+        || wp._data?.message?.videoMessage?.caption
+        || "";
     }
 
-    console.log(`[${correlationId}] Enqueue msg ${wahaMessageId} from ${phoneNumber} (${senderName}) → user ${userId}: ${messageText.substring(0, 80)}`);
+    const senderName = wp._data?.pushName || wp._data?.notifyName || wp.notifyName || "Customer";
+    const wahaMessageId = wp.id || wp._data?.key?.id || `${phoneNumber}-${Date.now()}`;
 
+    // Extract direct media URL if available
+    const directMediaUrl = wp.media?.url || body?.payload?.media?.url || body?.media?.url || null;
+    const enrichedPayload = {
+      ...body,
+      directMediaUrl,
+      locationDetails: (locLat && locLng) ? {
+        latitude: Number(locLat),
+        longitude: Number(locLng),
+        name: locName,
+        address: locName,
+      } : null
+    };
+
+    console.log(`[${correlationId}] Enqueueing to central_cab.message_queue from ${phoneNumber} (${messageType}): ${messageText.substring(0, 60)}`);
+
+    // Insert into central_cab.message_queue schema
     const { error: enqueueError } = await supabase
+      .schema("central_cab")
       .from("message_queue")
       .upsert(
         {
@@ -155,8 +167,8 @@ serve(async (req) => {
           sender_name: senderName,
           message_text: messageText,
           message_type: messageType,
-          session_api_key: sessionName, // now stores WAHA session name
-          raw_payload: body,
+          session_api_key: sessionName,
+          raw_payload: enrichedPayload,
           status: "pending",
           correlation_id: correlationId,
         },
@@ -167,12 +179,12 @@ serve(async (req) => {
       if (enqueueError.code === "23505") {
         return new Response(JSON.stringify({ success: true, duplicate: true }), { headers: jsonHeaders });
       }
-      console.error(`[${correlationId}] Enqueue error:`, enqueueError);
-      throw new Error("Failed to enqueue message");
+      console.error(`[${correlationId}] Queue error:`, enqueueError);
+      throw new Error("Failed to enqueue message to central_cab queue");
     }
 
-    // Fire-and-forget trigger process-message (cron is the safety net)
-    fetch(`${supabaseUrl}/functions/v1/process-message`, {
+    // Trigger process-message-central_cab asynchronously
+    fetch(`${supabaseUrl}/functions/v1/process-message-central_cab`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -180,7 +192,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({ trigger: "webhook", correlationId }),
     }).catch((err) => {
-      console.warn(`[${correlationId}] Trigger failed:`, err.message);
+      console.warn(`[${correlationId}] Trigger process-message-central_cab failed:`, err.message);
     });
 
     return new Response(

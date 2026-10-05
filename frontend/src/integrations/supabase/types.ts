@@ -663,6 +663,262 @@ export type Database = {
       [_ in never]: never
     }
   }
+  central_cab: {
+    Tables: {
+      bot_sessions: {
+        Row: {
+          created_at: string
+          current_step: string
+          flow_type: string
+          last_interaction: string
+          phone_number: string
+          session_data: Json
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          current_step?: string
+          flow_type?: string
+          last_interaction?: string
+          phone_number: string
+          session_data?: Json
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          current_step?: string
+          flow_type?: string
+          last_interaction?: string
+          phone_number?: string
+          session_data?: Json
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          direction: string
+          id: string
+          message: string | null
+          message_type: string | null
+          metadata: Json | null
+          phone_number: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          direction: string
+          id?: string
+          message?: string | null
+          message_type?: string | null
+          metadata?: Json | null
+          phone_number: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          direction?: string
+          id?: string
+          message?: string | null
+          message_type?: string | null
+          metadata?: Json | null
+          phone_number?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      message_queue: {
+        Row: {
+          attempts: number
+          correlation_id: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          max_attempts: number
+          message_text: string | null
+          message_type: string | null
+          phone_number: string
+          processed_at: string | null
+          raw_payload: Json | null
+          sender_name: string | null
+          session_api_key: string | null
+          status: string
+          updated_at: string
+          user_id: string | null
+          wsender_message_id: string
+        }
+        Insert: {
+          attempts?: number
+          correlation_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          max_attempts?: number
+          message_text?: string | null
+          message_type?: string | null
+          phone_number: string
+          processed_at?: string | null
+          raw_payload?: Json | null
+          sender_name?: string | null
+          session_api_key?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+          wsender_message_id: string
+        }
+        Update: {
+          attempts?: number
+          correlation_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          max_attempts?: number
+          message_text?: string | null
+          message_type?: string | null
+          phone_number?: string
+          processed_at?: string | null
+          raw_payload?: Json | null
+          sender_name?: string | null
+          session_api_key?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+          wsender_message_id?: string
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          assigned_voice_note_id: string | null
+          assigned_voice_url: string | null
+          base_price: number
+          broadcasted_groups: Json | null
+          coverage_km: number
+          created_at: string
+          customer_name: string
+          customer_phone: string
+          delivery_items: string | null
+          discount_percentage: number | null
+          distance_km: number
+          dropoff_address: string
+          dropoff_coords: Json | null
+          id: string
+          order_code: string
+          per_km_rate: number
+          pickup_address: string
+          pickup_coords: Json | null
+          service_type: string
+          status: string
+          total_fare: number
+          trip_type: string | null
+          updated_at: string
+          user_id: string | null
+          vehicle_type: string
+        }
+        Insert: {
+          assigned_voice_note_id?: string | null
+          assigned_voice_url?: string | null
+          base_price?: number
+          broadcasted_groups?: Json | null
+          coverage_km?: number
+          created_at?: string
+          customer_name: string
+          customer_phone: string
+          delivery_items?: string | null
+          discount_percentage?: number | null
+          distance_km?: number
+          dropoff_address: string
+          dropoff_coords?: Json | null
+          id?: string
+          order_code: string
+          per_km_rate?: number
+          pickup_address: string
+          pickup_coords?: Json | null
+          service_type: string
+          status?: string
+          total_fare?: number
+          trip_type?: string | null
+          updated_at?: string
+          user_id?: string | null
+          vehicle_type: string
+        }
+        Update: {
+          assigned_voice_note_id?: string | null
+          assigned_voice_url?: string | null
+          base_price?: number
+          broadcasted_groups?: Json | null
+          coverage_km?: number
+          created_at?: string
+          customer_name?: string
+          customer_phone?: string
+          delivery_items?: string | null
+          discount_percentage?: number | null
+          distance_km?: number
+          dropoff_address?: string
+          dropoff_coords?: Json | null
+          id?: string
+          order_code?: string
+          per_km_rate?: number
+          pickup_address?: string
+          pickup_coords?: Json | null
+          service_type?: string
+          status?: string
+          total_fare?: number
+          trip_type?: string | null
+          updated_at?: string
+          user_id?: string | null
+          vehicle_type?: string
+        }
+        Relationships: []
+      }
+      settings: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          updated_at: string
+          user_id: string | null
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          updated_at?: string
+          user_id?: string | null
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          updated_at?: string
+          user_id?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      init_default_settings: {
+        Args: { _user_id: string }
+        Returns: void
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
 }
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">

@@ -16,9 +16,22 @@ export function useAuth() {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    supabase.auth.getUser().then(({ data: { user }, error }) => {
+      if (error || !user) {
+        supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+      } else {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          setUser(user);
+        });
+      }
+      setLoading(false);
+    }).catch(() => {
+      supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
       setLoading(false);
     });
 

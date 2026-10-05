@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 
 const ENDPOINT = (Deno.env.get("MINIO_ENDPOINT") || "").replace(/\/+$/, "");
+const PUBLIC_URL = (Deno.env.get("MINIO_PUBLIC_URL") || ENDPOINT).replace(/\/+$/, "");
 const REGION = Deno.env.get("MINIO_REGION") || "us-east-1";
 
 const aws = new AwsClient({

@@ -24,6 +24,19 @@ SELECT cron.schedule(
   $$
 );
 
+-- Central Cab queue drainer safety net
+SELECT cron.schedule(
+  'drain-central-cab-queue',
+  '* * * * *',
+  $$
+  SELECT net.http_post(
+    url     := '<FUNCTIONS_URL>/process-message-central_cab',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}'::jsonb,
+    body    := '{"trigger":"cron"}'::jsonb
+  );
+  $$
+);
+
 -- Order follow-ups + inactivity follow-ups.
 SELECT cron.schedule(
   'send-followups',

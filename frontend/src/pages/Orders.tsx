@@ -7,12 +7,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, ShoppingCart, Loader2, Phone, MapPin, CreditCard, Package, MessageSquare, Trash2, Download } from "lucide-react";
+import { Eye, ShoppingCart, Loader2, Phone, MapPin, CreditCard, Package, MessageSquare, Trash2, Download, Car } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import LimitWarningBanner from "@/components/LimitWarningBanner";
+import CabOrdersList from "@/components/cab/CabOrdersList";
 
 interface Order {
   id: string;
@@ -170,47 +172,69 @@ export default function Orders() {
     <DashboardLayout>
       <div className="space-y-6">
         <LimitWarningBanner type="orders" />
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Orders</h1>
-            <p className="text-muted-foreground text-sm sm:text-base">
-              Manage customer orders from WhatsApp
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground hidden sm:inline">Filter:</span>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] sm:w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Orders</SelectItem>
-                {statusOptions.map((status) => (
-                  <SelectItem key={status.value} value={status.value}>
-                    {status.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm" onClick={() => exportOrders("csv")} disabled={orders.length === 0}>
-              <Download className="mr-1.5 h-4 w-4" />
-              CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => exportOrders("excel")} disabled={orders.length === 0}>
-              <Download className="mr-1.5 h-4 w-4" />
-              Excel
-            </Button>
-          </div>
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Orders & Bookings</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
+            Manage incoming customer ride bookings and e-commerce orders
+          </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Order List</CardTitle>
-            <CardDescription>
-              {orders.length} order{orders.length !== 1 ? "s" : ""} found
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Tabs defaultValue="cab_orders" className="space-y-6">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="cab_orders" className="flex-1 sm:flex-initial font-semibold text-primary">
+              🚕 Cab & Delivery Bookings
+            </TabsTrigger>
+            <TabsTrigger value="product_orders" className="flex-1 sm:flex-initial">
+              📦 Product Orders
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Tab 1: Ceylon Central Cabs & Delivery */}
+          <TabsContent value="cab_orders" className="space-y-6">
+            <CabOrdersList />
+          </TabsContent>
+
+          {/* Tab 2: Standard Product Orders */}
+          <TabsContent value="product_orders" className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Product Orders</h2>
+                <p className="text-xs text-muted-foreground">Catalog item purchases</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-muted-foreground hidden sm:inline">Filter:</span>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[140px] sm:w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Orders</SelectItem>
+                    {statusOptions.map((status) => (
+                      <SelectItem key={status.value} value={status.value}>
+                        {status.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => exportOrders("csv")} disabled={orders.length === 0}>
+                  <Download className="mr-1.5 h-4 w-4" />
+                  CSV
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => exportOrders("excel")} disabled={orders.length === 0}>
+                  <Download className="mr-1.5 h-4 w-4" />
+                  Excel
+                </Button>
+              </div>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Order List</CardTitle>
+                <CardDescription>
+                  {orders.length} order{orders.length !== 1 ? "s" : ""} found
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -471,6 +495,8 @@ export default function Orders() {
             )}
           </DialogContent>
         </Dialog>
+        </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

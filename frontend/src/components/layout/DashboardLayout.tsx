@@ -53,8 +53,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        await supabase.auth.signOut();
         navigate("/auth");
       }
     };
