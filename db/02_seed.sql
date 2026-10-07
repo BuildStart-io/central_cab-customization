@@ -5,7 +5,7 @@
 
 -- Plan limits used by the dashboard and by the quota checks inside the
 -- edge functions. Edit freely from Super Admin → Settings later.
-INSERT INTO public.platform_settings (key, value)
+INSERT INTO central_cab.platform_settings (key, value)
 VALUES (
   'plan_limits',
   '{

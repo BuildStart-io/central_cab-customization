@@ -665,6 +665,142 @@ export type Database = {
   }
   central_cab: {
     Tables: {
+      ai_usage_logs: Database["public"]["Tables"]["ai_usage_logs"]
+      chat_takeovers: Database["public"]["Tables"]["chat_takeovers"]
+      contact_usage: Database["public"]["Tables"]["contact_usage"]
+      faq_usage_logs: Database["public"]["Tables"]["faq_usage_logs"]
+      faqs: Database["public"]["Tables"]["faqs"]
+      fcm_tokens: Database["public"]["Tables"]["fcm_tokens"]
+      leads: Database["public"]["Tables"]["leads"]
+      platform_settings: Database["public"]["Tables"]["platform_settings"]
+      products: Database["public"]["Tables"]["products"]
+      profiles: Database["public"]["Tables"]["profiles"]
+      staff_accounts: Database["public"]["Tables"]["staff_accounts"]
+      user_roles: Database["public"]["Tables"]["user_roles"]
+      user_wsender_sessions: Database["public"]["Tables"]["user_wsender_sessions"]
+      broadcast_campaigns: {
+        Row: {
+          audience_filter: string
+          batch_cooldown_seconds: number
+          batch_size: number
+          completed_at: string | null
+          created_at: string
+          delay_seconds: number
+          delay_seconds_max: number
+          delay_seconds_min: number
+          failed_count: number
+          id: string
+          media_type: string | null
+          media_url: string | null
+          message: string | null
+          message_template: string | null
+          name: string
+          segment: string
+          sent_count: number
+          started_at: string | null
+          status: string
+          title: string
+          total_count: number
+          total_recipients: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audience_filter?: string
+          batch_cooldown_seconds?: number
+          batch_size?: number
+          completed_at?: string | null
+          created_at?: string
+          delay_seconds?: number
+          delay_seconds_max?: number
+          delay_seconds_min?: number
+          failed_count?: number
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message?: string | null
+          message_template?: string | null
+          name?: string
+          segment?: string
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          title?: string
+          total_count?: number
+          total_recipients?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audience_filter?: string
+          batch_cooldown_seconds?: number
+          batch_size?: number
+          completed_at?: string | null
+          created_at?: string
+          delay_seconds?: number
+          delay_seconds_max?: number
+          delay_seconds_min?: number
+          failed_count?: number
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message?: string | null
+          message_template?: string | null
+          name?: string
+          segment?: string
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          title?: string
+          total_count?: number
+          total_recipients?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      broadcast_queue: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          customer_name: string | null
+          error_message: string | null
+          id: string
+          phone_number: string
+          recipient_name: string | null
+          retry_count: number
+          sent_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          customer_name?: string | null
+          error_message?: string | null
+          id?: string
+          phone_number: string
+          recipient_name?: string | null
+          retry_count?: number
+          sent_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          customer_name?: string | null
+          error_message?: string | null
+          id?: string
+          phone_number?: string
+          recipient_name?: string | null
+          retry_count?: number
+          sent_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       bot_sessions: {
         Row: {
           created_at: string
@@ -913,7 +1049,8 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "super_admin" | "business_user"
+      plan_tier: "free" | "pro" | "enterprise"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -923,7 +1060,7 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "central_cab">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
@@ -1039,7 +1176,7 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  public: {
+  central_cab: {
     Enums: {
       app_role: ["super_admin", "business_user"],
       plan_tier: ["free", "pro", "enterprise"],

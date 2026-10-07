@@ -60,7 +60,9 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    db: { schema: "central_cab" },
+  });
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
@@ -77,6 +79,7 @@ serve(async (req) => {
     isSuperAdmin = true;
   } else {
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      db: { schema: "central_cab" },
       global: { headers: { Authorization: authHeader } },
     });
     const { data: userData, error: authError } = await userClient.auth.getUser();
@@ -177,7 +180,11 @@ serve(async (req) => {
         sessionName = sessionName.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
 
         // Webhook URL specifically targeting webhook-wsender-central_cab
-        const webhookUrl = Deno.env.get("WEBHOOK_URL_OVERRIDE") || `${supabaseUrl}/functions/v1/webhook-wsender-central_cab`;
+        let override = Deno.env.get("WEBHOOK_URL_OVERRIDE");
+        if (override && !override.includes("-central_cab")) {
+          override = override.replace("webhook-wsender", "webhook-wsender-central_cab");
+        }
+        const webhookUrl = override || `${supabaseUrl}/functions/v1/webhook-wsender-central_cab`;
 
         const wahaPayload = {
           name: sessionName,
@@ -338,7 +345,11 @@ serve(async (req) => {
         } catch { /* empty */ }
 
         if (!webhookUrl) {
-          webhookUrl = Deno.env.get("WEBHOOK_URL_OVERRIDE") || `${supabaseUrl}/functions/v1/webhook-wsender-central_cab`;
+          let override = Deno.env.get("WEBHOOK_URL_OVERRIDE");
+          if (override && !override.includes("-central_cab")) {
+            override = override.replace("webhook-wsender", "webhook-wsender-central_cab");
+          }
+          webhookUrl = override || `${supabaseUrl}/functions/v1/webhook-wsender-central_cab`;
         }
 
         // Update session webhook in WAHA

@@ -11,7 +11,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   );
 }
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createClient<Database, "central_cab">(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  db: {
+    schema: "central_cab",
+  },
   auth: {
     storage: localStorage,
     persistSession: true,

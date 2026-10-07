@@ -52,3 +52,9 @@ Thumbs.db
 .agents/
 .system_generated/
 scratch/
+
+# Deployment & sensitive scripts
+deploy*.sh
+*.sh
+*_filled.sql
+*create_superadmin*.sql

@@ -15,7 +15,9 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      db: { schema: "central_cab" },
+    });
 
     // Verify caller is super_admin
     const authHeader = req.headers.get("Authorization");
@@ -30,6 +32,7 @@ serve(async (req) => {
 
     // Use getClaims for JWT validation (works with ES256 signing on Lovable Cloud)
     const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      db: { schema: "central_cab" },
       global: { headers: { Authorization: authHeader } },
     });
     const { data: claimsData, error: claimsError } = await authClient.auth.getClaims(token);
