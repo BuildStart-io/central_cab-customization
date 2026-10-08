@@ -843,12 +843,24 @@ async function startCancelFlow(supabase: any, userId: string, phoneNumber: strin
     altPhone = "94" + cleanPhone.slice(1);
   }
 
+  // Build OR condition: match exact raw phoneNumber (e.g. LID), cleanPhone, altPhone against customer_phone & whatsapp_phone
+  const orConditions = [
+    `whatsapp_phone.eq.${phoneNumber}`,
+  ];
+  if (cleanPhone) {
+    orConditions.push(
+      `whatsapp_phone.eq.${cleanPhone}`,
+      `customer_phone.eq.${cleanPhone}`,
+      `customer_phone.eq.${altPhone}`
+    );
+  }
+
   const { data: activeOrders, error } = await supabase
     .schema("central_cab")
     .from("orders")
     .select("order_code, service_type, customer_phone, whatsapp_phone")
     .eq("user_id", userId)
-    .or(`customer_phone.eq.${cleanPhone},customer_phone.eq.${altPhone},whatsapp_phone.eq.${cleanPhone},whatsapp_phone.eq.${altPhone}`)
+    .or(orConditions.join(","))
     .in("status", ["pending", "confirmed", "assigned", "driver_assigned"])
     .order("created_at", { ascending: false })
     .limit(1);
@@ -857,8 +869,26 @@ async function startCancelFlow(supabase: any, userId: string, phoneNumber: strin
     console.error("[startCancelFlow] Query error:", error);
   }
 
-  if (activeOrders && activeOrders.length > 0) {
-    const activeOrder = activeOrders[0];
+  let activeOrder = activeOrders && activeOrders.length > 0 ? activeOrders[0] : null;
+
+  // Fallback: check with ilike on whatsapp_phone if LID or formatting differs
+  if (!activeOrder && cleanPhone && cleanPhone.length >= 8) {
+    const { data: fallbackOrders } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("order_code, service_type, customer_phone, whatsapp_phone")
+      .eq("user_id", userId)
+      .ilike("whatsapp_phone", `%${cleanPhone}%`)
+      .in("status", ["pending", "confirmed", "assigned", "driver_assigned"])
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (fallbackOrders && fallbackOrders.length > 0) {
+      activeOrder = fallbackOrders[0];
+    }
+  }
+
+  if (activeOrder) {
     return {
       replyText: `ඔබට දැනටමත් Active Order එකක් ඇත (Order ID: *${activeOrder.order_code}*).\nඔබට එය Cancel කිරීමට අවශ්‍යද? (Yes/No)`,
       nextFlow: "CANCEL_FLOW",
