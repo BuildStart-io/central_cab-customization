@@ -834,15 +834,28 @@ function getWelcomeMessage(): string {
 }
 
 async function startCancelFlow(supabase: any, userId: string, phoneNumber: string, currentStep: string) {
-  const { data: activeOrders } = await supabase
+  // Normalize phone number to match whether stored with 94 or 0 or clean digits
+  const cleanPhone = phoneNumber.replace(/\D/g, "");
+  let altPhone = cleanPhone;
+  if (cleanPhone.startsWith("94") && cleanPhone.length === 11) {
+    altPhone = "0" + cleanPhone.slice(2);
+  } else if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
+    altPhone = "94" + cleanPhone.slice(1);
+  }
+
+  const { data: activeOrders, error } = await supabase
     .schema("central_cab")
     .from("orders")
-    .select("order_code, service_type")
+    .select("order_code, service_type, customer_phone, whatsapp_phone")
     .eq("user_id", userId)
-    .eq("customer_phone", phoneNumber)
-    .in("status", ["pending", "driver_assigned"])
+    .or(`customer_phone.eq.${cleanPhone},customer_phone.eq.${altPhone},whatsapp_phone.eq.${cleanPhone},whatsapp_phone.eq.${altPhone}`)
+    .in("status", ["pending", "confirmed", "assigned", "driver_assigned"])
     .order("created_at", { ascending: false })
     .limit(1);
+
+  if (error) {
+    console.error("[startCancelFlow] Query error:", error);
+  }
 
   if (activeOrders && activeOrders.length > 0) {
     const activeOrder = activeOrders[0];
@@ -882,12 +895,12 @@ async function saveOrderToDatabase(supabase: any, userId: string, serviceType: s
         service_type: serviceType,
         customer_name: data.customer_name,
         customer_phone: data.customer_phone,
-        customer_whatsapp: data.customer_whatsapp || data.customer_phone,
+        whatsapp_phone: data.customer_whatsapp || data.customer_phone,
         vehicle_type: data.vehicle_name || data.vehicle_key,
         pickup_address: data.pickup_text,
-        pickup_coords: data.pickup_coords ? JSON.stringify(data.pickup_coords) : null,
+        pickup_coords: data.pickup_coords ? (typeof data.pickup_coords === "string" ? JSON.parse(data.pickup_coords) : data.pickup_coords) : null,
         dropoff_address: data.dropoff_text,
-        dropoff_coords: data.dropoff_coords ? JSON.stringify(data.dropoff_coords) : null,
+        dropoff_coords: data.dropoff_coords ? (typeof data.dropoff_coords === "string" ? JSON.parse(data.dropoff_coords) : data.dropoff_coords) : null,
         trip_type: data.trip_type || "one_way",
         delivery_items: data.delivery_items || null,
         distance_km: data.distance_km || 0,
@@ -896,11 +909,15 @@ async function saveOrderToDatabase(supabase: any, userId: string, serviceType: s
         coverage_km: data.coverage_km || 0,
         discount_percentage: data.discount_amount > 0 ? (data.trip_type === "round_trip" ? 15 : 0) : 0,
         total_fare: data.total_fare || 0,
+        total_amount: data.total_fare || 0,
+        order_items: [],
         status: "pending",
       });
 
     if (error) {
       console.error("[saveOrderToDatabase] Database error:", error);
+    } else {
+      console.log(`[saveOrderToDatabase] ✅ Successfully inserted order ${data.order_code} for user ${userId}`);
     }
   } catch (err) {
     console.error("[saveOrderToDatabase] Exception:", err);

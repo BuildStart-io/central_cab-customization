@@ -168,7 +168,7 @@ export async function handleAdminMessage(
     }
 
     // 2. Alert Customer: "Your order is confirmed."
-    const targetCustomerNumber = order.customer_whatsapp || order.customer_phone;
+    const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
     console.log(`[AdminHandler] Sending confirmation alert to customer WhatsApp: ${targetCustomerNumber} (contact: ${order.customer_phone})`);
     const customerConfirmText = `✅ *Your order is confirmed.*\nOrder ID: *${targetOrderCode}*\nVehicle: *${order.vehicle_type || "Cab"}*\n📍 *Pickup:* ${order.pickup_address || "N/A"}\n🏁 *Drop-off:* ${order.dropoff_address || "N/A"}\n\nA driver has been assigned and will contact you shortly.`;
     
@@ -181,7 +181,8 @@ export async function handleAdminMessage(
     );
 
     // If contact phone is different, also send a notification there
-    if (order.customer_phone && order.customer_whatsapp && order.customer_phone !== order.customer_whatsapp) {
+    const orderWhatsApp = order.whatsapp_phone || order.customer_whatsapp;
+    if (order.customer_phone && orderWhatsApp && order.customer_phone !== orderWhatsApp) {
       console.log(`[AdminHandler] Sending backup confirmation to contact phone: ${order.customer_phone}`);
       await sendWhatsAppMessage(
         supabaseUrl,
