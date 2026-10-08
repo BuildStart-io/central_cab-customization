@@ -140,7 +140,7 @@ export default function Orders() {
         items,
         o.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer",
         o.status,
-        o.total_amount.toFixed(2),
+        (o.total_amount || 0).toFixed(2),
         o.special_instructions || "",
         format(new Date(o.created_at), "yyyy-MM-dd HH:mm"),
       ];
@@ -262,7 +262,7 @@ export default function Orders() {
                         <Badge className={statusColors[order.status]}>{order.status}</Badge>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium">LKR {order.total_amount.toFixed(2)}</span>
+                        <span className="font-medium">LKR {(order.total_amount || 0).toFixed(2)}</span>
                         <span className="text-muted-foreground">{format(new Date(order.created_at), "MMM d, yyyy")}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -310,7 +310,7 @@ export default function Orders() {
                         <TableRow key={order.id}>
                           <TableCell className="font-medium">{order.customer_name}</TableCell>
                           <TableCell>{order.customer_phone}</TableCell>
-                          <TableCell>LKR {order.total_amount.toFixed(2)}</TableCell>
+                          <TableCell>LKR {(order.total_amount || 0).toFixed(2)}</TableCell>
                           <TableCell className="capitalize">
                             {order.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer"}
                           </TableCell>
@@ -442,7 +442,7 @@ export default function Orders() {
                   </div>
                   <div className="space-y-2">
                     <h4 className="font-medium text-sm text-muted-foreground">Total Amount</h4>
-                    <p className="text-2xl font-bold">LKR {selectedOrder.total_amount.toFixed(2)}</p>
+                    <p className="text-2xl font-bold">LKR {(selectedOrder.total_amount || 0).toFixed(2)}</p>
                   </div>
                 </div>
 

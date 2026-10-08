@@ -114,10 +114,13 @@ export default function Settings() {
       throw new Error("Please log in again to manage WhatsApp sessions.");
     }
 
-    return {
+    const headers = {
       "Authorization": `Bearer ${session.access_token}`,
+      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
       ...(includeJson ? { "Content-Type": "application/json" } : {}),
     };
+    console.log("Auth headers being sent:", headers);
+    return headers;
   }, []);
 
   const fetchSettings = async () => {
@@ -225,15 +228,21 @@ export default function Settings() {
 
       // Fetch all sessions from Wasender API then filter to only user's
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wsender-sessions-central_cab?action=list-sessions`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wsender-sessions-central_cab?action=list-sessions&_t=${Date.now()}`,
         {
           headers: await getFunctionAuthHeaders(),
         }
       );
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Failed to fetch sessions");
+        const errText = await response.text();
+        console.error("Raw error response:", errText);
+        try {
+          const errData = JSON.parse(errText);
+          throw new Error(errData.error || "Failed to fetch sessions");
+        } catch {
+          throw new Error(errText);
+        }
       }
 
       const result = await response.json();
@@ -268,7 +277,7 @@ export default function Settings() {
       }
 
       // The backend now starts stopped sessions and returns the QR in one request.
-      const response = await fetch(`${baseUrl}?action=get-qr&sessionId=${sessionId}`, {
+      const response = await fetch(`${baseUrl}?action=get-qr&sessionId=${sessionId}&_t=${Date.now()}`, {
         headers: authHeaders,
       });
 

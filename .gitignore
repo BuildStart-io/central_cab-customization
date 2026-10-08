@@ -56,5 +56,8 @@ scratch/
 # Deployment & sensitive scripts
 deploy*.sh
 *.sh
+*.tar.gz
+rewrite.py
 *_filled.sql
 *create_superadmin*.sql
+
