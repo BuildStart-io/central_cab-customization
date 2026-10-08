@@ -48,11 +48,28 @@ export default function CabSystemSettings() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || "";
 
+      // Also get user's active session name from user_wsender_sessions if available
+      let sessionIdParam = "";
+      try {
+        const { data: userSessions } = await supabase
+          .from("user_wsender_sessions" as any)
+          .select("session_id")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (userSessions?.session_id) {
+          sessionIdParam = `&sessionId=${encodeURIComponent(userSessions.session_id)}`;
+        }
+      } catch (e) {
+        console.warn("Could not query user_wsender_sessions:", e);
+      }
+
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wsender-sessions-central_cab?action=list-groups`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wsender-sessions-central_cab?action=list-groups${sessionIdParam}&_t=${Date.now()}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
             "Content-Type": "application/json",
           },
         }
@@ -64,7 +81,9 @@ export default function CabSystemSettings() {
       }
 
       const result = await res.json();
-      const rawList: any[] = Array.isArray(result?.data) ? result.data : [];
+      const rawList: any[] = Array.isArray(result?.data)
+        ? result.data
+        : (result?.data && typeof result.data === "object" ? Object.values(result.data) : []);
       const list: WahaGroup[] = rawList
         .map((g: any) => {
           const idStr = typeof g?.id === "object"

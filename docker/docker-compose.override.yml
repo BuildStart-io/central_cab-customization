@@ -42,6 +42,7 @@ services:
       WHATSAPP_API_KEY: "${WAHA_API_KEY:-central_cab_waha_secret}"
       WHATSAPP_FILES_FOLDER: "/app/.sessions/whatsapp-files"
       WHATSAPP_FILES_LIFETIME: "86400"
+      WAHA_NOWEB_STORE: "true"
     volumes:
       - ./volumes/waha_sessions:/app/.sessions
 

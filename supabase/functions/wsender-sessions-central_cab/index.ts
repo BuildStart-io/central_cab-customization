@@ -131,6 +131,19 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
       if (!data) {
+        // Fallback: check if session exists anywhere in user_wsender_sessions for this tenant
+        const { data: tenantSession } = await supabase
+          .from("user_wsender_sessions")
+          .select("id")
+          .or(`session_id.eq.${sessionName},session_api_key.eq.${sessionName}`)
+          .limit(1)
+          .maybeSingle();
+        if (tenantSession) return true;
+
+        // Fallback: check if session exists in WAHA
+        const sRes = await wahaFetch(`/api/sessions/${encodeURIComponent(sessionName)}`);
+        if (sRes.ok) return true;
+
         throw new Response(JSON.stringify({ error: "Session not found or not owned by you" }), {
           status: 403, headers: jsonHeaders,
         });
@@ -194,6 +207,12 @@ serve(async (req) => {
               url: webhookUrl,
               events: ["message", "message.any", "session.status"],
             }],
+            noweb: {
+              store: {
+                enabled: true,
+                fullSync: true,
+              },
+            },
           },
         };
 
@@ -382,6 +401,33 @@ serve(async (req) => {
           const owned = await getOwnedSessionNames();
           if (owned.length > 0) {
             sessionId = owned[0];
+          } else {
+            // Check if any session exists in user_wsender_sessions for this tenant
+            const { data: anySession } = await supabase
+              .from("user_wsender_sessions")
+              .select("session_id")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (anySession?.session_id) {
+              sessionId = anySession.session_id;
+            } else {
+              // Direct WAHA fallback: Find first active / connected session
+              try {
+                const sRes = await wahaFetch("/api/sessions?all=true");
+                if (sRes.ok) {
+                  const allSessions = (await sRes.json()) || [];
+                  const active = allSessions.find((s: any) =>
+                    s.status === "WORKING" || s.status === "CONNECTED" || s.status === "STARTING" || s.status === "SCAN_QR_CODE"
+                  ) || allSessions[0];
+                  if (active?.name) {
+                    sessionId = active.name;
+                  }
+                }
+              } catch (e) {
+                console.warn("Could not fetch active sessions from WAHA:", e);
+              }
+            }
           }
         }
         if (!sessionId) {
@@ -422,9 +468,21 @@ serve(async (req) => {
           return fallbackId ? `Group (${fallbackId.replace("@g.us", "")})` : "WhatsApp Group";
         };
 
-        const groups = (Array.isArray(rawData) ? rawData : [])
+        // Normalize rawData: handles Array (WEBJS) and Object/Dictionary keyed by JID (NOWEB)
+        let rawList: any[] = [];
+        if (Array.isArray(rawData)) {
+          rawList = rawData;
+        } else if (rawData && typeof rawData === "object") {
+          if (Array.isArray((rawData as any).data)) {
+            rawList = (rawData as any).data;
+          } else {
+            rawList = Object.values(rawData);
+          }
+        }
+
+        const groups = rawList
           .map((g: any) => {
-            const cleanId = normalizeId(g.id || g.groupMetadata?.id);
+            const cleanId = normalizeId(g.id || g.groupMetadata?.id || g.jid);
             const cleanName = normalizeName(g, cleanId);
             return {
               id: cleanId,
