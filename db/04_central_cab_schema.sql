@@ -48,8 +48,11 @@ CREATE TABLE IF NOT EXISTS central_cab.orders (
     order_code TEXT NOT NULL UNIQUE,     -- E.g. #ORD845
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     service_type TEXT NOT NULL,          -- 'transport' | 'delivery'
+    booking_type TEXT DEFAULT 'now',     -- 'now' | 'schedule'
+    scheduled_time TEXT,                 -- e.g. 'Tomorrow 10:00 AM'
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
+    whatsapp_phone TEXT,
     vehicle_type TEXT NOT NULL,          -- 'Motorbike', 'Three-wheeler', 'Car', 'Van', 'Lorry', 'Bus'
     pickup_address TEXT NOT NULL,
     pickup_coords JSONB,                -- {"lat": 7.2906, "lng": 80.6337}
@@ -57,12 +60,15 @@ CREATE TABLE IF NOT EXISTS central_cab.orders (
     dropoff_coords JSONB,               -- {"lat": 7.2600, "lng": 80.5900}
     trip_type TEXT,                      -- 'one_way' | 'round_trip' (for transport)
     delivery_items TEXT,                 -- (for delivery)
+    special_instructions TEXT,
     distance_km NUMERIC(8,2) NOT NULL,
     base_price NUMERIC(10,2) NOT NULL,
     per_km_rate NUMERIC(10,2) NOT NULL,
     coverage_km NUMERIC(8,2) NOT NULL,
     discount_percentage NUMERIC(5,2) DEFAULT 0,
     total_fare NUMERIC(10,2) NOT NULL,
+    total_amount NUMERIC(10,2) DEFAULT 0,
+    order_items JSONB DEFAULT '[]'::jsonb,
     status TEXT DEFAULT 'pending',       -- 'pending', 'assigned', 'confirmed', 'completed', 'cancelled'
     assigned_voice_url TEXT,
     assigned_voice_note_id TEXT,

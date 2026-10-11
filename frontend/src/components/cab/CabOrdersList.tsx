@@ -42,6 +42,8 @@ export interface CabOrder {
   dropoff_address: string;
   trip_type?: "one_way" | "round_trip";
   delivery_items?: string;
+  booking_type?: "now" | "schedule";
+  scheduled_time?: string;
   distance_km: number;
   total_fare: number;
   status: "pending" | "assigned" | "confirmed" | "completed" | "cancelled";
@@ -222,6 +224,17 @@ export default function CabOrdersList() {
                         {order.vehicle_type}
                         {order.trip_type === "round_trip" && " (Round Trip)"}
                       </div>
+                      {order.booking_type === "schedule" && order.scheduled_time && (
+                        <div className="flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-1 w-fit font-medium">
+                          <Clock className="h-3 w-3" />
+                          <span>Sched: {order.scheduled_time}</span>
+                        </div>
+                      )}
+                      {order.booking_type === "now" && (
+                        <div className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-1 w-fit font-medium">
+                          <span>Immediate (Now)</span>
+                        </div>
+                      )}
                       {order.delivery_items && (
                         <div className="text-[11px] text-muted-foreground/80 italic mt-0.5 line-clamp-1">
                           Items: {order.delivery_items}

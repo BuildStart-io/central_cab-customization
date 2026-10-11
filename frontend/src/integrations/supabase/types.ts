@@ -932,6 +932,7 @@ export type Database = {
           assigned_voice_note_id: string | null
           assigned_voice_url: string | null
           base_price: number
+          booking_type: string | null
           broadcasted_groups: Json | null
           coverage_km: number
           created_at: string
@@ -947,6 +948,7 @@ export type Database = {
           per_km_rate: number
           pickup_address: string
           pickup_coords: Json | null
+          scheduled_time: string | null
           service_type: string
           status: string
           total_fare: number
@@ -959,6 +961,7 @@ export type Database = {
           assigned_voice_note_id?: string | null
           assigned_voice_url?: string | null
           base_price?: number
+          booking_type?: string | null
           broadcasted_groups?: Json | null
           coverage_km?: number
           created_at?: string
@@ -974,6 +977,7 @@ export type Database = {
           per_km_rate?: number
           pickup_address: string
           pickup_coords?: Json | null
+          scheduled_time?: string | null
           service_type: string
           status?: string
           total_fare?: number
@@ -986,6 +990,7 @@ export type Database = {
           assigned_voice_note_id?: string | null
           assigned_voice_url?: string | null
           base_price?: number
+          booking_type?: string | null
           broadcasted_groups?: Json | null
           coverage_km?: number
           created_at?: string
@@ -1001,6 +1006,7 @@ export type Database = {
           per_km_rate?: number
           pickup_address?: string
           pickup_coords?: Json | null
+          scheduled_time?: string | null
           service_type?: string
           status?: string
           total_fare?: number

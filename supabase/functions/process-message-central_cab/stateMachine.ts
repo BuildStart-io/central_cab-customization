@@ -49,6 +49,8 @@ function isPossibleQuestion(text: string): boolean {
 function getCurrentStepPrompt(flow: string, step: string): string {
   if (flow === "CAB_FLOW") {
     switch (step) {
+      case "CAB_TIMING_CHOICE": return "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)";
+      case "CAB_SCHEDULE_TIME": return "කරුණාකර ඔබගේ ගමනට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)";
       case "CAB_NAME": return "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න:";
       case "CAB_PHONE": return "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න:";
       case "CAB_VEHICLE": return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺\n3. Car 🚗\n4. Van 🚐\n5. Lorry 🚚\n6. Bus 🚌";
@@ -59,6 +61,8 @@ function getCurrentStepPrompt(flow: string, step: string): string {
     }
   } else if (flow === "DELIVERY_FLOW") {
     switch (step) {
+      case "DELIVERY_TIMING_CHOICE": return "ඔබට Delivery පහසුකම දැන්ම අවශ්‍යද නැතහොත් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)";
+      case "DELIVERY_SCHEDULE_TIME": return "කරුණාකර Delivery කිරීමට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)";
       case "DELIVERY_NAME": return "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න:";
       case "DELIVERY_PHONE": return "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න:";
       case "DELIVERY_VEHICLE": return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺";
@@ -71,6 +75,191 @@ function getCurrentStepPrompt(flow: string, step: string): string {
   return "කරුණාකර ඔබගේ පිළිතුර ලබා දෙන්න.";
 }
 
+export function isTimingNow(text: string): boolean {
+  const l = (text || "").toLowerCase().trim();
+  if (l === "1" || l.startsWith("1.") || l.startsWith("1 ") || l === "1)") return true;
+  if (l.includes("now") || l.includes("immediate") || l.includes("urgent")) return true;
+  if (l.includes("ipo") || l.includes("ipova") || l.includes("ipove")) return true;
+  if (l.includes("dan") || l.includes("damma") || l.includes("danma") || l.includes("දැන්")) return true;
+  return false;
+}
+
+export function isTimingSchedule(text: string): boolean {
+  const l = (text || "").toLowerCase().trim();
+  if (l === "2" || l.startsWith("2.") || l.startsWith("2 ") || l.startsWith("2)")) return true;
+  if (l.includes("sched") || l.includes("schd") || l.includes("later") || l.includes("reserve") || l.includes("advance")) return true;
+  if (l.includes("passe") || l.includes("pasuwata") || l.includes("පසුව") || l.includes("කාලය")) return true;
+  if (l.includes("naeram") || l.includes("neram") || l.includes("schedule panna")) return true;
+  return false;
+}
+
+export interface ParsedSchedule {
+  raw: string;
+  formatted: string;
+  dateStr: string;
+  timeStr: string;
+  isRecognized: boolean;
+}
+
+/**
+ * Intelligent Multi-lingual Natural Date & Time Parser
+ * Handles Tamil/Tanglish ("nalaiku 10 mani", "indaiku evening 4 mani"),
+ * Sinhala/Singlish ("heta udeta 9", "ada hawasata 4"),
+ * and English ("tomorrow 10 am", "today 4 pm").
+ */
+export function parseNaturalSchedule(input: string, now = new Date()): ParsedSchedule {
+  const text = (input || "").trim();
+  const lower = text.toLowerCase();
+
+  // Sri Lanka standard time offset (UTC + 5:30 = 330 minutes)
+  const slOffsetMinutes = 330;
+  const localNow = new Date(now.getTime() + (slOffsetMinutes - now.getTimezoneOffset()) * 60000);
+
+  let targetDate = new Date(localNow);
+  let hasExplicitDay = false;
+  let dateLabel = "";
+
+  // 1. Detect Day: Tomorrow
+  if (
+    lower.includes("nalaiku") ||
+    lower.includes("naalaiku") ||
+    lower.includes("nalai") ||
+    lower.includes("naalai") ||
+    lower.includes("heta") ||
+    lower.includes("tomorrow") ||
+    lower.includes("tmrw") ||
+    lower.includes("tomo")
+  ) {
+    targetDate.setDate(targetDate.getDate() + 1);
+    hasExplicitDay = true;
+    dateLabel = "Tomorrow";
+  }
+  // Day after tomorrow
+  else if (
+    lower.includes("anikaal") ||
+    lower.includes("anekal") ||
+    lower.includes("anidda") ||
+    lower.includes("day after tomorrow") ||
+    lower.includes("mathanaal")
+  ) {
+    targetDate.setDate(targetDate.getDate() + 2);
+    hasExplicitDay = true;
+    dateLabel = "Day after tomorrow";
+  }
+  // Today
+  else if (
+    lower.includes("indaiku") ||
+    lower.includes("innaiku") ||
+    lower.includes("inraiku") ||
+    lower.includes("indru") ||
+    lower.includes("ada") ||
+    lower.includes("today") ||
+    lower.includes("tonight")
+  ) {
+    hasExplicitDay = true;
+    dateLabel = "Today";
+  }
+
+  // 2. Detect Time Period
+  let hours = -1;
+  let minutes = 0;
+  let isPM = false;
+  let isAM = false;
+
+  if (
+    lower.includes("evening") ||
+    lower.includes("night") ||
+    lower.includes("pm") ||
+    lower.includes("maala") ||
+    lower.includes("maalai") ||
+    lower.includes("saayantharam") ||
+    lower.includes("iravu") ||
+    lower.includes("eravu") ||
+    lower.includes("hawasa") ||
+    lower.includes("hawasata") ||
+    lower.includes("reeta") ||
+    lower.includes("dawal") ||
+    lower.includes("pinpakal")
+  ) {
+    isPM = true;
+  } else if (
+    lower.includes("morning") ||
+    lower.includes("am") ||
+    lower.includes("kaalai") ||
+    lower.includes("kaalaila") ||
+    lower.includes("udeta") ||
+    lower.includes("udey") ||
+    lower.includes("munpakal")
+  ) {
+    isAM = true;
+  }
+
+  // Extract hours and optional minutes: "10:30", "10.30", "10", "4 mani", "10ta"
+  const timeRegex = /(\b\d{1,2})([:.](\d{2}))?\s*(mani|ta|am|pm|o'?clock)?\b/i;
+  const match = lower.match(timeRegex);
+
+  if (match) {
+    hours = parseInt(match[1], 10);
+    if (match[3]) {
+      minutes = parseInt(match[3], 10);
+    }
+  }
+
+  if (hours !== -1) {
+    if (isPM && hours < 12) {
+      hours += 12;
+    } else if (isAM && hours === 12) {
+      hours = 0;
+    } else if (!isAM && !isPM) {
+      // Heuristics: 1..6 -> PM (afternoon), 7..11 -> AM (morning)
+      if (hours >= 1 && hours <= 6) {
+        hours += 12;
+      }
+    }
+
+    // If day was not explicitly specified, decide whether today or tomorrow
+    if (!hasExplicitDay) {
+      const currentHour = localNow.getHours();
+      const currentMin = localNow.getMinutes();
+      if (hours > currentHour || (hours === currentHour && minutes > currentMin)) {
+        dateLabel = "Today";
+      } else {
+        targetDate.setDate(targetDate.getDate() + 1);
+        dateLabel = "Tomorrow";
+      }
+    }
+
+    const yyyy = targetDate.getFullYear();
+    const mm = String(targetDate.getMonth() + 1).padStart(2, "0");
+    const dd = String(targetDate.getDate()).padStart(2, "0");
+
+    const displayHoursNum = hours % 12 === 0 ? 12 : hours % 12;
+    const displayHours = String(displayHoursNum).padStart(2, "0");
+    const displayMinutes = String(minutes).padStart(2, "0");
+    const ampmStr = hours >= 12 ? "PM" : "AM";
+
+    const formattedTime = `${displayHours}:${displayMinutes} ${ampmStr}`;
+    const formattedDate = `${yyyy}-${mm}-${dd}`;
+    const fullFormatted = `${formattedDate} ${formattedTime} (${dateLabel})`;
+
+    return {
+      raw: text,
+      formatted: fullFormatted,
+      dateStr: formattedDate,
+      timeStr: formattedTime,
+      isRecognized: true,
+    };
+  }
+
+  return {
+    raw: text,
+    formatted: text,
+    dateStr: "",
+    timeStr: "",
+    isRecognized: false,
+  };
+}
+
 export interface BotSessionState {
   phone_number: string;
   user_id: string;
@@ -79,6 +268,8 @@ export interface BotSessionState {
   session_data: {
     customer_name?: string;
     customer_phone?: string;
+    booking_type?: "now" | "schedule";
+    scheduled_time?: string;
     vehicle_key?: string;
     vehicle_name?: string;
     pickup_text?: string;
@@ -331,16 +522,16 @@ export async function processCustomerChatStep(
   if (step === "WELCOME" || flow === "IDLE") {
     if (trimmed === "1" || lower.includes("transport") || lower.includes("cab")) {
       return {
-        replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
+        replyText: "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)",
         nextFlow: "CAB_FLOW",
-        nextStep: "CAB_NAME",
+        nextStep: "CAB_TIMING_CHOICE",
         sessionData: { customer_whatsapp: phoneNumber },
       };
     } else if (trimmed === "2" || lower.includes("delivery")) {
       return {
-        replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
+        replyText: "ඔබට Delivery පහසුකම දැන්ම අවශ්‍යද නැතහොත් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)",
         nextFlow: "DELIVERY_FLOW",
-        nextStep: "DELIVERY_NAME",
+        nextStep: "DELIVERY_TIMING_CHOICE",
         sessionData: { customer_whatsapp: phoneNumber },
       };
     } else {
@@ -373,6 +564,50 @@ export async function processCustomerChatStep(
   // =========================================================================
   if (flow === "CAB_FLOW") {
     switch (step) {
+      case "CAB_TIMING_CHOICE": {
+        if (isTimingNow(trimmed)) {
+          data.booking_type = "now";
+          data.scheduled_time = "Immediate / Now";
+          return {
+            replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
+            nextFlow: flow,
+            nextStep: "CAB_NAME",
+            sessionData: data,
+          };
+        } else if (isTimingSchedule(trimmed)) {
+          data.booking_type = "schedule";
+          return {
+            replyText: "කරුණාකර ඔබගේ ගමනට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)",
+            nextFlow: flow,
+            nextStep: "CAB_SCHEDULE_TIME",
+            sessionData: data,
+          };
+        } else {
+          return await invalidFallback("⚠️ කරුණාකර නිවැරදි තේරීමක් ලබා දෙන්න:\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)");
+        }
+      }
+
+      case "CAB_SCHEDULE_TIME": {
+        if (!trimmed || trimmed.length < 2) {
+          return await invalidFallback("⚠️ කරුණාකර නිවැරදි දිනය සහ වේලාව (Date & Time) ඇතුළත් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)");
+        }
+        const parsed = parseNaturalSchedule(trimmed);
+        data.booking_type = "schedule";
+        data.scheduled_time = parsed.formatted;
+        data.raw_scheduled_time = trimmed;
+
+        const nextMsg = parsed.isRecognized
+          ? `✅ ඔබගේ Ride එක *${parsed.formatted}* දිනට Schedule කරන ලදී.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න.`
+          : "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.";
+
+        return {
+          replyText: nextMsg,
+          nextFlow: flow,
+          nextStep: "CAB_NAME",
+          sessionData: data,
+        };
+      }
+
       case "CAB_NAME": {
         if (!trimmed || trimmed.length < 2) {
           return await invalidFallback("⚠️ කරුණාකර නිවැරදි නමක් ඇතුළත් කරන්න.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න:");
@@ -513,7 +748,10 @@ export async function processCustomerChatStep(
           ? data.dropoff_text
           : (dropoffMapLink ? `${data.dropoff_text}\n🗺️ *Drop-off Map:* ${dropoffMapLink}` : data.dropoff_text);
 
-        const summary = `📋 *BOOKING SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n🔄 *Trip Type:* ${tripType === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n💰 *Final Price:* ${formatLKR(data.total_fare)}${data.discount_amount > 0 ? ` (Includes ${formatLKR(data.discount_amount)} Round Trip Discount)` : ""}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
+        const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
+        const timingLine = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time} (Scheduled Ride)` : `\n🕒 *Booking:* Immediate (Now)`;
+
+        const summary = `📋 *BOOKING SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}${timingLine}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n🔄 *Trip Type:* ${tripType === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n💰 *Final Price:* ${formatLKR(data.total_fare)}${data.discount_amount > 0 ? ` (Includes ${formatLKR(data.discount_amount)} Round Trip Discount)` : ""}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
 
         return {
           replyText: summary,
@@ -545,8 +783,11 @@ export async function processCustomerChatStep(
             ? data.pickup_text
             : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
 
+          const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
+          const scheduleNote = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time}` : "";
+
           return {
-            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.\n📍 *Pickup:* ${confirmPickup}`,
+            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.${scheduleNote}\n📍 *Pickup:* ${confirmPickup}`,
             nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
           };
         } else if (lower === "no" || lower === "n" || lower === "cancel") {
@@ -566,6 +807,50 @@ export async function processCustomerChatStep(
   // =========================================================================
   if (flow === "DELIVERY_FLOW") {
     switch (step) {
+      case "DELIVERY_TIMING_CHOICE": {
+        if (isTimingNow(trimmed)) {
+          data.booking_type = "now";
+          data.scheduled_time = "Immediate / Now";
+          return {
+            replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
+            nextFlow: flow,
+            nextStep: "DELIVERY_NAME",
+            sessionData: data,
+          };
+        } else if (isTimingSchedule(trimmed)) {
+          data.booking_type = "schedule";
+          return {
+            replyText: "කරුණාකර භාණ්ඩ Delivery කිරීමට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)",
+            nextFlow: flow,
+            nextStep: "DELIVERY_SCHEDULE_TIME",
+            sessionData: data,
+          };
+        } else {
+          return await invalidFallback("⚠️ කරුණාකර නිවැරදි තේරීමක් ලබා දෙන්න:\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)");
+        }
+      }
+
+      case "DELIVERY_SCHEDULE_TIME": {
+        if (!trimmed || trimmed.length < 2) {
+          return await invalidFallback("⚠️ කරුණාකර Delivery කිරීමට අවශ්‍ය නිවැරදි දිනය සහ වේලාව (Date & Time) ඇතුළත් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)");
+        }
+        const parsed = parseNaturalSchedule(trimmed);
+        data.booking_type = "schedule";
+        data.scheduled_time = parsed.formatted;
+        data.raw_scheduled_time = trimmed;
+
+        const nextMsg = parsed.isRecognized
+          ? `✅ ඔබගේ Delivery එක *${parsed.formatted}* දිනට Schedule කරන ලදී.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න.`
+          : "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.";
+
+        return {
+          replyText: nextMsg,
+          nextFlow: flow,
+          nextStep: "DELIVERY_NAME",
+          sessionData: data,
+        };
+      }
+
       case "DELIVERY_NAME": {
         if (!trimmed || trimmed.length < 2) {
           return await invalidFallback("⚠️ කරුණාකර නිවැරදි නමක් ඇතුළත් කරන්න.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න:");
@@ -698,7 +983,10 @@ export async function processCustomerChatStep(
           ? data.dropoff_text
           : (dropoffMapLink ? `${data.dropoff_text}\n🗺️ *Drop-off Map:* ${dropoffMapLink}` : data.dropoff_text);
 
-        const summary = `📦 *DELIVERY SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n📦 *Items:* ${data.delivery_items}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Final Price:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
+        const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
+        const timingLine = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time} (Scheduled Delivery)` : `\n🕒 *Booking:* Immediate (Now)`;
+
+        const summary = `📦 *DELIVERY SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}${timingLine}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n📦 *Items:* ${data.delivery_items}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Final Price:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
 
         return {
           replyText: summary,
@@ -730,8 +1018,11 @@ export async function processCustomerChatStep(
             ? data.pickup_text
             : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
 
+          const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
+          const scheduleNote = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time}` : "";
+
           return {
-            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.\n📍 *Pickup:* ${confirmPickup}`,
+            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.${scheduleNote}\n📍 *Pickup:* ${confirmPickup}`,
             nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
           };
         } else if (lower === "no" || lower === "n" || lower === "cancel") {
@@ -923,6 +1214,11 @@ async function saveOrderToDatabase(supabase: any, userId: string, serviceType: s
         order_code: data.order_code,
         user_id: userId,
         service_type: serviceType,
+        booking_type: data.booking_type || "now",
+        scheduled_time: data.scheduled_time || null,
+        special_instructions: data.booking_type === "schedule" && data.scheduled_time
+          ? `[Scheduled: ${data.scheduled_time}]`
+          : null,
         customer_name: data.customer_name,
         customer_phone: data.customer_phone,
         whatsapp_phone: data.customer_whatsapp || data.customer_phone,
@@ -980,7 +1276,10 @@ async function broadcastBooking(
     ? `📱 *WhatsApp:* ${data.customer_whatsapp}\n📞 *Call Contact:* ${data.customer_phone}`
     : `📱 *Contact:* ${data.customer_phone || data.customer_whatsapp}`;
 
-  const broadcastText = `🚖 *NEW ${category.toUpperCase()} BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
+  const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
+  const timingHeader = isScheduled ? `📅 *SCHEDULED FOR:* ${data.scheduled_time}\n` : `⚡ *RIDE NOW*\n`;
+
+  const broadcastText = `🚖 *NEW ${category.toUpperCase()} BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
 
   // 1. Send to Admin WhatsApp Number
   const adminPhone = systemSettings?.admin_whatsapp_number;
