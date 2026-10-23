@@ -205,7 +205,7 @@ serve(async (req) => {
           config: {
             webhooks: [{
               url: webhookUrl,
-              events: ["message", "message.any", "session.status"],
+              events: ["message", "message.any", "session.status", "poll.vote", "poll.vote.failed"],
             }],
             noweb: {
               store: {
@@ -379,7 +379,7 @@ serve(async (req) => {
               config: {
                 webhooks: [{
                   url: webhookUrl,
-                  events: ["message", "message.any", "session.status"],
+                  events: ["message", "message.any", "session.status", "poll.vote", "poll.vote.failed"],
                 }],
               },
             }),

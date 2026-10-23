@@ -3,11 +3,22 @@
 // Secure Google Maps Distance Matrix API Integration & Fare Calculator
 // ============================================================================
 
+export interface VehicleModel {
+  id: string;
+  name: string;
+  description: string;
+  base_price: number;
+  per_km_rate: number;
+  coverage_km: number;
+  discount_percentage: number;
+}
+
 export interface VehiclePricingConfig {
   base_price: number;
   per_km_rate: number;
   coverage_km: number;
   discount_percentage: number;
+  models?: VehicleModel[];
 }
 
 export interface PricingSettings {
@@ -41,15 +52,82 @@ export interface FareCalculationResult {
 
 /**
  * Normalized vehicle key lookup
+ * Supports menu indices:
+ * 1 -> Motorbike
+ * 2 -> Three-wheeler
+ * 3 -> Car
+ * 4 -> Van
+ * 5 -> Lorry
+ * 6 -> Bus
+ * As well as Sinhala/Tamil/English vehicle names and colloquial variations.
  */
-export function normalizeVehicleKey(vehicle: string): string {
-  const v = (vehicle || "").toLowerCase().trim().replace(/[-_\s]/g, "");
-  if (v.includes("bike") || v.includes("motor") || v === "1") return "motorbike";
-  if (v.includes("three") || v.includes("tuk") || v.includes("wheeler") || v.includes("3") || v === "2") return "three_wheeler";
-  if (v.includes("car") || v === "3") return "car";
-  if (v.includes("van") || v === "4") return "van";
-  if (v.includes("lorry") || v.includes("truck") || v === "5") return "lorry";
-  if (v.includes("bus") || v === "6") return "bus";
+export function normalizeVehicleKey(vehicle: string, bookingType?: string): string {
+  const raw = (vehicle || "").trim();
+  if (!raw) return "";
+
+  const v = raw.toLowerCase().replace(/[-_\s]/g, "");
+
+  // 1. Explicit vehicle names first (so "1. Car 🚗" or "2. Van 🚐" match car/van and not digit 1/2)
+  if (v.includes("car") || v.includes("sedan") || v.includes("alto") || v.includes("wagonr") || v.includes("කාර්") || v.includes("கார்")) {
+    return "car";
+  }
+
+  if (v.includes("van") || v.includes("kdh") || v.includes("hiace") || v.includes("වෑන්") || v.includes("வேன்")) {
+    return "van";
+  }
+
+  if (v.includes("lorry") || v.includes("truck") || v.includes("dimo") || v.includes("bata") || v.includes("ලොරි") || v.includes("லொறி")) {
+    return "lorry";
+  }
+
+  if (v.includes("bus") || v.includes("coach") || v.includes("බස්") || v.includes("பஸ்")) {
+    return "bus";
+  }
+
+  // 2. Explicit Three-wheeler text (e.g. "3wheeler", "3-wheeler", "3 wheeler", "threewheeler", "tuktuk")
+  if (
+    v.includes("3wheeler") ||
+    v.includes("threewheeler") ||
+    v.includes("three") ||
+    v.includes("tuk") ||
+    v.includes("wheeler") ||
+    v.includes("trishaw") ||
+    v.includes("bajaj") ||
+    v.includes("auto") ||
+    v.includes("ත්‍රිරෝද") ||
+    v.includes("ஆட்டோ")
+  ) {
+    return "three_wheeler";
+  }
+
+  // 3. Motorbike
+  if (v.includes("bike") || v.includes("motor") || v.includes("මෝටර්") || v.includes("பைக்")) {
+    return "motorbike";
+  }
+
+  // 4. Direct menu number check: matches "1", "1.", "1)", "2", "3", etc.
+  const numPrefixMatch = raw.match(/^\s*([1-6])(?:\.|\)|\s|$)/);
+  if (numPrefixMatch) {
+    const digit = numPrefixMatch[1];
+    if (bookingType === "schedule") {
+      switch (digit) {
+        case "1": return "car";
+        case "2": return "van";
+        case "3": return "lorry";
+        case "4": return "bus";
+      }
+    } else {
+      switch (digit) {
+        case "1": return "motorbike";
+        case "2": return "three_wheeler";
+        case "3": return "car";
+        case "4": return "van";
+        case "5": return "lorry";
+        case "6": return "bus";
+      }
+    }
+  }
+
   return "";
 }
 
@@ -141,18 +219,89 @@ const SRI_LANKA_TOWNS: Record<string, { lat: number; lng: number }> = {
  * When opened on a phone, WhatsApp renders a map preview and launches Google Maps navigation.
  */
 export function buildGoogleMapsLink(
-  locationText?: string,
-  coords?: { lat: number; lng: number } | null
+  param1?: any,
+  param2?: any
 ): string {
-  if (coords?.lat && coords?.lng) {
-    return `https://www.google.com/maps?q=${coords.lat},${coords.lng}`;
+  let locationText = "";
+  let coords: { lat: number; lng: number } | null = null;
+
+  if (typeof param1 === "string") {
+    locationText = param1;
+  } else if (param1 && typeof param1 === "object" && typeof param1.lat === "number" && typeof param1.lng === "number") {
+    coords = param1;
   }
-  if (locationText && locationText.trim()) {
+
+  if (typeof param2 === "string") {
+    locationText = param2;
+  } else if (param2 && typeof param2 === "object" && typeof param2.lat === "number" && typeof param2.lng === "number") {
+    coords = param2;
+  }
+
+  if (!coords && locationText) {
+    const match = locationText.match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+    if (match) {
+      coords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+    }
+  }
+
+  if (coords?.lat && coords?.lng) {
+    return `https://maps.google.com/?q=${coords.lat},${coords.lng}`;
+  }
+  if (locationText && typeof locationText === "string" && locationText.trim()) {
     const clean = locationText.trim();
+    if (clean.includes("maps.google.com") || clean.includes("goo.gl") || clean.includes("google.com/maps")) {
+      return clean;
+    }
     const query = clean.toLowerCase().includes("sri lanka") ? clean : `${clean}, Sri Lanka`;
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
   }
   return "";
+}
+
+/**
+ * Format any location with a clickable, guaranteed Google Maps link for drivers/shops/riders/admins
+ */
+export function formatLocationDisplay(
+  addressOrText?: string,
+  coords?: { lat: number; lng: number } | null
+): string {
+  const text = (addressOrText || "").trim();
+  if (!text || text === "N/A" || text.toLowerCase().includes("pending shop")) {
+    return text || "N/A";
+  }
+
+  // If text already has a full maps URL embedded
+  const urlMatch = text.match(/https?:\/\/(?:maps\.google\.com|goo\.gl|maps\.app\.goo\.gl|www\.google\.com\/maps)[^\s]+/i);
+  if (urlMatch) {
+    return text;
+  }
+
+  let lat = coords?.lat;
+  let lng = coords?.lng;
+
+  if ((!lat || !lng) && text) {
+    const coordMatch = text.match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+    if (coordMatch) {
+      lat = parseFloat(coordMatch[1]);
+      lng = parseFloat(coordMatch[2]);
+    }
+  }
+
+  let mapUrl = "";
+  let cleanName = text;
+
+  if (lat && lng) {
+    mapUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    cleanName = cleanName.replace(/\s*\([-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+\)/g, "").trim();
+    if (!cleanName || /^location:?$/i.test(cleanName) || /^pin location$/i.test(cleanName) || /^gps:?$/i.test(cleanName)) {
+      cleanName = `GPS Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    }
+  } else {
+    const query = cleanName.toLowerCase().includes("sri lanka") ? cleanName : `${cleanName}, Sri Lanka`;
+    mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  }
+
+  return `${cleanName}\n🗺️ *Google Maps:* ${mapUrl}`;
 }
 
 function isValidLatLng(lat: number, lng: number): boolean {
@@ -388,9 +537,10 @@ export function calculateFare(
   distanceText: string,
   vehicleKey: string,
   tripType: "one_way" | "round_trip",
-  pricingSettings: PricingSettings
+  pricingSettings: PricingSettings,
+  customModel?: VehicleModel
 ): FareCalculationResult {
-  const config = pricingSettings[vehicleKey] || {
+  const config = customModel || pricingSettings[vehicleKey] || {
     base_price: 500,
     per_km_rate: 120,
     coverage_km: 2,

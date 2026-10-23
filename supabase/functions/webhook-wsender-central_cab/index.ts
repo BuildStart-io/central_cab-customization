@@ -59,16 +59,26 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
     }
 
-    if (event !== "message" && event !== "message.any") {
+    if (event !== "message" && event !== "message.any" && event !== "poll.vote" && event !== "poll.response" && event !== "poll.vote.failed") {
       return new Response(JSON.stringify({ ok: true, skipped: event }), { headers: jsonHeaders });
     }
 
-    if (wp?.fromMe === true) {
+    const voteObj = wp.vote || {};
+    const pollObj = wp.poll || {};
+
+    if (wp?.fromMe === true || voteObj?.fromMe === true) {
       return new Response(JSON.stringify({ ok: true, skipped: "fromMe" }), { headers: jsonHeaders });
     }
 
     // STRICT BOT RULE: Direct Chat Only. Completely ignore groups, broadcasts, newsletters.
-    const fromJid = String(wp.from || wp._data?.key?.remoteJid || "");
+    const fromJid = String(
+      wp.from ||
+      voteObj.from ||
+      wp.chatId ||
+      pollObj.to ||
+      wp._data?.key?.remoteJid ||
+      ""
+    );
     if (/@g\.us$/i.test(fromJid) || /@broadcast$/i.test(fromJid) || /@newsletter$/i.test(fromJid)) {
       console.log(`[${correlationId}] Ignoring group/broadcast message from: ${fromJid}`);
       return new Response(JSON.stringify({ ok: true, skipped: "group_or_broadcast" }), { headers: jsonHeaders });
@@ -116,10 +126,31 @@ serve(async (req) => {
     const locLng = wp.location?.longitude || wMsg.locationMessage?.degreesLongitude || wp._data?.lng;
     const locName = wp.location?.name || wp.location?.description || wMsg.locationMessage?.name || wMsg.locationMessage?.address || wp._data?.loc || "";
 
+    // Poll vote / response detection
+    const isPollVote = event === "poll.vote" ||
+      event === "poll.response" ||
+      event === "poll.vote.failed" ||
+      wp.type === "poll_response" ||
+      wp.type === "poll_vote" ||
+      wp._data?.type === "poll_response" ||
+      Boolean(wp.selectedOptions) ||
+      Boolean(voteObj.selectedOptions) ||
+      Boolean(pollObj.selectedOptions) ||
+      Boolean(wp.pollVote);
+
+    let pollSelectedText = "";
+    if (isPollVote) {
+      const opts = voteObj.selectedOptions || wp.selectedOptions || pollObj.selectedOptions || wp._data?.selectedOptions || wp.pollVote?.selectedOptions;
+      if (Array.isArray(opts) && opts.length > 0) {
+        pollSelectedText = String(opts[0]);
+      }
+    }
+
     // Message type detection
     let messageType = wp.type || "text";
     if (messageType === "chat") messageType = "text";
-    if (wMsg.imageMessage) messageType = "image";
+    if (isPollVote) messageType = "poll_response";
+    else if (wMsg.imageMessage) messageType = "image";
     else if (wMsg.videoMessage) messageType = "video";
     else if (wMsg.audioMessage) messageType = wMsg.audioMessage?.ptt ? "ptt" : "audio";
     else if (wMsg.documentMessage) messageType = "document";
@@ -128,7 +159,9 @@ serve(async (req) => {
 
     // Message text extraction (do NOT pick base64 thumbnail string for location messages)
     let messageText = "";
-    if (isLocation) {
+    if (isPollVote && pollSelectedText) {
+      messageText = pollSelectedText.trim();
+    } else if (isLocation) {
       messageText = locName.trim() || (locLat && locLng ? `Location: ${Number(locLat).toFixed(4)}, ${Number(locLng).toFixed(4)}` : "WhatsApp Location Pin");
     } else {
       messageText = wp.body
@@ -140,7 +173,7 @@ serve(async (req) => {
     }
 
     const senderName = wp._data?.pushName || wp._data?.notifyName || wp.notifyName || "Customer";
-    const wahaMessageId = wp.id || wp._data?.key?.id || `${phoneNumber}-${Date.now()}`;
+    const wahaMessageId = wp.id || voteObj.id || wp._data?.key?.id || `${phoneNumber}-${Date.now()}`;
 
     // Extract direct media URL if available
     const directMediaUrl = wp.media?.url || body?.payload?.media?.url || body?.media?.url || null;

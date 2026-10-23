@@ -104,13 +104,17 @@ jobs:
               # Copy SQL schema files into the DB container
               docker cp /tmp/buildstart-deploy/db/01_schema.sql supabase-db:/tmp/01_schema.sql
               docker cp /tmp/buildstart-deploy/db/02_seed.sql supabase-db:/tmp/02_seed.sql
+              docker cp /tmp/buildstart-deploy/db/04_central_cab_schema.sql supabase-db:/tmp/04_central_cab_schema.sql || true
+              docker cp /tmp/buildstart-deploy/db/05_multilingual_services_faqs_schema.sql supabase-db:/tmp/05_multilingual_services_faqs_schema.sql || true
               
               # Run SQL schema and seeds inside the container
-              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/01_schema.sql
+              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/01_schema.sql || true
               docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/02_seed.sql || true
+              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/04_central_cab_schema.sql || true
+              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/05_multilingual_services_faqs_schema.sql || true
               
               # Cleanup files inside container
-              docker exec -i supabase-db rm -f /tmp/01_schema.sql /tmp/02_seed.sql
+              docker exec -i supabase-db rm -f /tmp/01_schema.sql /tmp/02_seed.sql /tmp/04_central_cab_schema.sql /tmp/05_multilingual_services_faqs_schema.sql || true
             else
               echo "WARNING: 'supabase-db' container not found or not running. Schema migrations skipped."
             fi

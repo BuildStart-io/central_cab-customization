@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { processCustomerChatStep, BotSessionState } from "./stateMachine.ts";
-import { handleAdminMessage, isAdminUser, CabSystemSettings } from "./adminHandler.ts";
+import { handleAdminMessage, isAdminUser, extractOrderCode, CabSystemSettings } from "./adminHandler.ts";
 import { PricingSettings } from "./pricingEngine.ts";
 
 const corsHeaders = {
@@ -134,6 +134,8 @@ async function handleSingleMessage(
     target_driver_groups: [],
   };
 
+  const welcomeSetting = settingsList?.find((s: any) => s.key === "welcome_message")?.value || null;
+
   // 2. Record Inbound Message in central_cab.conversations
   await supabase
     .schema("central_cab")
@@ -149,9 +151,11 @@ async function handleSingleMessage(
 
   let replyText = "";
 
+  const isVoiceWithOrderCode = (messageType === "ptt" || messageType === "audio" || Boolean(rawPayload?.directMediaUrl || rawPayload?.payload?.media?.url || rawPayload?.media?.url)) && Boolean(extractOrderCode(messageText));
+
   // 3. Route to Admin Handler or Customer State Machine
-  if (isAdminUser(phoneNumber, systemSettings)) {
-    console.log(`[${corrId}] Detected message from configured Admin (${phoneNumber})`);
+  if (isAdminUser(phoneNumber, systemSettings) || isVoiceWithOrderCode) {
+    console.log(`[${corrId}] Detected message from Admin/Driver (${phoneNumber}), isVoiceWithOrderCode=${isVoiceWithOrderCode}`);
     const adminResult = await handleAdminMessage(
       supabase,
       supabaseUrl,
@@ -165,6 +169,35 @@ async function handleSingleMessage(
       sessionApiKey
     );
     replyText = adminResult.replyText || "";
+
+    if (replyText) {
+      console.log(`[${corrId}] Outbound reply to Admin (${phoneNumber}): ${replyText.substring(0, 60)}`);
+      await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseServiceKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: phoneNumber,
+          message: replyText,
+          sessionApiKey,
+        }),
+      }).catch((err) => console.error("Admin reply send error:", err));
+
+      // Record Outbound in central_cab.conversations
+      await supabase
+        .schema("central_cab")
+        .from("conversations")
+        .insert({
+          user_id: userId,
+          phone_number: phoneNumber,
+          message: replyText,
+          direction: "outbound",
+          message_type: "text",
+          metadata: { correlationId: corrId, adminReply: true },
+        });
+    }
   } else {
     // Customer 1-on-1 state machine
     console.log(`[${corrId}] Routing to Customer State Machine for ${phoneNumber}`);
@@ -197,10 +230,13 @@ async function handleSingleMessage(
       currentSession,
       pricingSettings,
       systemSettings,
-      sessionApiKey
+      sessionApiKey,
+      welcomeSetting
     );
 
     replyText = stepResult.replyText;
+    const stepPoll = stepResult.poll;
+    const stepMediaUrl = stepResult.mediaUrl;
 
     // Persist updated session
     await supabase
@@ -215,37 +251,86 @@ async function handleSingleMessage(
         last_interaction: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
-  }
 
-  // 4. Send outbound WhatsApp reply if generated
-  if (replyText) {
-    console.log(`[${corrId}] Outbound reply to ${phoneNumber}: ${replyText.substring(0, 60)}`);
-    
-    // Send via send-whatsapp-central_cab
-    await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${supabaseServiceKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        to: phoneNumber,
-        message: replyText,
-        sessionApiKey,
-      }),
-    });
+    // 4. Send outbound WhatsApp reply or poll if generated
+    if (replyText || stepPoll || stepMediaUrl) {
+      if (stepMediaUrl) {
+        console.log(`[${corrId}] Outbound media to ${phoneNumber}: ${stepMediaUrl}`);
+        await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: phoneNumber,
+            mediaUrl: stepMediaUrl,
+            sessionApiKey,
+          }),
+        }).catch(err => console.error("Media send error:", err));
+      }
 
-    // Record Outbound in central_cab.conversations
-    await supabase
-      .schema("central_cab")
-      .from("conversations")
-      .insert({
-        user_id: userId,
-        phone_number: phoneNumber,
-        message: replyText,
-        direction: "outbound",
-        message_type: "text",
-        metadata: { correlationId: corrId },
-      });
+      // Send text message if no poll, or if explicitly configured (e.g. welcome message before language poll)
+      const shouldSendText = replyText && replyText.trim() && (!stepPoll || stepResult.sendTextWithPoll);
+      if (shouldSendText) {
+        console.log(`[${corrId}] Outbound reply to ${phoneNumber}: ${replyText.substring(0, 60)}`);
+        
+        await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: phoneNumber,
+            message: replyText,
+            sessionApiKey,
+          }),
+        });
+
+        // Record Outbound in central_cab.conversations
+        await supabase
+          .schema("central_cab")
+          .from("conversations")
+          .insert({
+            user_id: userId,
+            phone_number: phoneNumber,
+            message: replyText,
+            direction: "outbound",
+            message_type: "text",
+            metadata: { correlationId: corrId },
+          });
+      }
+
+      if (stepPoll) {
+        console.log(`[${corrId}] Outbound poll to ${phoneNumber}: ${stepPoll.name} (${stepPoll.options.length} options)`);
+
+        await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            to: phoneNumber,
+            poll: stepPoll,
+            sessionApiKey,
+          }),
+        });
+
+        // Record Poll in central_cab.conversations
+        await supabase
+          .schema("central_cab")
+          .from("conversations")
+          .insert({
+            user_id: userId,
+            phone_number: phoneNumber,
+            message: `[Poll] ${stepPoll.name}\n${stepPoll.options.join("\n")}`,
+            direction: "outbound",
+            message_type: "poll",
+            metadata: { correlationId: corrId, poll: stepPoll },
+          });
+      }
+    }
   }
 }

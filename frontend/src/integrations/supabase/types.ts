@@ -157,6 +157,7 @@ export type Database = {
       faqs: {
         Row: {
           answer: string
+          category?: string | null
           created_at: string
           id: string
           is_active: boolean
@@ -169,6 +170,7 @@ export type Database = {
         }
         Insert: {
           answer: string
+          category?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -181,6 +183,7 @@ export type Database = {
         }
         Update: {
           answer?: string
+          category?: string | null
           created_at?: string
           id?: string
           is_active?: boolean

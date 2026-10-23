@@ -1,357 +1,579 @@
 // ============================================================================
-// Ceylon Central Cabs & Delivery - Finite State Machine (FSM)
-// Strict Step-by-Step Conversational Booking Engine (0% Hallucination)
+// Ceylon Central Cabs & Delivery - Main Finite State Machine (FSM)
+// Strict Conversational Booking Orchestrator with Modular Category Sub-Files
 // ============================================================================
 
-import {
-  getGoogleMapsDistance,
-  calculateFare,
-  normalizeVehicleKey,
-  getVehicleDisplayName,
-  PricingSettings,
-  LocationInput,
-  FareCalculationResult,
-  buildGoogleMapsLink,
-  resolveLocationCoords,
-} from "./pricingEngine.ts";
+import { PricingSettings } from "./pricingEngine.ts";
 import { CabSystemSettings } from "./adminHandler.ts";
+import {
+  SupportedLanguage,
+  detectLanguageSelection,
+  detectServiceCategory,
+  isResetChoice,
+  isHelpChoice,
+  getLanguagePoll,
+  getCategoryPoll,
+  getRentVehiclePoll,
+  getDeliveryCategoryPoll,
+  getPostBookingPoll,
+  getStepPromptText,
+} from "./i18n.ts";
+import { BotSessionState, StepProcessResult, PollPayload } from "./flows/types.ts";
+import { handleCabFlowStep } from "./flows/cabFlow.ts";
+import { handleDeliveryFlowStep } from "./flows/deliveryFlow.ts";
+import { handleRentFlowStep } from "./flows/rentFlow.ts";
+import { handleFaqFlowStep, queryFaqsAndAi, getStepPollForCurrentStep } from "./flows/faqFlow.ts";
+import { handleCancelFlowStep, startCancelFlow } from "./flows/cancelFlow.ts";
 
-function isPossibleQuestion(text: string): boolean {
-  const lower = text.toLowerCase();
+export type { BotSessionState, StepProcessResult, PollPayload };
+
+function isPossibleQuestion(text: string, messageType?: string): boolean {
+  if (messageType === "location") return false;
+  const lower = (text || "").toLowerCase().trim();
+  if (
+    lower.startsWith("location:") ||
+    lower.includes("whatsapp location pin") ||
+    /^location:\s*[-+]?\d/i.test(lower) ||
+    /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(lower)
+  ) {
+    return false;
+  }
   if (lower.includes("?")) return true;
+  if (text.includes("http://") || text.includes("https://")) return false;
   
   const engWords = [
-    "price", "how much", "rate", "cost", "charge",
+    "price", "how much", "rate", "cost", "charge", "charges",
     "keeyada", "kiyada", "gaana", "gani", "mudal",
-    "thiyenawada", "puluwanda", "koheda", "wisthara", "visthara", "detail",
+    "thiyenawada", "puluwanda", "puluwandha", "puluwan", "koheda", "wisthara", "visthara", "detail", "details",
     "ac", "aircon", "van ekak", "car ekak", "bus ekak",
-    "what", "how", "when", "where", "why", "can you", "do you", "cancel", "epa",
-    "wrong", "incorrect", "distance", "location", "pila", "waradi", "dura", "weradi"
+    "what", "how", "when", "where", "why", "can you", "do you", "can i", "is it", "possible",
+    "wrong", "incorrect", "distance", "pila", "waradi", "dura", "weradi",
+    "mudiyuma", "mudiyatha", "ealuma", "theriyuma", "iruka", "irukka", "irukkuma", "vilai", "ethana", "evvalavu", "thavarana", "maathu",
+    "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage", "driver"
   ];
   
-  const sinWords = ["මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර"];
+  const sinWords = ["මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය"];
 
-  if (text.includes("http://") || text.includes("https://")) return false;
-  if (text.length > 100) return true;
+  const tamWords = [
+    "கேள்வி", "சந்தேகம்", "உதவி", "விலை", "கட்டணம்", "முடியுமா", "முடியாதா",
+    "இருக்கா", "இருக்குமா", "எப்படி", "எப்போது", "எங்கே", "என்ன", "எத்தனை",
+    "ஏசி", "தள்ளுபடி", "ரத்து", "லக்கேஜ்", "முன்பணம்", "விபரம்", "பாதுகாப்பு"
+  ];
+
+  if (text.length > 80 && !lower.startsWith("location:")) return true;
 
   for (const w of engWords) {
-    const regex = new RegExp(`\\b${w.replace(/\//g, "\\/")}\\b`);
+    const regex = new RegExp(`\\b${w.replace(/\//g, "\\/")}\\b`, "i");
     if (regex.test(lower)) return true;
   }
   
   for (const w of sinWords) {
     if (lower.includes(w)) return true;
   }
+
+  for (const w of tamWords) {
+    if (lower.includes(w)) return true;
+  }
   
   return false;
 }
 
-function getCurrentStepPrompt(flow: string, step: string): string {
+function getWelcomeMessage(welcomeSetting?: any): string {
+  if (welcomeSetting?.text?.trim()) {
+    return welcomeSetting.text.trim();
+  }
+  return "Welcome to Central Cabs & Delivery / Central Cabs වෙත සාදරයෙන් පිළිගනිමු / Central Cabs-க்கு தங்களை அன்புடன் வரவேற்கிறோம்!";
+}
+
+export async function processCustomerChatStep(
+  supabase: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  userId: string,
+  phoneNumber: string,
+  messageText: string,
+  messageType: string,
+  rawPayload: any,
+  session: BotSessionState,
+  pricingSettings: PricingSettings,
+  systemSettings: CabSystemSettings,
+  sessionApiKey: string,
+  welcomeSetting?: any
+): Promise<StepProcessResult> {
+  const trimmed = (messageText || "").trim();
+  const lower = trimmed.toLowerCase();
+  const data = session.session_data || {};
+
+  // Retrieve session language or allow explicit keyword switches (tamil, sinhala, english)
+  if (lower === "tamil" || lower === "தமிழ்" || lower === "tamizh" || lower === "thamizh") {
+    data.language = "ta";
+  } else if (lower === "sinhala" || lower === "සිංහල" || lower === "singlish") {
+    data.language = "si";
+  } else if (lower === "english" || lower === "en") {
+    data.language = "en";
+  }
+  let lang: SupportedLanguage = data.language || "si";
+
+  // =========================================================================
+  // 1. GLOBAL RESET INTERCEPTION (Poll vote or text command)
+  // =========================================================================
+  if (isResetChoice(trimmed)) {
+    console.log(`[stateMachine] Reset requested by ${phoneNumber}`);
+    return {
+      replyText: "",
+      poll: getCategoryPoll(lang),
+      nextFlow: "IDLE",
+      nextStep: "CATEGORY_CHOICE",
+      sessionData: { language: lang },
+    };
+  }
+
+  // =========================================================================
+  // GLOBAL CHANGE LANGUAGE INTERCEPTION
+  // =========================================================================
+  const isChangeLangCmd =
+    lower === "language" ||
+    lower === "change language" ||
+    lower === "භාෂාව" ||
+    lower === "மொழி" ||
+    lower === "lang";
+  if (isChangeLangCmd) {
+    console.log(`[stateMachine] Language change requested by ${phoneNumber}`);
+    return {
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න / தயவுசெய்து உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
+      poll: getLanguagePoll(),
+      sendTextWithPoll: true,
+      nextFlow: "IDLE",
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: data,
+    };
+  }
+
+  // =========================================================================
+  // 2. GLOBAL CANCEL ORDER INTERCEPTION
+  // =========================================================================
+  const isDirectCancelCommand = lower === "cancel" || lower === "cancel order" || lower === "අවලංගු" || lower === "ரத்து";
+  const isConfirmationStep =
+    (session.current_step || "WELCOME") === "CANCEL_CONFIRM" ||
+    (session.current_step || "WELCOME") === "CAB_CONFIRM" ||
+    (session.current_step || "WELCOME") === "DELIVERY_CONFIRM" ||
+    (session.current_step || "WELCOME") === "RENT_CONFIRM";
+
+  if (isDirectCancelCommand && !isConfirmationStep) {
+    return await startCancelFlow(supabase, userId, phoneNumber, session.current_step, lang, welcomeSetting);
+  }
+
+  // =========================================================================
+  // GLOBAL HELP / FAQ INTERCEPTION
+  // =========================================================================
+  const isHelpCmd = isHelpChoice(trimmed);
+  if (isHelpCmd && !isConfirmationStep) {
+    const isPausedFromBooking = (session.flow_type === "CAB_FLOW" || session.flow_type === "DELIVERY_FLOW" || session.flow_type === "RENT_A_CAR_FLOW");
+    if (isPausedFromBooking) {
+      data.paused_flow = session.flow_type;
+      data.paused_step = session.current_step;
+    }
+    const helpPrompt = lang === "ta"
+      ? (isPausedFromBooking
+        ? "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். பதில் அளித்தவுடன் நீங்கள் விட்ட இடத்தில் இருந்து முன்பதிவைத் தொடரலாம்.\n\n(முன்பதிவைத் தொடர *Continue* அல்லது மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)"
+        : "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். எங்கள் FAQ மற்றும் சேவை விபரங்களின் அடிப்படையில் உங்களுக்கு உடனடியாகப் பதிலளிக்கப்படும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)")
+      : (lang === "si"
+        ? (isPausedFromBooking
+          ? "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. පිළිතුර ලබා දුන් පසු ඔබ නැවතුණු තැනින්ම Booking එක ඉදිරියට ගෙන යා හැක.\n\n(Booking එක ඉදිරියට ගෙන යාමට *Continue* හෝ මෙනුවට යාමට *Menu* Type කරන්න)"
+          : "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)")
+        : (isPausedFromBooking
+          ? "❓ *How can we help you?*\n\nPlease type your question or doubt here. Once answered, you can continue your booking right from where you left off.\n\n(Type *Continue* to resume booking, or *Menu* to return to main menu)"
+          : "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)"));
+
+    return {
+      replyText: helpPrompt,
+      nextFlow: "FAQ_FLOW",
+      nextStep: "FAQ_ASK",
+      sessionData: data,
+    };
+  }
+
+  // =========================================================================
+  // 3. WELCOME & RESTART COMMANDS
+  // =========================================================================
+  const isRestartGreeting = lower === "hi" || lower === "hello" || lower === "hey" || lower === "start";
+  if (isRestartGreeting) {
+    console.log(`[stateMachine] Restart/Greeting received from ${phoneNumber}`);
+    const welcomeMsg = getWelcomeMessage(welcomeSetting);
+    const welcomeMedia = welcomeSetting?.media_url || (Array.isArray(welcomeSetting?.media_urls) && welcomeSetting.media_urls[0]) || undefined;
+    return {
+      replyText: welcomeMsg,
+      poll: getLanguagePoll(),
+      mediaUrl: welcomeMedia,
+      sendTextWithPoll: true,
+      nextFlow: "IDLE",
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: data,
+    };
+  }
+
+  const flow = session.flow_type || "IDLE";
+  const step = session.current_step || "WELCOME";
+
+  // Invalid fallback helper
+  const invalidFallback = async (fallbackStr: string, stepPoll?: PollPayload): Promise<StepProcessResult> => {
+    const aiReply = await handleAiFallback(supabase, userId, trimmed, fallbackStr, pricingSettings, lang);
+    
+    if (aiReply.includes("INTENT_CANCEL_ORDER")) {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
+    if (aiReply.includes("INTENT_WRONG_LOCATION")) {
+      delete data.pickup_text;
+      delete data.pickup_coords;
+      delete data.dropoff_text;
+      delete data.dropoff_coords;
+      const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
+      return {
+        replyText: "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+        nextFlow: flow,
+        nextStep,
+        sessionData: data,
+      };
+    }
+
+    if (aiReply.includes("NOT_A_QUESTION")) {
+      return {
+        replyText: fallbackStr,
+        poll: stepPoll,
+        nextFlow: flow,
+        nextStep: step,
+        sessionData: data,
+      };
+    }
+    return {
+      replyText: aiReply,
+      poll: stepPoll,
+      nextFlow: flow,
+      nextStep: step,
+      sessionData: data,
+    };
+  };
+
+  // Check if current message is a location pin/address or currently on a location input step
+  const isLocationMsg = messageType === "location"
+    || lower.startsWith("location:")
+    || lower.includes("whatsapp location pin")
+    || Boolean(rawPayload?.locationDetails)
+    || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
+
+  const isLocationStep = step === "DELIVERY_LOCATION" || step === "CAB_PICKUP" || step === "CAB_DROPOFF" || step === "RENT_LOCATION";
+  const shouldInterceptQuestion = !isLocationMsg && (!isLocationStep || trimmed.includes("?"));
+
+  // Question interception for active booking flows (Answers question and resumes flow!)
+  if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldInterceptQuestion && isPossibleQuestion(trimmed, messageType)) {
+    const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
+    
+    if (answer.includes("INTENT_CANCEL_ORDER")) {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
+    if (answer.includes("INTENT_WRONG_LOCATION")) {
+      delete data.pickup_text;
+      delete data.pickup_coords;
+      delete data.dropoff_text;
+      delete data.dropoff_coords;
+      const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
+      return {
+        replyText: lang === "ta"
+          ? "உங்கள் Location அல்லது தூரம் தவறாக உள்ளதை உணர்ந்தோம். தயவுசெய்து உங்கள் Pickup இடத்தை மீண்டும் உள்ளிடவும்:"
+          : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+        nextFlow: flow,
+        nextStep,
+        sessionData: data,
+      };
+    }
+
+    const stepPrompt = getStepPromptText(flow, step, lang);
+    const stepPoll = getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
+    const resumeHeader = lang === "ta"
+      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *உங்கள் முன்பதிவைத் தொடரலாம்:*\n"
+      : (lang === "si"
+        ? "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n"
+        : "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n");
+
+    return {
+      replyText: `${answer}\n\n${resumeHeader}${stepPrompt}`,
+      poll: stepPoll,
+      sendTextWithPoll: !!stepPoll,
+      nextFlow: flow,
+      nextStep: step,
+      sessionData: data,
+    };
+  }
+
+  // =========================================================================
+  // 4. WELCOME & LANGUAGE CHOICE
+  // =========================================================================
+  if (step === "WELCOME") {
+    const welcomeMsg = getWelcomeMessage(welcomeSetting);
+    const welcomeMedia = welcomeSetting?.media_url || (Array.isArray(welcomeSetting?.media_urls) && welcomeSetting.media_urls[0]) || undefined;
+    return {
+      replyText: welcomeMsg,
+      poll: getLanguagePoll(),
+      mediaUrl: welcomeMedia,
+      sendTextWithPoll: true,
+      nextFlow: "IDLE",
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: data,
+    };
+  }
+
+  if (step === "LANGUAGE_CHOICE") {
+    const chosenLang = detectLanguageSelection(trimmed);
+    if (chosenLang) {
+      data.language = chosenLang;
+      lang = chosenLang;
+      console.log(`[stateMachine] Language selected: ${chosenLang} for ${phoneNumber}`);
+      return {
+        replyText: "",
+        poll: getCategoryPoll(lang),
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: data,
+      };
+    }
+
+    // Invalid language selection: re-prompt language poll
+    return {
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න / தயவுசெய்து உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
+      poll: getLanguagePoll(),
+      sendTextWithPoll: true,
+      nextFlow: "IDLE",
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: data,
+    };
+  }
+
+  // =========================================================================
+  // POST-BOOKING COMPLETED STATE
+  // =========================================================================
+  if (step === "BOOKING_COMPLETED") {
+    if (isHelpChoice(trimmed)) {
+      return {
+        replyText: lang === "ta"
+          ? "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். எங்கள் FAQ மற்றும் சேவை விபரங்களின் அடிப்படையில் உங்களுக்கு உடனடியாகப் பதிலளிக்கப்படும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)"
+          : (lang === "si"
+            ? "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)"
+            : "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)"),
+        nextFlow: "FAQ_FLOW",
+        nextStep: "FAQ_ASK",
+        sessionData: data,
+      };
+    }
+
+    if (lower === "cancel" || lower.startsWith("2.") || lower === "2" || lower.includes("cancel")) {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
+
+    if (isPossibleQuestion(trimmed)) {
+      const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
+      const followUpNote = lang === "ta"
+        ? "\n\n💡 மேலதிக கேள்வி கேட்கலாம் அல்லது பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்."
+        : (lang === "si"
+          ? "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න."
+          : "\n\n💡 Feel free to ask another question or type *Menu* to return to main options.");
+      return {
+        replyText: `${answer}${followUpNote}`,
+        nextFlow: "FAQ_FLOW",
+        nextStep: "FAQ_ASK",
+        sessionData: data,
+      };
+    }
+
+    return {
+      replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+      poll: getCategoryPoll(lang),
+      nextFlow: "IDLE",
+      nextStep: "CATEGORY_CHOICE",
+      sessionData: { language: lang },
+    };
+  }
+
+  if (step === "CATEGORY_CHOICE" || (flow === "IDLE" && step !== "LANGUAGE_CHOICE" && step !== "WELCOME")) {
+    const cat = detectServiceCategory(trimmed);
+
+    // 1. Ride Now: immediately enter CAB_FLOW and ask Name directly
+    if (cat === "ride_now") {
+      data.service_type = "transport";
+      data.booking_type = "now";
+      data.scheduled_time = "Immediate / Now";
+      return {
+        replyText: getStepPromptText("CAB_FLOW", "CAB_NAME", lang),
+        nextFlow: "CAB_FLOW",
+        nextStep: "CAB_NAME",
+        sessionData: data,
+      };
+    }
+
+    // 2. Schedule Ride: immediately enter CAB_FLOW and ask Date directly
+    if (cat === "ride_schedule") {
+      data.service_type = "transport";
+      data.booking_type = "schedule";
+      return {
+        replyText: getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_DATE", lang),
+        nextFlow: "CAB_FLOW",
+        nextStep: "CAB_SCHEDULE_DATE",
+        sessionData: data,
+      };
+    }
+
+    // 3. Rent a Car
+    if (cat === "rent_a_car") {
+      data.service_type = "rent_a_car";
+      return {
+        replyText: getStepPromptText("RENT_A_CAR_FLOW", "RENT_VEHICLE_CHOICE", lang),
+        poll: getRentVehiclePoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "RENT_A_CAR_FLOW",
+        nextStep: "RENT_VEHICLE_CHOICE",
+        sessionData: data,
+      };
+    }
+
+    // 4. Delivery
+    if (cat === "delivery") {
+      data.service_type = "delivery";
+      return {
+        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_CATEGORY", lang),
+        poll: getDeliveryCategoryPoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "DELIVERY_FLOW",
+        nextStep: "DELIVERY_CATEGORY",
+        sessionData: data,
+      };
+    }
+
+    // 5. Ask a question
+    if (cat === "ask_a_question") {
+      data.service_type = "ask_a_question";
+      return {
+        replyText: getStepPromptText("FAQ_FLOW", "FAQ_ASK", lang),
+        nextFlow: "FAQ_FLOW",
+        nextStep: "FAQ_ASK",
+        sessionData: data,
+      };
+    }
+
+    // Unrecognized selection: re-display Main Category Poll
+    return {
+      replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+      poll: getCategoryPoll(lang),
+      nextFlow: "IDLE",
+      nextStep: "CATEGORY_CHOICE",
+      sessionData: data,
+    };
+  }
+
+  // =========================================================================
+  // 5. ROUTE TO MODULAR CATEGORY SUB-FILES
+  // =========================================================================
   if (flow === "CAB_FLOW") {
-    switch (step) {
-      case "CAB_TIMING_CHOICE": return "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)";
-      case "CAB_SCHEDULE_TIME": return "කරුණාකර ඔබගේ ගමනට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)";
-      case "CAB_NAME": return "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න:";
-      case "CAB_PHONE": return "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න:";
-      case "CAB_VEHICLE": return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺\n3. Car 🚗\n4. Van 🚐\n5. Lorry 🚚\n6. Bus 🚌";
-      case "CAB_PICKUP": return "කරුණාකර ඔබගේ Live/Current location එක WhatsApp හරහා share කරන්න. ඔබට එය share කිරීමට අපහසු නම්, කරුණාකර ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-      case "CAB_DROPOFF": return "කරුණාකර ඔබගේ Drop-off location එක WhatsApp හරහා share කරන්න හෝ ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-      case "CAB_TRIP_TYPE": return "මෙය One-Way ගමනක් ද නැතහොත් Round Trip (Up & Down) ගමනක් ද?\n\n1. One-Way\n2. Round Trip";
-      case "CAB_CONFIRM": return "කරුණාකර Booking එක Confirm කිරීමට *Yes* ලෙස හෝ Cancel කිරීමට *No* ලෙස Reply කරන්න.";
-    }
-  } else if (flow === "DELIVERY_FLOW") {
-    switch (step) {
-      case "DELIVERY_TIMING_CHOICE": return "ඔබට Delivery පහසුකම දැන්ම අවශ්‍යද නැතහොත් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)";
-      case "DELIVERY_SCHEDULE_TIME": return "කරුණාකර Delivery කිරීමට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)";
-      case "DELIVERY_NAME": return "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න:";
-      case "DELIVERY_PHONE": return "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න:";
-      case "DELIVERY_VEHICLE": return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺";
-      case "DELIVERY_PICKUP": return "කරුණාකර ඔබගේ Live/Current location එක WhatsApp හරහා share කරන්න. ඔබට එය share කිරීමට අපහසු නම්, කරුණාකර ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-      case "DELIVERY_DROPOFF": return "කරුණාකර ඔබගේ Drop-off location එක WhatsApp හරහා share කරන්න හෝ ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-      case "DELIVERY_ITEMS": return "කරුණාකර Delivery කළ යුතු භාණ්ඩ ලැයිස්තුව Type කරන්න:";
-      case "DELIVERY_CONFIRM": return "කරුණාකර Booking එක Confirm කිරීමට *Yes* ලෙස හෝ Cancel කිරීමට *No* ලෙස Reply කරන්න.";
-    }
-  }
-  return "කරුණාකර ඔබගේ පිළිතුර ලබා දෙන්න.";
-}
-
-export function isTimingNow(text: string): boolean {
-  const l = (text || "").toLowerCase().trim();
-  if (l === "1" || l.startsWith("1.") || l.startsWith("1 ") || l === "1)") return true;
-  if (l.includes("now") || l.includes("immediate") || l.includes("urgent")) return true;
-  if (l.includes("ipo") || l.includes("ipova") || l.includes("ipove")) return true;
-  if (l.includes("dan") || l.includes("damma") || l.includes("danma") || l.includes("දැන්")) return true;
-  return false;
-}
-
-export function isTimingSchedule(text: string): boolean {
-  const l = (text || "").toLowerCase().trim();
-  if (l === "2" || l.startsWith("2.") || l.startsWith("2 ") || l.startsWith("2)")) return true;
-  if (l.includes("sched") || l.includes("schd") || l.includes("later") || l.includes("reserve") || l.includes("advance")) return true;
-  if (l.includes("passe") || l.includes("pasuwata") || l.includes("පසුව") || l.includes("කාලය")) return true;
-  if (l.includes("naeram") || l.includes("neram") || l.includes("schedule panna")) return true;
-  return false;
-}
-
-export interface ParsedSchedule {
-  raw: string;
-  formatted: string;
-  dateStr: string;
-  timeStr: string;
-  isRecognized: boolean;
-}
-
-/**
- * Intelligent Multi-lingual Natural Date & Time Parser
- * Handles Tamil/Tanglish ("nalaiku 10 mani", "indaiku evening 4 mani"),
- * Sinhala/Singlish ("heta udeta 9", "ada hawasata 4"),
- * and English ("tomorrow 10 am", "today 4 pm").
- */
-export function parseNaturalSchedule(input: string, now = new Date()): ParsedSchedule {
-  const text = (input || "").trim();
-  const lower = text.toLowerCase();
-
-  // Sri Lanka standard time offset (UTC + 5:30 = 330 minutes)
-  const slOffsetMinutes = 330;
-  const localNow = new Date(now.getTime() + (slOffsetMinutes - now.getTimezoneOffset()) * 60000);
-
-  let targetDate = new Date(localNow);
-  let hasExplicitDay = false;
-  let dateLabel = "";
-
-  // 1. Detect Day: Tomorrow
-  if (
-    lower.includes("nalaiku") ||
-    lower.includes("naalaiku") ||
-    lower.includes("nalai") ||
-    lower.includes("naalai") ||
-    lower.includes("heta") ||
-    lower.includes("tomorrow") ||
-    lower.includes("tmrw") ||
-    lower.includes("tomo")
-  ) {
-    targetDate.setDate(targetDate.getDate() + 1);
-    hasExplicitDay = true;
-    dateLabel = "Tomorrow";
-  }
-  // Day after tomorrow
-  else if (
-    lower.includes("anikaal") ||
-    lower.includes("anekal") ||
-    lower.includes("anidda") ||
-    lower.includes("day after tomorrow") ||
-    lower.includes("mathanaal")
-  ) {
-    targetDate.setDate(targetDate.getDate() + 2);
-    hasExplicitDay = true;
-    dateLabel = "Day after tomorrow";
-  }
-  // Today
-  else if (
-    lower.includes("indaiku") ||
-    lower.includes("innaiku") ||
-    lower.includes("inraiku") ||
-    lower.includes("indru") ||
-    lower.includes("ada") ||
-    lower.includes("today") ||
-    lower.includes("tonight")
-  ) {
-    hasExplicitDay = true;
-    dateLabel = "Today";
+    return await handleCabFlowStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      phoneNumber,
+      trimmed,
+      messageType,
+      rawPayload,
+      step,
+      data,
+      lang,
+      pricingSettings,
+      systemSettings,
+      sessionApiKey,
+      invalidFallback
+    );
   }
 
-  // 2. Detect Time Period
-  let hours = -1;
-  let minutes = 0;
-  let isPM = false;
-  let isAM = false;
-
-  if (
-    lower.includes("evening") ||
-    lower.includes("night") ||
-    lower.includes("pm") ||
-    lower.includes("maala") ||
-    lower.includes("maalai") ||
-    lower.includes("saayantharam") ||
-    lower.includes("iravu") ||
-    lower.includes("eravu") ||
-    lower.includes("hawasa") ||
-    lower.includes("hawasata") ||
-    lower.includes("reeta") ||
-    lower.includes("dawal") ||
-    lower.includes("pinpakal")
-  ) {
-    isPM = true;
-  } else if (
-    lower.includes("morning") ||
-    lower.includes("am") ||
-    lower.includes("kaalai") ||
-    lower.includes("kaalaila") ||
-    lower.includes("udeta") ||
-    lower.includes("udey") ||
-    lower.includes("munpakal")
-  ) {
-    isAM = true;
+  if (flow === "DELIVERY_FLOW") {
+    return await handleDeliveryFlowStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      phoneNumber,
+      trimmed,
+      messageType,
+      rawPayload,
+      step,
+      data,
+      lang,
+      pricingSettings,
+      systemSettings,
+      sessionApiKey,
+      invalidFallback
+    );
   }
 
-  // Extract hours and optional minutes: "10:30", "10.30", "10", "4 mani", "10ta"
-  const timeRegex = /(\b\d{1,2})([:.](\d{2}))?\s*(mani|ta|am|pm|o'?clock)?\b/i;
-  const match = lower.match(timeRegex);
-
-  if (match) {
-    hours = parseInt(match[1], 10);
-    if (match[3]) {
-      minutes = parseInt(match[3], 10);
-    }
+  if (flow === "RENT_A_CAR_FLOW") {
+    return await handleRentFlowStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      phoneNumber,
+      trimmed,
+      step,
+      data,
+      lang,
+      systemSettings,
+      sessionApiKey,
+      invalidFallback
+    );
   }
 
-  if (hours !== -1) {
-    if (isPM && hours < 12) {
-      hours += 12;
-    } else if (isAM && hours === 12) {
-      hours = 0;
-    } else if (!isAM && !isPM) {
-      // Heuristics: 1..6 -> PM (afternoon), 7..11 -> AM (morning)
-      if (hours >= 1 && hours <= 6) {
-        hours += 12;
-      }
-    }
-
-    // If day was not explicitly specified, decide whether today or tomorrow
-    if (!hasExplicitDay) {
-      const currentHour = localNow.getHours();
-      const currentMin = localNow.getMinutes();
-      if (hours > currentHour || (hours === currentHour && minutes > currentMin)) {
-        dateLabel = "Today";
-      } else {
-        targetDate.setDate(targetDate.getDate() + 1);
-        dateLabel = "Tomorrow";
-      }
-    }
-
-    const yyyy = targetDate.getFullYear();
-    const mm = String(targetDate.getMonth() + 1).padStart(2, "0");
-    const dd = String(targetDate.getDate()).padStart(2, "0");
-
-    const displayHoursNum = hours % 12 === 0 ? 12 : hours % 12;
-    const displayHours = String(displayHoursNum).padStart(2, "0");
-    const displayMinutes = String(minutes).padStart(2, "0");
-    const ampmStr = hours >= 12 ? "PM" : "AM";
-
-    const formattedTime = `${displayHours}:${displayMinutes} ${ampmStr}`;
-    const formattedDate = `${yyyy}-${mm}-${dd}`;
-    const fullFormatted = `${formattedDate} ${formattedTime} (${dateLabel})`;
-
-    return {
-      raw: text,
-      formatted: fullFormatted,
-      dateStr: formattedDate,
-      timeStr: formattedTime,
-      isRecognized: true,
-    };
+  if (flow === "FAQ_FLOW") {
+    return await handleFaqFlowStep(
+      supabase,
+      userId,
+      trimmed,
+      data,
+      lang,
+      pricingSettings,
+      handleAiFallback
+    );
   }
 
+  if (flow === "CANCEL_FLOW") {
+    return await handleCancelFlowStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      phoneNumber,
+      trimmed,
+      step,
+      data,
+      lang,
+      systemSettings,
+      sessionApiKey,
+      invalidFallback
+    );
+  }
+
+  // Default Fallback
   return {
-    raw: text,
-    formatted: text,
-    dateStr: "",
-    timeStr: "",
-    isRecognized: false,
+    replyText: getWelcomeMessage(welcomeSetting),
+    poll: getCategoryPoll(lang),
+    nextFlow: "IDLE",
+    nextStep: "CATEGORY_CHOICE",
+    sessionData: {},
   };
 }
-
-export interface BotSessionState {
-  phone_number: string;
-  user_id: string;
-  flow_type: "IDLE" | "CAB_FLOW" | "DELIVERY_FLOW" | "ADMIN_FLOW" | "CANCEL_FLOW";
-  current_step: string;
-  session_data: {
-    customer_name?: string;
-    customer_phone?: string;
-    booking_type?: "now" | "schedule";
-    scheduled_time?: string;
-    vehicle_key?: string;
-    vehicle_name?: string;
-    pickup_text?: string;
-    pickup_coords?: { lat: number; lng: number };
-    dropoff_text?: string;
-    dropoff_coords?: { lat: number; lng: number };
-    trip_type?: "one_way" | "round_trip";
-    delivery_items?: string;
-    distance_km?: number;
-    distance_text?: string;
-    base_price?: number;
-    per_km_rate?: number;
-    coverage_km?: number;
-    gross_fare?: number;
-    discount_amount?: number;
-    total_fare?: number;
-    [key: string]: any;
-  };
-}
-
-/**
- * Generate unique 3-4 digit Order Code (e.g., #ORD845)
- */
-function generateOrderCode(): string {
-  const randomNum = Math.floor(100 + Math.random() * 900); // 3-digit number 100-999
-  return `#ORD${randomNum}`;
-}
-
-/**
- * Format currency LKR
- */
-function formatLKR(amount: number): string {
-  return `LKR ${Number(amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-/**
- * Extract location text or coordinates from incoming message
- */
-function extractLocation(messageText: string, rawPayload: any): LocationInput {
-  const p = rawPayload?.payload || rawPayload || {};
-  
-  // Search aggressively for location data in common webhook formats
-  const loc = p.location || 
-              p.locationMessage || 
-              p.message?.locationMessage || 
-              p.data?.location ||
-              rawPayload?.locationDetails || 
-              p._data?.location ||
-              p._data || 
-              p;
-
-  const lat = loc?.latitude || loc?.degreesLatitude || loc?.lat || p.lat || p.latitude;
-  const lng = loc?.longitude || loc?.degreesLongitude || loc?.lng || p.lng || p.longitude;
-
-  if (lat && lng) {
-    const latNum = Number(lat);
-    const lngNum = Number(lng);
-    const nameOrDesc = (loc?.name || loc?.description || loc?.address || loc?.loc || "").trim();
-    const mapUrl = `https://maps.google.com/?q=${latNum},${lngNum}`;
-    const cleanText = nameOrDesc ? `${nameOrDesc} (${mapUrl})` : mapUrl;
-    return {
-      coords: { lat: latNum, lng: lngNum },
-      text: cleanText,
-    };
-  }
-
-  let cleanText = (messageText || "").trim();
-  // Guard against raw base64 thumbnails leaking into location text
-  if (cleanText.startsWith("/9j/") || cleanText.startsWith("data:image") || (!cleanText.includes("http") && cleanText.length > 300)) {
-    cleanText = "Shared Location Pin";
-  }
-
-  return { text: cleanText };
-}
-
 
 async function handleAiFallback(
   supabase: any,
   userId: string,
   userMessage: string,
   fallbackErrorPrompt: string,
-  pricingSettings: PricingSettings
+  pricingSettings: PricingSettings,
+  lang: SupportedLanguage = "si"
 ): Promise<string> {
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
   const aiGenerateUrl = Deno.env.get("AI_GENERATE_URL");
@@ -361,11 +583,11 @@ async function handleAiFallback(
     return "NOT_A_QUESTION";
   }
 
-  // 1. Fetch FAQs
+  // Fetch FAQs
   const { data: faqs } = await supabase
     .schema("central_cab")
     .from("faqs")
-    .select("question, answer")
+    .select("question, answer, category")
     .eq("is_active", true)
     .eq("user_id", userId);
 
@@ -380,8 +602,20 @@ Lorry: LKR ${pricingSettings.lorry.per_km_rate}/km (Base: LKR ${pricingSettings.
 Bus: LKR ${pricingSettings.bus.per_km_rate}/km (Base: LKR ${pricingSettings.bus.base_price})
 `;
 
+  const langRule = lang === "ta"
+    ? "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in conversational Tamil using Tamil script (தமிழ்)."
+    : (lang === "en"
+      ? "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
+      : "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in conversational Sinhala using Sinhala script.");
+
+  const cancelRule = lang === "ta"
+    ? '1. If the user asks about cancellation policy or if cancellation is free, answer politely in Tamil (mentioning that they can cancel before the driver arrives for free by typing "cancel").'
+    : (lang === "en"
+      ? '1. If the user asks about cancellation policy or if cancellation is free, answer politely in English (mentioning that they can cancel before the driver arrives for free by typing "cancel").'
+      : '1. If the user asks a question about cancellation policy or whether cancellation is possible/free, answer it politely and concisely in Sinhala using the FAQs (mentioning that they can cancel before the driver arrives for free by typing "cancel").');
+
   const systemPrompt = `You are a strict, hallucination-free assistant for Ceylon Central Cabs. 
-The user is currently in the middle of a booking flow. Instead of answering the system's question, they said: "${userMessage}"
+The user said: "${userMessage}"
 
 Your job is to determine if the user is asking a valid question that can be answered ONLY using the provided FAQs or Pricing Details below.
 
@@ -392,13 +626,14 @@ FAQs:
 ${faqText || "No FAQs available"}
 
 RULES:
-1. If the user's message is a clear question that can be answered by the Pricing Details or FAQs, answer it briefly in 1-2 sentences.
-2. If the user asks something outside of the provided FAQs/Pricing, DO NOT guess or hallucinate. You MUST reply exactly with: "Sorry, I don't have that information."
-3. CRITICAL CANCEL INTENT: If the user's message indicates ANY intention to cancel, abort, stop, or inquire about cancelling their booking (e.g., "cancel", "cancel panna ealuma", "epa", "cancel karanna", "I don't want it", "cancel booking"), regardless of the language (English, Sinhala, Tamil, or Tanglish/Singlish), you MUST reply EXACTLY with the text: "INTENT_CANCEL_ORDER".
-4. If the user complains that the "pickup location", "dropoff location", "distance", or "price" is incorrect or wrong (e.g., "distance is wrong", "wrong location", "not 180km", "location pila"), you MUST reply EXACTLY with the text: "INTENT_WRONG_LOCATION".
-5. If the user's message is NOT a question (e.g. it's just an answer to a booking step like a name, location, or 'yes'/'no'), you MUST reply exactly with the text: "NOT_A_QUESTION".
-6. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in conversational Sinhala using Sinhala script.
-7. If you provide an answer or say "Sorry, I don't have that information.", you MUST append the original system prompt exactly as provided below at the very end of your response, separated by two newlines.
+${cancelRule}
+2. If the user asks a clear question that can be answered by the Pricing Details or FAQs, answer it briefly in 1-2 sentences.
+3. CRITICAL CANCEL INTENT: If the user explicitly demands, orders, or insists to cancel or abort their active booking right now (e.g., "cancel my booking", "cancel it now", "epa danma cancel karanna", "cancel pannunga", "stop booking"), you MUST reply EXACTLY with the text: "INTENT_CANCEL_ORDER".
+4. CRITICAL WRONG LOCATION / DISTANCE INTENT: If the user complains that the "pickup location", "dropoff location", "distance", or "price" is incorrect or wrong (e.g., "distance is wrong", "wrong location", "not 180km", "location pila", "dura weradi", "location thavarana"), you MUST reply EXACTLY with the text: "INTENT_WRONG_LOCATION".
+5. If the user asks something outside of the provided FAQs/Pricing, DO NOT guess or hallucinate. You MUST reply exactly with: "Sorry, I don't have that information."
+6. If the user's message is NOT a question (e.g. it's just an answer to a booking step like a name, location, or 'yes'/'no'), you MUST reply exactly with the text: "NOT_A_QUESTION".
+${langRule}
+8. If you provide an answer or say "Sorry, I don't have that information.", you MUST append the original system prompt exactly as provided below at the very end of your response, separated by two newlines.
 
 SYSTEM PROMPT TO APPEND:
 ${fallbackErrorPrompt}`;
@@ -408,932 +643,36 @@ ${fallbackErrorPrompt}`;
     { role: "user", content: userMessage }
   ];
 
-  const MODEL = "google/gemini-3-flash-preview";
-  const MAX_TOKENS = 250;
-
   try {
-    let aiResponse: Response;
+    let rawText = "";
     if (aiGenerateUrl && botApiKey) {
-      aiResponse = await fetch(aiGenerateUrl, {
+      const res = await fetch(aiGenerateUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-bot-key": botApiKey },
-        body: JSON.stringify({ messages, model: MODEL, maxTokens: MAX_TOKENS }),
+        headers: { "x-bot-api-key": botApiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, model: "google/gemini-2.5-flash" }),
       });
-    } else {
-      aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      if (res.ok) {
+        const j = await res.json();
+        rawText = j.text || j.choices?.[0]?.message?.content || "";
+      }
+    } else if (lovableApiKey) {
+      const res = await fetch("https://ai.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: MODEL, messages, max_tokens: MAX_TOKENS }),
+        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, max_tokens: 300 }),
       });
+      if (res.ok) {
+        const j = await res.json();
+        rawText = j.choices?.[0]?.message?.content || "";
+      }
     }
 
-    if (!aiResponse.ok) return fallbackErrorPrompt;
-
-    const aiData = await aiResponse.json();
-    const responseText = aiData.text || aiData.choices?.[0]?.message?.content;
-    
-    if (responseText && responseText.trim()) {
-      return responseText.trim();
+    if (rawText.trim()) {
+      return rawText.trim();
     }
   } catch (err) {
-    console.error("AI Fallback Error:", err);
+    console.warn("AI Fallback failed:", err);
   }
 
   return "NOT_A_QUESTION";
-}
-
-/**
- * Main State Machine Transition Handler
- */
-export async function processCustomerChatStep(
-  supabase: any,
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  userId: string,
-  phoneNumber: string,
-  messageText: string,
-  messageType: string,
-  rawPayload: any,
-  session: BotSessionState,
-  pricingSettings: PricingSettings,
-  systemSettings: CabSystemSettings,
-  sessionApiKey: string
-): Promise<{ replyText: string; nextFlow: string; nextStep: string; sessionData: any }> {
-  const trimmed = (messageText || "").trim();
-  const lower = trimmed.toLowerCase();
-
-  // 1. Check for Cancel Command First (Fast Path)
-  const isCancelCommand = lower.includes("cancel") || lower.includes("epa") || lower === "cancel order" || lower === "cancel booking";
-
-  if (isCancelCommand) {
-    return await startCancelFlow(supabase, userId, phoneNumber, session.current_step);
-  }
-
-  // 1.5. Global Reset Commands (excluding cancel)
-  if (["reset", "start", "menu", "restart", "hi", "hello"].includes(lower) && session.current_step !== "WELCOME") {
-    return {
-      replyText: getWelcomeMessage(),
-      nextFlow: "IDLE",
-      nextStep: "WELCOME",
-      sessionData: {},
-    };
-  }
-
-  const flow = session.flow_type || "IDLE";
-  const step = session.current_step || "WELCOME";
-  const data = { customer_whatsapp: phoneNumber, ...(session.session_data || {}) };
-
-  // 1.8. Global Question Interception for Active Flows
-  if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW") && isPossibleQuestion(trimmed)) {
-    const stepPrompt = getCurrentStepPrompt(flow, step);
-    const aiReply = await handleAiFallback(supabase, userId, trimmed, stepPrompt, pricingSettings);
-    
-    if (aiReply.includes("INTENT_CANCEL_ORDER")) {
-      return await startCancelFlow(supabase, userId, phoneNumber, step);
-    }
-    if (aiReply.includes("INTENT_WRONG_LOCATION")) {
-      return handleWrongLocationIntent(flow, data);
-    }
-
-    if (!aiReply.includes("NOT_A_QUESTION")) {
-      return { replyText: aiReply, nextFlow: flow, nextStep: step, sessionData: data };
-    }
-  }
-
-  const invalidFallback = async (fallbackStr: string) => {
-    const aiReply = await handleAiFallback(supabase, userId, trimmed, fallbackStr, pricingSettings);
-    
-    if (aiReply.includes("INTENT_CANCEL_ORDER")) {
-      return await startCancelFlow(supabase, userId, phoneNumber, step);
-    }
-    if (aiReply.includes("INTENT_WRONG_LOCATION")) {
-      return handleWrongLocationIntent(flow, data);
-    }
-
-    if (aiReply.includes("NOT_A_QUESTION")) {
-      return { replyText: fallbackStr, nextFlow: flow, nextStep: step, sessionData: data };
-    }
-    return { replyText: aiReply, nextFlow: flow, nextStep: step, sessionData: data };
-  };
-
-  // =========================================================================
-  // WELCOME / MAIN MENU
-  // =========================================================================
-  if (step === "WELCOME" || flow === "IDLE") {
-    if (trimmed === "1" || lower.includes("transport") || lower.includes("cab")) {
-      return {
-        replyText: "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)",
-        nextFlow: "CAB_FLOW",
-        nextStep: "CAB_TIMING_CHOICE",
-        sessionData: { customer_whatsapp: phoneNumber },
-      };
-    } else if (trimmed === "2" || lower.includes("delivery")) {
-      return {
-        replyText: "ඔබට Delivery පහසුකම දැන්ම අවශ්‍යද නැතහොත් Schedule කිරීමට අවශ්‍යද?\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)",
-        nextFlow: "DELIVERY_FLOW",
-        nextStep: "DELIVERY_TIMING_CHOICE",
-        sessionData: { customer_whatsapp: phoneNumber },
-      };
-    } else {
-      const fallbackStr = getWelcomeMessage();
-      const aiReply = await handleAiFallback(supabase, userId, trimmed, fallbackStr, pricingSettings);
-      
-      if (aiReply.includes("INTENT_CANCEL_ORDER")) {
-        return await startCancelFlow(supabase, userId, phoneNumber, step);
-      }
-      if (aiReply.includes("INTENT_WRONG_LOCATION")) {
-        return handleWrongLocationIntent(flow, data);
-      }
-      
-      let finalReply = aiReply;
-      if (aiReply.includes("NOT_A_QUESTION")) {
-        finalReply = fallbackStr;
-      }
-      
-      return {
-        replyText: finalReply,
-        nextFlow: "IDLE",
-        nextStep: "WELCOME",
-        sessionData: {},
-      };
-    }
-  }
-
-  // =========================================================================
-  // FLOW 1: TRANSPORT (CABS)
-  // =========================================================================
-  if (flow === "CAB_FLOW") {
-    switch (step) {
-      case "CAB_TIMING_CHOICE": {
-        if (isTimingNow(trimmed)) {
-          data.booking_type = "now";
-          data.scheduled_time = "Immediate / Now";
-          return {
-            replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
-            nextFlow: flow,
-            nextStep: "CAB_NAME",
-            sessionData: data,
-          };
-        } else if (isTimingSchedule(trimmed)) {
-          data.booking_type = "schedule";
-          return {
-            replyText: "කරුණාකර ඔබගේ ගමනට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)",
-            nextFlow: flow,
-            nextStep: "CAB_SCHEDULE_TIME",
-            sessionData: data,
-          };
-        } else {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි තේරීමක් ලබා දෙන්න:\n\n1. Now (දැන්ම) 🚖\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)");
-        }
-      }
-
-      case "CAB_SCHEDULE_TIME": {
-        if (!trimmed || trimmed.length < 2) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි දිනය සහ වේලාව (Date & Time) ඇතුළත් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)");
-        }
-        const parsed = parseNaturalSchedule(trimmed);
-        data.booking_type = "schedule";
-        data.scheduled_time = parsed.formatted;
-        data.raw_scheduled_time = trimmed;
-
-        const nextMsg = parsed.isRecognized
-          ? `✅ ඔබගේ Ride එක *${parsed.formatted}* දිනට Schedule කරන ලදී.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න.`
-          : "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.";
-
-        return {
-          replyText: nextMsg,
-          nextFlow: flow,
-          nextStep: "CAB_NAME",
-          sessionData: data,
-        };
-      }
-
-      case "CAB_NAME": {
-        if (!trimmed || trimmed.length < 2) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි නමක් ඇතුළත් කරන්න.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න:");
-        }
-        data.customer_name = trimmed;
-        return {
-          replyText: "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න.",
-          nextFlow: flow, nextStep: "CAB_PHONE", sessionData: data,
-        };
-      }
-
-      case "CAB_PHONE": {
-        let digits = trimmed.replace(/\D/g, "");
-        if (digits.length < 9) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි Contact Number එකක් ඇතුළත් කරන්න (උදා: 0771234567):");
-        }
-        if (digits.startsWith("0") && digits.length === 10) {
-          digits = "94" + digits.slice(1);
-        } else if (digits.length === 9 && digits.startsWith("7")) {
-          digits = "94" + digits;
-        }
-        data.customer_phone = digits;
-        return {
-          replyText: "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺\n3. Car 🚗\n4. Van 🚐\n5. Lorry 🚚\n6. Bus 🚌\n\n(වාහනයේ නම හෝ අංකය Type කරන්න)",
-          nextFlow: flow, nextStep: "CAB_VEHICLE", sessionData: data,
-        };
-      }
-
-      case "CAB_VEHICLE": {
-        const vehicleKey = normalizeVehicleKey(trimmed);
-        if (!vehicleKey) {
-          return await invalidFallback("⚠️ වැරදි තේරීමක්. කරුණාකර පහත ඒවායින් එකක් තෝරන්න:\n(Motorbike, Three-wheeler, Car, Van, Lorry, Bus)");
-        }
-        data.vehicle_key = vehicleKey;
-        data.vehicle_name = getVehicleDisplayName(vehicleKey);
-        return {
-          replyText: "කරුණාකර ඔබගේ Live/Current location එක WhatsApp හරහා share කරන්න. ඔබට එය share කිරීමට අපහසු නම්, කරුණාකර ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න.",
-          nextFlow: flow, nextStep: "CAB_PICKUP", sessionData: data,
-        };
-      }
-
-      case "CAB_PICKUP": {
-        const loc = extractLocation(trimmed, rawPayload);
-        if (!loc.text && !loc.coords) {
-          return await invalidFallback("⚠️ කරුණාකර WhatsApp Location Pin එකක් Share කිරීමෙන් හෝ ඔබගේ නගරය සහ දිස්ත්‍රික්කය Type කිරීමෙන් Pickup Location එක ලබා දෙන්න:");
-        }
-        if (!loc.coords && loc.text) {
-          const resolved = await resolveLocationCoords(loc);
-          if (resolved) loc.coords = resolved;
-        }
-        data.pickup_text = loc.text;
-        data.pickup_coords = loc.coords;
-        return {
-          replyText: "කරුණාකර ඔබගේ Drop-off location එක WhatsApp හරහා share කරන්න හෝ ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න.",
-          nextFlow: flow, nextStep: "CAB_DROPOFF", sessionData: data,
-        };
-      }
-
-      case "CAB_DROPOFF": {
-        const loc = extractLocation(trimmed, rawPayload);
-        if (!loc.text && !loc.coords) {
-          return await invalidFallback("⚠️ කරුණාකර WhatsApp Location Pin එකක් Share කිරීමෙන් හෝ ඔබගේ නගරය සහ දිස්ත්‍රික්කය Type කිරීමෙන් Drop-off Location එක ලබා දෙන්න:");
-        }
-        if (!loc.coords && loc.text) {
-          const resolved = await resolveLocationCoords(loc);
-          if (resolved) loc.coords = resolved;
-        }
-        data.dropoff_text = loc.text;
-        data.dropoff_coords = loc.coords;
-
-        return {
-          replyText: "මෙය One-Way ගමනක් ද නැතහොත් Round Trip (Up & Down) ගමනක් ද?\n\n1. One-Way\n2. Round Trip",
-          nextFlow: flow, nextStep: "CAB_TRIP_TYPE", sessionData: data,
-        };
-      }
-
-      case "CAB_TRIP_TYPE": {
-        let tripType: "one_way" | "round_trip" | null = null;
-        if (trimmed === "1" || lower.includes("one") || lower.includes("single")) {
-          tripType = "one_way";
-        } else if (trimmed === "2" || lower.includes("round") || lower.includes("up & down") || lower.includes("two")) {
-          tripType = "round_trip";
-        }
-
-        if (!tripType) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි Trip Type එකක් තෝරන්න:\n1. One-Way\n2. Round Trip");
-        }
-
-        data.trip_type = tripType;
-
-        // Fetch Distance via Google Maps API
-        let distanceKm = 10;
-        let distanceText = "10.0 km";
-        try {
-          const pickupLoc: LocationInput = { text: data.pickup_text, coords: data.pickup_coords };
-          const dropoffLoc: LocationInput = { text: data.dropoff_text, coords: data.dropoff_coords };
-          if (!data.pickup_coords) {
-            const resolvedPickup = await resolveLocationCoords(pickupLoc);
-            if (resolvedPickup) data.pickup_coords = resolvedPickup;
-          }
-          if (!data.dropoff_coords) {
-            const resolvedDropoff = await resolveLocationCoords(dropoffLoc);
-            if (resolvedDropoff) data.dropoff_coords = resolvedDropoff;
-          }
-          const distResult = await getGoogleMapsDistance(pickupLoc, dropoffLoc);
-          distanceKm = distResult.distanceKm;
-          distanceText = distResult.distanceText;
-        } catch (err) {
-          console.warn("Distance Matrix calculation fallback:", err);
-        }
-
-        // Calculate Fare using exact dynamic pricing logic
-        const fareResult: FareCalculationResult = calculateFare(
-          distanceKm,
-          distanceText,
-          data.vehicle_key || "car",
-          tripType,
-          pricingSettings
-        );
-
-        data.distance_km = fareResult.distanceKm;
-        data.distance_text = fareResult.distanceText;
-        data.base_price = fareResult.basePrice;
-        data.per_km_rate = fareResult.perKmRate;
-        data.coverage_km = fareResult.coverageKm;
-        data.gross_fare = fareResult.grossFare;
-        data.discount_amount = fareResult.discountAmount;
-        data.total_fare = fareResult.totalFare;
-
-        const pickupMapLink = buildGoogleMapsLink(data.pickup_text, data.pickup_coords);
-        const dropoffMapLink = buildGoogleMapsLink(data.dropoff_text, data.dropoff_coords);
-
-        const pickupDisplay = data.pickup_text?.includes("maps.google") || data.pickup_text?.includes("google.com/maps")
-          ? data.pickup_text
-          : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
-
-        const dropoffDisplay = data.dropoff_text?.includes("maps.google") || data.dropoff_text?.includes("google.com/maps")
-          ? data.dropoff_text
-          : (dropoffMapLink ? `${data.dropoff_text}\n🗺️ *Drop-off Map:* ${dropoffMapLink}` : data.dropoff_text);
-
-        const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-        const timingLine = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time} (Scheduled Ride)` : `\n🕒 *Booking:* Immediate (Now)`;
-
-        const summary = `📋 *BOOKING SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}${timingLine}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n🔄 *Trip Type:* ${tripType === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n💰 *Final Price:* ${formatLKR(data.total_fare)}${data.discount_amount > 0 ? ` (Includes ${formatLKR(data.discount_amount)} Round Trip Discount)` : ""}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
-
-        return {
-          replyText: summary,
-          nextFlow: flow, nextStep: "CAB_CONFIRM", sessionData: data,
-        };
-      }
-
-      case "CAB_CONFIRM": {
-        if (lower === "yes" || lower === "y" || lower === "confirm") {
-          const orderCode = generateOrderCode();
-          data.order_code = orderCode;
-
-          // 1. Save order in central_cab.orders
-          await saveOrderToDatabase(supabase, userId, "transport", data);
-
-          // 2. Alert Admin & Broadcast to Driver Groups
-          await broadcastBooking(
-            supabaseUrl,
-            supabaseServiceKey,
-            sessionApiKey,
-            orderCode,
-            "Transport",
-            data,
-            systemSettings
-          );
-
-          const pickupMapLink = buildGoogleMapsLink(data.pickup_text, data.pickup_coords);
-          const confirmPickup = data.pickup_text?.includes("maps.google") || data.pickup_text?.includes("google.com/maps")
-            ? data.pickup_text
-            : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
-
-          const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-          const scheduleNote = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time}` : "";
-
-          return {
-            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.${scheduleNote}\n📍 *Pickup:* ${confirmPickup}`,
-            nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
-          };
-        } else if (lower === "no" || lower === "n" || lower === "cancel") {
-          return {
-            replyText: "❌ Booking එක Cancel කරන ලදී.\n\n" + getWelcomeMessage(),
-            nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
-          };
-        } else {
-          return await invalidFallback("⚠️ කරුණාකර Booking එක Confirm කිරීමට *Yes* ලෙස හෝ Cancel කිරීමට *No* ලෙස Reply කරන්න.");
-        }
-      }
-    }
-  }
-
-  // =========================================================================
-  // FLOW 2: DELIVERY
-  // =========================================================================
-  if (flow === "DELIVERY_FLOW") {
-    switch (step) {
-      case "DELIVERY_TIMING_CHOICE": {
-        if (isTimingNow(trimmed)) {
-          data.booking_type = "now";
-          data.scheduled_time = "Immediate / Now";
-          return {
-            replyText: "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.",
-            nextFlow: flow,
-            nextStep: "DELIVERY_NAME",
-            sessionData: data,
-          };
-        } else if (isTimingSchedule(trimmed)) {
-          data.booking_type = "schedule";
-          return {
-            replyText: "කරුණාකර භාණ්ඩ Delivery කිරීමට අවශ්‍ය දිනය සහ වේලාව (Date & Time) සඳහන් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)",
-            nextFlow: flow,
-            nextStep: "DELIVERY_SCHEDULE_TIME",
-            sessionData: data,
-          };
-        } else {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි තේරීමක් ලබා දෙන්න:\n\n1. Now (දැන්ම) 📦\n2. Schedule (පසුවට) 📅\n\n(1 හෝ 2 Type කරන්න)");
-        }
-      }
-
-      case "DELIVERY_SCHEDULE_TIME": {
-        if (!trimmed || trimmed.length < 2) {
-          return await invalidFallback("⚠️ කරුණාකර Delivery කිරීමට අවශ්‍ය නිවැරදි දිනය සහ වේලාව (Date & Time) ඇතුළත් කරන්න:\n(උදා: 2026-10-15 10:30 AM හෝ Tomorrow 8:00 AM)");
-        }
-        const parsed = parseNaturalSchedule(trimmed);
-        data.booking_type = "schedule";
-        data.scheduled_time = parsed.formatted;
-        data.raw_scheduled_time = trimmed;
-
-        const nextMsg = parsed.isRecognized
-          ? `✅ ඔබගේ Delivery එක *${parsed.formatted}* දිනට Schedule කරන ලදී.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න.`
-          : "කරුණාකර ඔබගේ නම ඇතුළත් කරන්න.";
-
-        return {
-          replyText: nextMsg,
-          nextFlow: flow,
-          nextStep: "DELIVERY_NAME",
-          sessionData: data,
-        };
-      }
-
-      case "DELIVERY_NAME": {
-        if (!trimmed || trimmed.length < 2) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි නමක් ඇතුළත් කරන්න.\n\nකරුණාකර ඔබගේ නම ඇතුළත් කරන්න:");
-        }
-        data.customer_name = trimmed;
-        return {
-          replyText: "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න.",
-          nextFlow: flow, nextStep: "DELIVERY_PHONE", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_PHONE": {
-        let digits = trimmed.replace(/\D/g, "");
-        if (digits.length < 9) {
-          return await invalidFallback("⚠️ කරුණාකර නිවැරදි Contact Number එකක් ඇතුළත් කරන්න (උදා: 0771234567):");
-        }
-        if (digits.startsWith("0") && digits.length === 10) {
-          digits = "94" + digits.slice(1);
-        } else if (digits.length === 9 && digits.startsWith("7")) {
-          digits = "94" + digits;
-        }
-        data.customer_phone = digits;
-        return {
-          replyText: "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:\n\n1. Motorbike 🏍️\n2. Three-wheeler 🛺\n\n(වාහනයේ නම හෝ අංකය Type කරන්න)",
-          nextFlow: flow, nextStep: "DELIVERY_VEHICLE", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_VEHICLE": {
-        const vehicleKey = normalizeVehicleKey(trimmed);
-        // Delivery constraint: Only Motorbike and Three-wheeler permitted
-        if (vehicleKey !== "motorbike" && vehicleKey !== "three_wheeler") {
-          return await invalidFallback("⚠️ Delivery පහසුකම ඇත්තේ මේවාට පමණි:\n1. Motorbike 🏍️\n2. Three-wheeler 🛺\n\nකරුණාකර Motorbike හෝ Three-wheeler තෝරන්න:");
-        }
-        data.vehicle_key = vehicleKey;
-        data.vehicle_name = getVehicleDisplayName(vehicleKey);
-        return {
-          replyText: "කරුණාකර ඔබගේ Live/Current location එක WhatsApp හරහා share කරන්න. ඔබට එය share කිරීමට අපහසු නම්, කරුණාකර ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න.",
-          nextFlow: flow, nextStep: "DELIVERY_PICKUP", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_PICKUP": {
-        const loc = extractLocation(trimmed, rawPayload);
-        if (!loc.text && !loc.coords) {
-          return await invalidFallback("⚠️ කරුණාකර WhatsApp Location Pin එකක් Share කිරීමෙන් හෝ ඔබගේ නගරය සහ දිස්ත්‍රික්කය Type කිරීමෙන් Pickup Location එක ලබා දෙන්න:");
-        }
-        if (!loc.coords && loc.text) {
-          const resolved = await resolveLocationCoords(loc);
-          if (resolved) loc.coords = resolved;
-        }
-        data.pickup_text = loc.text;
-        data.pickup_coords = loc.coords;
-        return {
-          replyText: "කරුණාකර ඔබගේ Drop-off location එක WhatsApp හරහා share කරන්න හෝ ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න.",
-          nextFlow: flow, nextStep: "DELIVERY_DROPOFF", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_DROPOFF": {
-        const loc = extractLocation(trimmed, rawPayload);
-        if (!loc.text && !loc.coords) {
-          return await invalidFallback("⚠️ කරුණාකර WhatsApp Location Pin එකක් Share කිරීමෙන් හෝ ඔබගේ නගරය සහ දිස්ත්‍රික්කය Type කිරීමෙන් Drop-off Location එක ලබා දෙන්න:");
-        }
-        if (!loc.coords && loc.text) {
-          const resolved = await resolveLocationCoords(loc);
-          if (resolved) loc.coords = resolved;
-        }
-        data.dropoff_text = loc.text;
-        data.dropoff_coords = loc.coords;
-        return {
-          replyText: "කරුණාකර Delivery කළ යුතු භාණ්ඩ ලැයිස්තුව Type කරන්න.",
-          nextFlow: flow, nextStep: "DELIVERY_ITEMS", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_ITEMS": {
-        if (!trimmed || trimmed.length < 2) {
-          return await invalidFallback("⚠️ කරුණාකර Delivery කළ යුතු භාණ්ඩ ලැයිස්තුව Type කරන්න:");
-        }
-        data.delivery_items = trimmed;
-
-        // Calculate Distance
-        let distanceKm = 10;
-        let distanceText = "10.0 km";
-        try {
-          const pickupLoc: LocationInput = { text: data.pickup_text, coords: data.pickup_coords };
-          const dropoffLoc: LocationInput = { text: data.dropoff_text, coords: data.dropoff_coords };
-          if (!data.pickup_coords) {
-            const resolvedPickup = await resolveLocationCoords(pickupLoc);
-            if (resolvedPickup) data.pickup_coords = resolvedPickup;
-          }
-          if (!data.dropoff_coords) {
-            const resolvedDropoff = await resolveLocationCoords(dropoffLoc);
-            if (resolvedDropoff) data.dropoff_coords = resolvedDropoff;
-          }
-          const distResult = await getGoogleMapsDistance(pickupLoc, dropoffLoc);
-          distanceKm = distResult.distanceKm;
-          distanceText = distResult.distanceText;
-        } catch (err) {
-          console.warn("Delivery Distance Matrix fallback:", err);
-        }
-
-        // Delivery is calculated as One-Way
-        const fareResult: FareCalculationResult = calculateFare(
-          distanceKm,
-          distanceText,
-          data.vehicle_key || "car",
-          "one_way",
-          pricingSettings
-        );
-
-        data.distance_km = fareResult.distanceKm;
-        data.distance_text = fareResult.distanceText;
-        data.base_price = fareResult.basePrice;
-        data.per_km_rate = fareResult.perKmRate;
-        data.coverage_km = fareResult.coverageKm;
-        data.gross_fare = fareResult.grossFare;
-        data.discount_amount = 0;
-        data.total_fare = fareResult.totalFare;
-
-        const pickupMapLink = buildGoogleMapsLink(data.pickup_text, data.pickup_coords);
-        const dropoffMapLink = buildGoogleMapsLink(data.dropoff_text, data.dropoff_coords);
-
-        const pickupDisplay = data.pickup_text?.includes("maps.google") || data.pickup_text?.includes("google.com/maps")
-          ? data.pickup_text
-          : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
-
-        const dropoffDisplay = data.dropoff_text?.includes("maps.google") || data.dropoff_text?.includes("google.com/maps")
-          ? data.dropoff_text
-          : (dropoffMapLink ? `${data.dropoff_text}\n🗺️ *Drop-off Map:* ${dropoffMapLink}` : data.dropoff_text);
-
-        const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-        const timingLine = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time} (Scheduled Delivery)` : `\n🕒 *Booking:* Immediate (Now)`;
-
-        const summary = `📦 *DELIVERY SUMMARY*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}${timingLine}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n📦 *Items:* ${data.delivery_items}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Final Price:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n\nකරුණාකර ඔබගේ Booking එක Confirm කරන්න (Yes/No).`;
-
-        return {
-          replyText: summary,
-          nextFlow: flow, nextStep: "DELIVERY_CONFIRM", sessionData: data,
-        };
-      }
-
-      case "DELIVERY_CONFIRM": {
-        if (lower === "yes" || lower === "y" || lower === "confirm") {
-          const orderCode = generateOrderCode();
-          data.order_code = orderCode;
-
-          // 1. Save order in central_cab.orders
-          await saveOrderToDatabase(supabase, userId, "delivery", data);
-
-          // 2. Alert Admin & Broadcast to Driver Groups
-          await broadcastBooking(
-            supabaseUrl,
-            supabaseServiceKey,
-            sessionApiKey,
-            orderCode,
-            "Delivery",
-            data,
-            systemSettings
-          );
-
-          const pickupMapLink = buildGoogleMapsLink(data.pickup_text, data.pickup_coords);
-          const confirmPickup = data.pickup_text?.includes("maps.google") || data.pickup_text?.includes("google.com/maps")
-            ? data.pickup_text
-            : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
-
-          const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-          const scheduleNote = isScheduled ? `\n📅 *Schedule:* ${data.scheduled_time}` : "";
-
-          return {
-            replyText: `Driver කෙනෙක් assign කළ පසු අපි ඔබට දැනුම් දෙන්නෙමු.\nඔබගේ Order ID එක *${orderCode}*.${scheduleNote}\n📍 *Pickup:* ${confirmPickup}`,
-            nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
-          };
-        } else if (lower === "no" || lower === "n" || lower === "cancel") {
-          return {
-            replyText: "❌ Delivery booking එක Cancel කරන ලදී.\n\n" + getWelcomeMessage(),
-            nextFlow: "IDLE", nextStep: "WELCOME", sessionData: {},
-          };
-        } else {
-          return await invalidFallback("⚠️ කරුණාකර Booking එක Confirm කිරීමට *Yes* ලෙස හෝ Cancel කිරීමට *No* ලෙස Reply කරන්න.");
-        }
-      }
-    }
-  }
-
-  // =========================================================================
-  // FLOW 3: CANCEL
-  // =========================================================================
-  if (flow === "CANCEL_FLOW") {
-    if (step === "CANCEL_CONFIRM") {
-      if (lower === "yes" || lower === "y" || lower === "confirm") {
-        const orderCode = session.session_data?.target_order_code;
-        const serviceType = session.session_data?.service_type || "Booking";
-
-        if (orderCode) {
-          await supabase
-            .schema("central_cab")
-            .from("orders")
-            .update({ status: "cancelled" })
-            .eq("order_code", orderCode);
-
-          await broadcastCancellation(
-            supabaseUrl,
-            supabaseServiceKey,
-            sessionApiKey,
-            orderCode,
-            serviceType,
-            phoneNumber,
-            systemSettings
-          );
-        }
-
-        return {
-          replyText: `✅ ඔබගේ Order එක (*${orderCode || ""}*) සාර්ථකව Cancel කරන ලදී.\n\n` + getWelcomeMessage(),
-          nextFlow: "IDLE",
-          nextStep: "WELCOME",
-          sessionData: {},
-        };
-      } else if (lower === "no" || lower === "n" || lower === "cancel") {
-        return {
-          replyText: "Order එක Cancel කිරීම අත්හැර දමන ලදී.\n\n" + getWelcomeMessage(),
-          nextFlow: "IDLE",
-          nextStep: "WELCOME",
-          sessionData: {},
-        };
-      } else {
-        return await invalidFallback("⚠️ කරුණාකර Order එක Cancel කිරීමට *Yes* ලෙස හෝ අත්හැරීමට *No* ලෙස Reply කරන්න.");
-      }
-    }
-  }
-
-  // Fallback
-  return {
-    replyText: getWelcomeMessage(),
-    nextFlow: "IDLE",
-    nextStep: "WELCOME",
-    sessionData: {},
-  };
-}
-
-function handleWrongLocationIntent(flow: string, data: any) {
-  if (flow === "IDLE" || flow === "CANCEL_FLOW") {
-    return {
-      replyText: "ඔබට දැනට Active Booking එකක් නොමැත.\n\n" + getWelcomeMessage(),
-      nextFlow: "IDLE",
-      nextStep: "WELCOME",
-      sessionData: {}
-    };
-  }
-
-  delete data.pickup_text;
-  delete data.pickup_coords;
-  delete data.dropoff_text;
-  delete data.dropoff_coords;
-  delete data.distance_km;
-  delete data.distance_text;
-
-  const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
-  const reply = "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක නිවැරදිව ලබා දෙන්න:";
-  
-  return {
-    replyText: reply,
-    nextFlow: flow,
-    nextStep: nextStep,
-    sessionData: data
-  };
-}
-
-function getWelcomeMessage(): string {
-  return "Ceylon Central Cabs & Delivery වෙත සාදරයෙන් පිළිගනිමු.\n\nTransport (Cabs) සඳහා 1 ඔබන්න\nDelivery සඳහා 2 ඔබන්න";
-}
-
-async function startCancelFlow(supabase: any, userId: string, phoneNumber: string, currentStep: string) {
-  // Normalize phone number to match whether stored with 94 or 0 or clean digits
-  const cleanPhone = phoneNumber.replace(/\D/g, "");
-  let altPhone = cleanPhone;
-  if (cleanPhone.startsWith("94") && cleanPhone.length === 11) {
-    altPhone = "0" + cleanPhone.slice(2);
-  } else if (cleanPhone.startsWith("0") && cleanPhone.length === 10) {
-    altPhone = "94" + cleanPhone.slice(1);
-  }
-
-  // Build OR condition: match exact raw phoneNumber (e.g. LID), cleanPhone, altPhone against customer_phone & whatsapp_phone
-  const orConditions = [
-    `whatsapp_phone.eq.${phoneNumber}`,
-  ];
-  if (cleanPhone) {
-    orConditions.push(
-      `whatsapp_phone.eq.${cleanPhone}`,
-      `customer_phone.eq.${cleanPhone}`,
-      `customer_phone.eq.${altPhone}`
-    );
-  }
-
-  const { data: activeOrders, error } = await supabase
-    .schema("central_cab")
-    .from("orders")
-    .select("order_code, service_type, customer_phone, whatsapp_phone")
-    .eq("user_id", userId)
-    .or(orConditions.join(","))
-    .in("status", ["pending", "confirmed", "assigned", "driver_assigned"])
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error("[startCancelFlow] Query error:", error);
-  }
-
-  let activeOrder = activeOrders && activeOrders.length > 0 ? activeOrders[0] : null;
-
-  // Fallback: check with ilike on whatsapp_phone if LID or formatting differs
-  if (!activeOrder && cleanPhone && cleanPhone.length >= 8) {
-    const { data: fallbackOrders } = await supabase
-      .schema("central_cab")
-      .from("orders")
-      .select("order_code, service_type, customer_phone, whatsapp_phone")
-      .eq("user_id", userId)
-      .ilike("whatsapp_phone", `%${cleanPhone}%`)
-      .in("status", ["pending", "confirmed", "assigned", "driver_assigned"])
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (fallbackOrders && fallbackOrders.length > 0) {
-      activeOrder = fallbackOrders[0];
-    }
-  }
-
-  if (activeOrder) {
-    return {
-      replyText: `ඔබට දැනටමත් Active Order එකක් ඇත (Order ID: *${activeOrder.order_code}*).\nඔබට එය Cancel කිරීමට අවශ්‍යද? (Yes/No)`,
-      nextFlow: "CANCEL_FLOW",
-      nextStep: "CANCEL_CONFIRM",
-      sessionData: { target_order_code: activeOrder.order_code, service_type: activeOrder.service_type },
-    };
-  } else {
-    if (currentStep !== "WELCOME") {
-      return {
-        replyText: "❌ Flow එක Cancel කරන ලදී.\n\n" + getWelcomeMessage(),
-        nextFlow: "IDLE",
-        nextStep: "WELCOME",
-        sessionData: {},
-      };
-    } else {
-      return {
-        replyText: "ඔබට Cancel කිරීමට කිසිදු Active Order එකක් නොමැත.\n\n" + getWelcomeMessage(),
-        nextFlow: "IDLE",
-        nextStep: "WELCOME",
-        sessionData: {},
-      };
-    }
-  }
-}
-
-async function saveOrderToDatabase(supabase: any, userId: string, serviceType: string, data: any) {
-  try {
-    const { error } = await supabase
-      .schema("central_cab")
-      .from("orders")
-      .insert({
-        order_code: data.order_code,
-        user_id: userId,
-        service_type: serviceType,
-        booking_type: data.booking_type || "now",
-        scheduled_time: data.scheduled_time || null,
-        special_instructions: data.booking_type === "schedule" && data.scheduled_time
-          ? `[Scheduled: ${data.scheduled_time}]`
-          : null,
-        customer_name: data.customer_name,
-        customer_phone: data.customer_phone,
-        whatsapp_phone: data.customer_whatsapp || data.customer_phone,
-        vehicle_type: data.vehicle_name || data.vehicle_key,
-        pickup_address: data.pickup_text,
-        pickup_coords: data.pickup_coords ? (typeof data.pickup_coords === "string" ? JSON.parse(data.pickup_coords) : data.pickup_coords) : null,
-        dropoff_address: data.dropoff_text,
-        dropoff_coords: data.dropoff_coords ? (typeof data.dropoff_coords === "string" ? JSON.parse(data.dropoff_coords) : data.dropoff_coords) : null,
-        trip_type: data.trip_type || "one_way",
-        delivery_items: data.delivery_items || null,
-        distance_km: data.distance_km || 0,
-        base_price: data.base_price || 0,
-        per_km_rate: data.per_km_rate || 0,
-        coverage_km: data.coverage_km || 0,
-        discount_percentage: data.discount_amount > 0 ? (data.trip_type === "round_trip" ? 15 : 0) : 0,
-        total_fare: data.total_fare || 0,
-        total_amount: data.total_fare || 0,
-        order_items: [],
-        status: "pending",
-      });
-
-    if (error) {
-      console.error("[saveOrderToDatabase] Database error:", error);
-    } else {
-      console.log(`[saveOrderToDatabase] ✅ Successfully inserted order ${data.order_code} for user ${userId}`);
-    }
-  } catch (err) {
-    console.error("[saveOrderToDatabase] Exception:", err);
-  }
-}
-
-async function broadcastBooking(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  sessionApiKey: string,
-  orderCode: string,
-  category: string,
-  data: any,
-  systemSettings: CabSystemSettings
-) {
-  const isDelivery = category.toLowerCase() === "delivery";
-  
-  const pickupMapLink = buildGoogleMapsLink(data.pickup_text, data.pickup_coords);
-  const dropoffMapLink = buildGoogleMapsLink(data.dropoff_text, data.dropoff_coords);
-
-  const pickupDisplay = data.pickup_text?.includes("maps.google") || data.pickup_text?.includes("google.com/maps")
-    ? data.pickup_text
-    : (pickupMapLink ? `${data.pickup_text}\n🗺️ *Pickup Map:* ${pickupMapLink}` : data.pickup_text);
-
-  const dropoffDisplay = data.dropoff_text?.includes("maps.google") || data.dropoff_text?.includes("google.com/maps")
-    ? data.dropoff_text
-    : (dropoffMapLink ? `${data.dropoff_text}\n🗺️ *Drop-off Map:* ${dropoffMapLink}` : data.dropoff_text);
-
-  const contactLine = data.customer_phone && data.customer_whatsapp && data.customer_phone !== data.customer_whatsapp
-    ? `📱 *WhatsApp:* ${data.customer_whatsapp}\n📞 *Call Contact:* ${data.customer_phone}`
-    : `📱 *Contact:* ${data.customer_phone || data.customer_whatsapp}`;
-
-  const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-  const timingHeader = isScheduled ? `📅 *SCHEDULED FOR:* ${data.scheduled_time}\n` : `⚡ *RIDE NOW*\n`;
-
-  const broadcastText = `🚖 *NEW ${category.toUpperCase()} BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
-
-  // 1. Send to Admin WhatsApp Number
-  const adminPhone = systemSettings?.admin_whatsapp_number;
-  if (adminPhone) {
-    console.log(`[Broadcast] Sending new booking alert to Admin: ${adminPhone}`);
-    await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${supabaseServiceKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ to: adminPhone, message: broadcastText, sessionApiKey }),
-    }).catch(err => console.error("Admin alert failed:", err));
-  }
-
-  // 2. Broadcast to all Target Driver Groups
-  const groups = systemSettings?.target_driver_groups || [];
-  for (const group of groups) {
-    if (group.chat_id) {
-      console.log(`[Broadcast] Broadcasting order ${orderCode} to group: ${group.name} (${group.chat_id})`);
-      await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${supabaseServiceKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ to: group.chat_id, message: broadcastText, sessionApiKey }),
-      }).catch(err => console.error(`Group broadcast failed (${group.chat_id}):`, err));
-    }
-  }
-}
-
-async function broadcastCancellation(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  sessionApiKey: string,
-  orderCode: string,
-  category: string,
-  customerPhone: string,
-  systemSettings: CabSystemSettings
-) {
-  const broadcastText = `❌ *ORDER CANCELLED: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer Contact:* ${customerPhone}\n\n*The customer has cancelled this ${category} booking.*\nDrivers, please DO NOT proceed.`;
-
-  const adminPhone = systemSettings?.admin_whatsapp_number;
-  if (adminPhone) {
-    await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${supabaseServiceKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ to: adminPhone, message: broadcastText, sessionApiKey }),
-    }).catch(err => console.error("Admin cancel alert failed:", err));
-  }
-
-  const groups = systemSettings?.target_driver_groups || [];
-  for (const group of groups) {
-    if (group.chat_id) {
-      await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${supabaseServiceKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ to: group.chat_id, message: broadcastText, sessionApiKey }),
-      }).catch(err => console.error(`Group cancel broadcast failed (${group.chat_id}):`, err));
-    }
-  }
 }

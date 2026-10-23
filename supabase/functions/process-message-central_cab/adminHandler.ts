@@ -1,9 +1,13 @@
 // ============================================================================
 // Ceylon Central Cabs & Delivery - Admin Handler
-// Admin Voice Note Forwarding to Driver Groups & Customer Confirmation Alert
+// Supports Master Admin & Service-Specific Admins (Hire, Rent a Car, Delivery)
+// Handles:
+// 1. Rent a car booking confirmation to group & customer when admin sends RNT code
+// 2. Hire cab voice dispatch / confirmation to driver group & customer
+// 3. Multi-admin phone number validation
 // ============================================================================
 
-import { buildGoogleMapsLink } from "./pricingEngine.ts";
+import { buildGoogleMapsLink, formatLocationDisplay } from "./pricingEngine.ts";
 
 export interface DriverGroup {
   id?: string;
@@ -13,38 +17,78 @@ export interface DriverGroup {
 
 export interface CabSystemSettings {
   admin_whatsapp_number: string;
-  target_driver_groups: DriverGroup[];
+  hire_admin_number?: string;
+  rent_admin_number?: string;
+  delivery_admin_number?: string;
+  broadcast_delay_seconds?: number;
+  hire_driver_groups?: DriverGroup[];
+  rent_a_car_groups?: DriverGroup[];
+  delivery_driver_groups?: DriverGroup[]; // Delivery Shop Groups
+  delivery_rider_groups?: DriverGroup[];  // Delivery Riders Groups
+  target_driver_groups?: DriverGroup[];
 }
 
-function normalizePhone(p: string): string {
+function normalizePhone(p?: string): string {
   return String(p || "").replace(/\D/g, "");
 }
 
 /**
- * Check if the message is from the configured Admin WhatsApp number
+ * Extract Shop Pickup Location from text when admin confirms a delivery order
  */
-export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettings): boolean {
-  const adminPhone = normalizePhone(systemSettings?.admin_whatsapp_number);
-  const senderPhone = normalizePhone(phoneNumber);
-  return Boolean(adminPhone && senderPhone && (senderPhone === adminPhone || senderPhone.endsWith(adminPhone) || adminPhone.endsWith(senderPhone)));
+export function extractShopPickupLocation(messageText: string, orderCode: string): string {
+  let cleaned = messageText || "";
+  const safeCode = (orderCode || "").replace(/\s+/g, "[-_\\s]?");
+  const orderRegex = new RegExp(`(?:#)?\\b${safeCode}\\b`, "i");
+  cleaned = cleaned.replace(orderRegex, " ");
+  // Match confirm, conform, confrm, cnf, accept, ok, book, done, yes, etc.
+  cleaned = cleaned.replace(/\b(confirm|conform|confrm|cnf|confirmed|conformed|order|book|booked|ok|done|accept|accepted|yes)\b/gi, " ");
+  cleaned = cleaned.replace(/\b(shop\s*pickup\s*location|shop\s*pickup|pickup\s*location|pickup|shop\s*location|shop)\s*[:=-]?\s*/gi, " ");
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
+  cleaned = cleaned.replace(/^[-:,\s]+/, "").trim();
+  return cleaned;
 }
 
 /**
- * Extract Order Code from text (e.g., "#ORD845", "ORD845", "ORD-845", "845")
+ * Check if the message is from any configured Admin WhatsApp number
+ * (Master Admin, Hire Admin, Rent a Car Admin, or Delivery Admin)
+ */
+export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettings): boolean {
+  const senderPhone = normalizePhone(phoneNumber);
+  if (!senderPhone) return false;
+
+  const adminList = [
+    normalizePhone(systemSettings?.admin_whatsapp_number),
+    normalizePhone(systemSettings?.hire_admin_number),
+    normalizePhone(systemSettings?.rent_admin_number),
+    normalizePhone(systemSettings?.delivery_admin_number),
+  ].filter(Boolean);
+
+  return adminList.some((a) => senderPhone === a || senderPhone.endsWith(a) || a.endsWith(senderPhone));
+}
+
+/**
+ * Extract Order Code from text (e.g., "HIR 001", "RNT 001", "DEL 001", "#ORD845")
  */
 export function extractOrderCode(text: string): string | null {
   if (!text) return null;
-  const match = text.match(/(#?ORD[-_\s]?\d{3,6})/i);
+  // Match HIR 001, DEL 001, RNT 001 (with optional #, -, _, space)
+  const prefixMatch = text.match(/\b(?:#)?(HIR|DEL|RNT)[-_\s]?(\d{1,6})\b/i);
+  if (prefixMatch) {
+    const prefix = prefixMatch[1].toUpperCase();
+    const num = prefixMatch[2].padStart(3, "0");
+    return `${prefix} ${num}`;
+  }
+  const match = text.match(/(#\d{1,6})\b/i) || text.match(/(#?ORD[-_\s]?\d{1,6})/i) || text.match(/(#?CAB[-_\s]?[A-Z0-9]{1,8})/i);
   if (match) {
-    let code = match[1].toUpperCase().replace(/[-_\s]/g, "");
-    if (!code.startsWith("#")) code = `#${code}`;
+    let code = match[1].trim();
+    if (!code.startsWith("#") && !code.toUpperCase().startsWith("CAB")) code = `#${code}`;
     return code;
   }
   return null;
 }
 
 /**
- * Handle incoming message from Admin
+ * Handle incoming message from Admin or Driver dispatch
  */
 export async function handleAdminMessage(
   supabase: any,
@@ -60,15 +104,217 @@ export async function handleAdminMessage(
 ): Promise<{ handled: boolean; replyText?: string }> {
   console.log(`[AdminHandler] Processing message from Admin (${adminPhoneNumber}), type=${messageType}: ${messageText}`);
 
-  const orderCode = extractOrderCode(messageText);
+  let orderCode = extractOrderCode(messageText);
   const isVoice = messageType === "ptt" || messageType === "audio";
   const voiceMediaUrl = rawPayload?.directMediaUrl || rawPayload?.payload?.media?.url || rawPayload?.media?.url || null;
 
-  // 1. If Admin sent a Voice Note with Order Code in caption or text
+  const lowerText = (messageText || "").trim().toLowerCase();
+  const isExplicitConfirm = /\b(confirm|conform|confrm|cnf|confirmed|conformed|accept|accepted|ok|done|yes|book|booked)\b/i.test(lowerText);
+
+  // If no order code directly in message text, check last admin session state
+  if (!orderCode && (isVoice || voiceMediaUrl || isExplicitConfirm)) {
+    const { data: adminSession } = await supabase
+      .schema("central_cab")
+      .from("bot_sessions")
+      .select("session_data, current_step")
+      .eq("phone_number", adminPhoneNumber)
+      .maybeSingle();
+
+    if (adminSession?.session_data?.pending_admin_order_code) {
+      orderCode = adminSession.session_data.pending_admin_order_code;
+    }
+  }
+
+  // Check if Admin sent a Location Pin
+  const isLocationMsg = messageType === "location"
+    || (messageText || "").toLowerCase().startsWith("location:")
+    || Boolean(rawPayload?.locationDetails)
+    || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(messageText || "");
+
+  if (isLocationMsg) {
+    let adminLocCoords: { lat: number; lng: number } | null = null;
+    let adminLocName = "";
+
+    if (rawPayload?.locationDetails?.latitude && rawPayload?.locationDetails?.longitude) {
+      adminLocCoords = {
+        lat: Number(rawPayload.locationDetails.latitude),
+        lng: Number(rawPayload.locationDetails.longitude),
+      };
+      adminLocName = rawPayload.locationDetails.name || rawPayload.locationDetails.address || "";
+    } else {
+      const match = (messageText || "").match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+      if (match) {
+        adminLocCoords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+      }
+    }
+
+    if (adminLocCoords) {
+      // 1. Save to admin session state
+      await supabase
+        .schema("central_cab")
+        .from("bot_sessions")
+        .upsert({
+          phone_number: adminPhoneNumber,
+          user_id: userId,
+          flow_type: "ADMIN_FLOW",
+          current_step: "LOCATION_RECEIVED",
+          session_data: {
+            last_admin_location: {
+              name: adminLocName,
+              coords: adminLocCoords,
+              text: messageText,
+              timestamp: Date.now(),
+            },
+          },
+          updated_at: new Date().toISOString(),
+        });
+
+      // 2. Check if there is an active delivery order to assign this shop location to
+      let targetCode = orderCode;
+      if (!targetCode) {
+        const { data: adminSession } = await supabase
+          .schema("central_cab")
+          .from("bot_sessions")
+          .select("session_data")
+          .eq("phone_number", adminPhoneNumber)
+          .maybeSingle();
+        targetCode = adminSession?.session_data?.pending_admin_order_code || null;
+      }
+
+      let targetOrder: any = null;
+      if (targetCode) {
+        const { data: o } = await supabase
+          .schema("central_cab")
+          .from("orders")
+          .select("*")
+          .eq("user_id", userId)
+          .ilike("order_code", targetCode)
+          .maybeSingle();
+        targetOrder = o;
+      }
+
+      if (!targetOrder) {
+        // Fallback: check most recent delivery order created in last 2 hours
+        const { data: recentDel } = await supabase
+          .schema("central_cab")
+          .from("orders")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("service_type", "delivery")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (recentDel) {
+          targetOrder = recentDel;
+        }
+      }
+
+      if (targetOrder) {
+        const cleanShopText = adminLocName
+          ? `${adminLocName} (${adminLocCoords.lat.toFixed(4)}, ${adminLocCoords.lng.toFixed(4)})`
+          : `Shop Location (${adminLocCoords.lat.toFixed(4)}, ${adminLocCoords.lng.toFixed(4)})`;
+
+        // Update order in database
+        await supabase
+          .schema("central_cab")
+          .from("orders")
+          .update({
+            status: "confirmed",
+            pickup_address: cleanShopText,
+            pickup_coords: adminLocCoords,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetOrder.id);
+
+        const shopLocationDisplay = formatLocationDisplay(cleanShopText, adminLocCoords);
+        const customerDropoff = targetOrder.dropoff_address
+          || targetOrder.custom_fields?.raw_data?.delivery_location
+          || "Customer Location";
+        const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
+
+        const productList = targetOrder.delivery_items
+          || targetOrder.custom_fields?.raw_data?.delivery_products
+          || targetOrder.custom_fields?.raw_data?.delivery_items
+          || "Package / Items";
+        const category = targetOrder.custom_fields?.raw_data?.delivery_category || "Delivery";
+
+        // Dispatch to Delivery Riders Groups (100% clean English)
+        const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
+          ? systemSettings.delivery_rider_groups
+          : (systemSettings.delivery_driver_groups || systemSettings.target_driver_groups || []);
+
+        const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Customer Contact:* ${targetOrder.customer_phone || targetOrder.whatsapp_phone || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+
+        for (const group of riderGroups) {
+          const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+          if (targetChatId) {
+            await sendWhatsAppMessage(
+              supabaseUrl,
+              supabaseServiceKey,
+              targetChatId,
+              riderJobNotice,
+              sessionApiKey
+            );
+          }
+        }
+
+        // Send confirmed notice to Delivery Shop Groups (100% clean English)
+        const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
+          ? systemSettings.delivery_driver_groups
+          : (systemSettings.target_driver_groups || []);
+
+        const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
+
+        for (const group of shopGroups) {
+          const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+          if (targetChatId) {
+            await sendWhatsAppMessage(
+              supabaseUrl,
+              supabaseServiceKey,
+              targetChatId,
+              shopConfirmNotice,
+              sessionApiKey
+            );
+          }
+        }
+
+        // Send customer update
+        const targetCustomerNumber = targetOrder.whatsapp_phone || targetOrder.customer_whatsapp || targetOrder.customer_phone;
+        if (targetCustomerNumber) {
+          const orderLang = targetOrder.custom_fields?.language || "ta";
+          const customerConfirmText = orderLang === "ta"
+            ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
+            : (orderLang === "si"
+              ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
+              : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
+
+          await sendWhatsAppMessage(
+            supabaseUrl,
+            supabaseServiceKey,
+            targetCustomerNumber,
+            customerConfirmText,
+            sessionApiKey
+          );
+        }
+
+        return {
+          handled: true,
+          replyText: `✅ Shop Pickup Location assigned for Delivery Order *${targetOrder.order_code}*!\n\n🏪 *Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & customer updated.`,
+        };
+      }
+
+      return {
+        handled: true,
+        replyText: `📍 Location received (${adminLocCoords.lat.toFixed(4)}, ${adminLocCoords.lng.toFixed(4)})!\nReply with *CONFIRM DEL-xxx* to attach this shop location to an order.`,
+      };
+    }
+  }
+
+  // 1. If Admin or Driver sent a Voice Note with Order Code in caption/text or from pending state
   if (isVoice || voiceMediaUrl) {
     let targetOrderCode = orderCode;
 
-    // If no order code directly in message text, check last admin session state or pending order
+    // If no order code directly in message text, check last admin session state
     if (!targetOrderCode) {
       const { data: session } = await supabase
         .schema("central_cab")
@@ -98,20 +344,34 @@ export async function handleAdminMessage(
     if (!targetOrderCode) {
       return {
         handled: true,
-        replyText: "⚠️ Please provide an Order ID (e.g., #ORD845) along with the voice note.",
+        replyText: "⚠️ Please provide an Order ID (e.g., HIR 001, RNT 001) along with the voice note.",
       };
     }
 
     // Look up the order in central_cab.orders
-    const { data: order, error: orderError } = await supabase
+    let { data: order } = await supabase
       .schema("central_cab")
       .from("orders")
       .select("*")
       .eq("user_id", userId)
-      .eq("order_code", targetOrderCode)
+      .ilike("order_code", targetOrderCode)
       .maybeSingle();
 
-    if (orderError || !order) {
+    if (!order) {
+      const cleanCode = targetOrderCode.replace(/\s+/g, "");
+      const { data: altOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .eq("user_id", userId)
+        .or(`order_code.ilike.%${targetOrderCode}%,order_code.ilike.%${cleanCode}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (altOrder) order = altOrder;
+    }
+
+    if (!order) {
       return {
         handled: true,
         replyText: `⚠️ Could not find Order ${targetOrderCode}. Please verify the Order ID.`,
@@ -120,46 +380,59 @@ export async function handleAdminMessage(
 
     console.log(`[AdminHandler] Found Order ${targetOrderCode} for customer ${order.customer_phone}. Dispatching voice note to driver groups...`);
 
-    const targetGroups = systemSettings.target_driver_groups || [];
-    
-    let pickupMapLink = "";
-    if (order.pickup_coords) {
-      try {
-        const coords = typeof order.pickup_coords === "string" ? JSON.parse(order.pickup_coords) : order.pickup_coords;
-        pickupMapLink = buildGoogleMapsLink(order.pickup_address, coords);
-      } catch {
-        pickupMapLink = buildGoogleMapsLink(order.pickup_address);
-      }
+    let targetGroups: DriverGroup[] = [];
+    const sType = String(order.service_type || "").toLowerCase();
+    if (sType.includes("delivery")) {
+      targetGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
+        ? systemSettings.delivery_driver_groups
+        : (systemSettings.target_driver_groups || []);
+    } else if (sType.includes("rent")) {
+      targetGroups = (systemSettings.rent_a_car_groups && systemSettings.rent_a_car_groups.length > 0)
+        ? systemSettings.rent_a_car_groups
+        : (systemSettings.target_driver_groups || []);
     } else {
-      pickupMapLink = buildGoogleMapsLink(order.pickup_address);
+      targetGroups = (systemSettings.hire_driver_groups && systemSettings.hire_driver_groups.length > 0)
+        ? systemSettings.hire_driver_groups
+        : (systemSettings.target_driver_groups || []);
     }
 
-    const pickupDisplay = order.pickup_address?.includes("maps.google") || order.pickup_address?.includes("google.com/maps")
-      ? order.pickup_address
-      : (pickupMapLink ? `${order.pickup_address}\n🗺️ *Pickup Map:* ${pickupMapLink}` : order.pickup_address);
+    const pickupDisplay = formatLocationDisplay(order.pickup_address, order.pickup_coords);
+    const dropoffDisplay = formatLocationDisplay(order.dropoff_address, order.dropoff_coords);
 
-    const broadcastTag = `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${order.dropoff_address || "N/A"}`;
+    const isHire = !sType.includes("delivery") && !sType.includes("rent");
+    const broadcastTag = isHire
+      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
+      : (sType.includes("rent")
+        ? `✅ *RENT A CAR BOOKED / CONFIRMED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n🚗 *Category:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`
+        : `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}`);
 
-    // 1. Forward Voice Note to all configured Driver Groups
-    for (const group of targetGroups) {
-      if (group.chat_id) {
-        console.log(`[AdminHandler] Forwarding voice note to driver group: ${group.name} (${group.chat_id})`);
+    const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
+
+    // 1. Forward Voice Note to service-configured Driver Groups
+    for (let gIdx = 0; gIdx < targetGroups.length; gIdx++) {
+      const group = targetGroups[gIdx];
+      const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+      if (targetChatId) {
+        if (gIdx > 0) {
+          const jitterMs = Math.floor(Math.random() * 1000);
+          await new Promise((resolve) => setTimeout(resolve, delaySec * 1000 + jitterMs));
+        }
+
+        console.log(`[AdminHandler] Forwarding voice note to driver group: ${group.name} (${targetChatId})`);
         
-        // Send tag text first or alongside
         await sendWhatsAppMessage(
           supabaseUrl,
           supabaseServiceKey,
-          group.chat_id,
+          targetChatId,
           broadcastTag,
           sessionApiKey
         );
 
-        // Send Voice Note
         if (voiceMediaUrl) {
           await sendWhatsAppVoice(
             supabaseUrl,
             supabaseServiceKey,
-            group.chat_id,
+            targetChatId,
             voiceMediaUrl,
             sessionApiKey
           );
@@ -169,25 +442,16 @@ export async function handleAdminMessage(
 
     // 2. Alert Customer: "Your order is confirmed."
     const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
-    console.log(`[AdminHandler] Sending confirmation alert to customer WhatsApp: ${targetCustomerNumber} (contact: ${order.customer_phone})`);
-    const customerConfirmText = `✅ *Your order is confirmed.*\nOrder ID: *${targetOrderCode}*\nVehicle: *${order.vehicle_type || "Cab"}*\n📍 *Pickup:* ${order.pickup_address || "N/A"}\n🏁 *Drop-off:* ${order.dropoff_address || "N/A"}\n\nA driver has been assigned and will contact you shortly.`;
-    
-    await sendWhatsAppMessage(
-      supabaseUrl,
-      supabaseServiceKey,
-      targetCustomerNumber,
-      customerConfirmText,
-      sessionApiKey
-    );
+    if (targetCustomerNumber) {
+      console.log(`[AdminHandler] Sending confirmation alert to customer WhatsApp: ${targetCustomerNumber}`);
+      const customerConfirmText = sType.includes("rent")
+        ? `✅ *Your Rent a Car Booking is Confirmed!*\nOrder ID: *${targetOrderCode}*\nVehicle: *${order.vehicle_type || "Vehicle"}*\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur rental provider has been assigned and will contact you shortly.`
+        : `✅ *Your order is confirmed.*\nOrder ID: *${targetOrderCode}*\nVehicle: *${order.vehicle_type || "Cab"}*\n📍 *Pickup:* ${order.pickup_address || "N/A"}\n🏁 *Drop-off:* ${order.dropoff_address || "N/A"}\n\nA driver has been assigned and will contact you shortly.`;
 
-    // If contact phone is different, also send a notification there
-    const orderWhatsApp = order.whatsapp_phone || order.customer_whatsapp;
-    if (order.customer_phone && orderWhatsApp && order.customer_phone !== orderWhatsApp) {
-      console.log(`[AdminHandler] Sending backup confirmation to contact phone: ${order.customer_phone}`);
       await sendWhatsAppMessage(
         supabaseUrl,
         supabaseServiceKey,
-        order.customer_phone,
+        targetCustomerNumber,
         customerConfirmText,
         sessionApiKey
       );
@@ -219,13 +483,271 @@ export async function handleAdminMessage(
 
     return {
       handled: true,
-      replyText: `✅ Voice update for Order *${targetOrderCode}* has been forwarded to ${targetGroups.length} driver group(s), and confirmation was sent to customer (${order.customer_phone}).`,
+      replyText: `✅ Voice update for Order *${targetOrderCode}* has been forwarded to ${targetGroups.length} driver group(s), and confirmation was sent to customer.`,
     };
   }
 
   // 2. If Admin sent text with an Order ID
   if (orderCode) {
-    // Store as pending order code in admin session
+    // Look up the order in central_cab.orders
+    let { data: order } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("*")
+      .eq("user_id", userId)
+      .ilike("order_code", orderCode)
+      .maybeSingle();
+
+    if (!order) {
+      const cleanCode = orderCode.replace(/\s+/g, "");
+      const { data: altOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .eq("user_id", userId)
+        .or(`order_code.ilike.%${orderCode}%,order_code.ilike.%${cleanCode}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (altOrder) order = altOrder;
+    }
+
+    if (!order) {
+      return {
+        handled: true,
+        replyText: `⚠️ Could not find Order ${orderCode}. Please verify the Order ID.`,
+      };
+    }
+
+    const sType = String(order.service_type || "").toLowerCase();
+    const isRent = sType.includes("rent") || orderCode.startsWith("RNT");
+
+    // Case A: Rent a Car Order: sending the RNT order number immediately confirms & marks it booked in group!
+    if (isRent) {
+      // 1. Update order status to confirmed in DB
+      await supabase
+        .schema("central_cab")
+        .from("orders")
+        .update({
+          status: "confirmed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      // Clear admin pending state
+      await supabase
+        .schema("central_cab")
+        .from("bot_sessions")
+        .upsert({
+          phone_number: adminPhoneNumber,
+          user_id: userId,
+          flow_type: "ADMIN_FLOW",
+          current_step: "IDLE",
+          session_data: {},
+          updated_at: new Date().toISOString(),
+        });
+
+      // 2. Forward "Order Booked" message to Rent a Car driver groups (100% English)
+      const rentGroups = (systemSettings.rent_a_car_groups && systemSettings.rent_a_car_groups.length > 0)
+        ? systemSettings.rent_a_car_groups
+        : (systemSettings.target_driver_groups || []);
+
+      const rentDuration = order.custom_fields?.raw_data?.rent_duration || "N/A";
+      const rentLocationDisplay = formatLocationDisplay(order.pickup_address, order.pickup_coords);
+      const rentBookedText = `✅ *RENT A CAR BOOKED / CONFIRMED: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n⏱️ *Duration:* ${rentDuration}\n📍 *Location:*\n${rentLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`;
+
+      for (const group of rentGroups) {
+        const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+        if (targetChatId) {
+          console.log(`[AdminHandler] Forwarding Rent a car booked notice to group: ${group.name} (${targetChatId})`);
+          await sendWhatsAppMessage(
+            supabaseUrl,
+            supabaseServiceKey,
+            targetChatId,
+            rentBookedText,
+            sessionApiKey
+          );
+        }
+      }
+
+      // 3. Send confirmation to Customer WhatsApp
+      const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
+      if (targetCustomerNumber) {
+        const orderLang = order.custom_fields?.language || "ta";
+        const customerConfirmText = orderLang === "ta"
+          ? `✅ *உங்கள் வாடகை வாகன முன்பதிவு உறுதி செய்யப்பட்டது!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *வாகனம்:* ${order.vehicle_type || "Vehicle"}\n📍 *இடம்:* ${order.pickup_address || "N/A"}\n\nஎமது முகவர் (Agent) விரைவில் உங்களைத் தொடர்புகொண்டு, வாகனத்தின் புகைப்படங்கள் மற்றும் விலை சம்பந்தப்பட்ட விபரங்களைத் தெரிவிப்பார்.\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 🚗`
+          : (orderLang === "si"
+            ? `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු (Agent) ඉක්මනින් ඔබව සම්බන්ධ කරගෙන වාහනයේ ඡායාරූප සහ මිල ගණන් ලබා දෙනු ඇත.\n\nස්තූතියි! 🚗`
+            : `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur agent will contact you shortly with the vehicle photos and pricing details.\n\nThank you! We are very glad you chose our service. 🚗`);
+        await sendWhatsAppMessage(
+          supabaseUrl,
+          supabaseServiceKey,
+          targetCustomerNumber,
+          customerConfirmText,
+          sessionApiKey
+        );
+      }
+
+      return {
+        handled: true,
+        replyText: `✅ Rent a Car Order *${order.order_code}* confirmed! Booked notice sent to ${rentGroups.length} Rent a Car group(s) and confirmation sent to customer.`,
+      };
+    }
+
+    const isDelivery = sType.includes("delivery") || orderCode.startsWith("DEL");
+
+    // Case B: Delivery Order: Admin sends order number + shop pickup location
+    if (isDelivery) {
+      let shopPickupLocation = extractShopPickupLocation(messageText, orderCode);
+      let shopPickupCoords: { lat: number; lng: number } | null = null;
+
+      // Check if coordinates exist in extracted text
+      const textCoordMatch = (shopPickupLocation || "").match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+      if (textCoordMatch) {
+        shopPickupCoords = { lat: parseFloat(textCoordMatch[1]), lng: parseFloat(textCoordMatch[2]) };
+      }
+
+      // If no valid text location was provided in the command
+      if (!shopPickupLocation || shopPickupLocation.length < 2) {
+        // 1. Check if admin session has last_admin_location saved recently (within last 30 mins)
+        const { data: adminSession } = await supabase
+          .schema("central_cab")
+          .from("bot_sessions")
+          .select("session_data")
+          .eq("phone_number", adminPhoneNumber)
+          .maybeSingle();
+
+        const lastSavedLoc = adminSession?.session_data?.last_admin_location;
+        if (lastSavedLoc && lastSavedLoc.coords && (Date.now() - (lastSavedLoc.timestamp || 0) < 30 * 60 * 1000)) {
+          shopPickupCoords = lastSavedLoc.coords;
+          shopPickupLocation = lastSavedLoc.name
+            ? `${lastSavedLoc.name} (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`
+            : `Shop Location (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`;
+        } else {
+          // 2. Query central_cab.conversations for recent inbound location from this admin (last 15 mins)
+          const { data: recentInboundLoc } = await supabase
+            .schema("central_cab")
+            .from("conversations")
+            .select("message, message_type, created_at")
+            .eq("phone_number", adminPhoneNumber)
+            .eq("direction", "inbound")
+            .or("message_type.eq.location,message.ilike.Location:%")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (recentInboundLoc) {
+            const m = recentInboundLoc.message.match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+            if (m) {
+              shopPickupCoords = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+              shopPickupLocation = `Shop Location (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`;
+            }
+          }
+        }
+
+        if (!shopPickupLocation && order.pickup_address && !order.pickup_address.includes("Pending") && order.pickup_address !== "Conform") {
+          shopPickupLocation = order.pickup_address;
+          shopPickupCoords = order.pickup_coords;
+        }
+
+        if (!shopPickupLocation || shopPickupLocation.length < 2) {
+          shopPickupLocation = "Shop Pickup Location (Pending Details)";
+        }
+      }
+
+      const productList = order.delivery_items
+        || order.custom_fields?.raw_data?.delivery_products
+        || order.custom_fields?.raw_data?.delivery_items
+        || "Package / Items";
+      const category = order.custom_fields?.raw_data?.delivery_category || "Delivery";
+      const customerDropoff = order.dropoff_address
+        || order.custom_fields?.raw_data?.delivery_location
+        || "Customer Location";
+
+      // 1. Update order in database: status -> confirmed, pickup_address -> shopPickupLocation
+      await supabase
+        .schema("central_cab")
+        .from("orders")
+        .update({
+          status: "confirmed",
+          pickup_address: shopPickupLocation,
+          pickup_coords: shopPickupCoords || null,
+          special_instructions: `[Shop Pickup: ${shopPickupLocation}] [Items: ${productList}]`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
+
+      const shopLocationDisplay = formatLocationDisplay(shopPickupLocation, shopPickupCoords);
+      const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, order.dropoff_coords);
+
+      // 2. Send Confirmed message to Delivery Shop Groups (100% clean English)
+      const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
+        ? systemSettings.delivery_driver_groups
+        : (systemSettings.target_driver_groups || []);
+
+      const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
+
+      for (const group of shopGroups) {
+        const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+        if (targetChatId) {
+          console.log(`[AdminHandler] Forwarding delivery order confirmed notice to Shop group: ${group.name} (${targetChatId})`);
+          await sendWhatsAppMessage(
+            supabaseUrl,
+            supabaseServiceKey,
+            targetChatId,
+            shopConfirmNotice,
+            sessionApiKey
+          );
+        }
+      }
+
+      // 3. Dispatch Ride Job to Delivery Riders Groups (100% clean English)
+      const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
+        ? systemSettings.delivery_rider_groups
+        : shopGroups;
+
+      const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Customer Contact:* ${order.customer_phone || order.whatsapp_phone || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+
+      for (const group of riderGroups) {
+        const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+        if (targetChatId) {
+          console.log(`[AdminHandler] Forwarding delivery ride job to Rider group: ${group.name} (${targetChatId})`);
+          await sendWhatsAppMessage(
+            supabaseUrl,
+            supabaseServiceKey,
+            targetChatId,
+            riderJobNotice,
+            sessionApiKey
+          );
+        }
+      }
+
+      // 4. Send Confirmation Update to Customer WhatsApp
+      const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
+      if (targetCustomerNumber) {
+        const orderLang = order.custom_fields?.language || "ta";
+        const customerConfirmText = orderLang === "ta"
+          ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
+          : (orderLang === "si"
+            ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
+            : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
+
+        await sendWhatsAppMessage(
+          supabaseUrl,
+          supabaseServiceKey,
+          targetCustomerNumber,
+          customerConfirmText,
+          sessionApiKey
+        );
+      }
+
+      return {
+        handled: true,
+        replyText: `✅ Delivery Order *${order.order_code}* confirmed!\n\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n🛵 Ride dispatched to ${riderGroups.length} Delivery Rider group(s) & notice sent to ${shopGroups.length} Shop group(s).`,
+      };
+    }
+
+    // Case C: Hire (Transport) Order: require driver voice note before dispatching to group
     await supabase
       .schema("central_cab")
       .from("bot_sessions")
@@ -234,20 +756,20 @@ export async function handleAdminMessage(
         user_id: userId,
         flow_type: "ADMIN_FLOW",
         current_step: "AWAITING_VOICE_NOTE",
-        session_data: { pending_admin_order_code: orderCode },
+        session_data: { pending_admin_order_code: order.order_code },
         updated_at: new Date().toISOString(),
       });
 
     return {
       handled: true,
-      replyText: `🎙️ Order *${orderCode}* selected. Please send the Voice Note with driver details now. It will be forwarded to all driver groups.`,
+      replyText: `🎙️ Order *${order.order_code}* selected.\n\nPlease send the Driver Voice Note now. Once received, the confirmed booking details and voice note will be dispatched together to the driver group.`,
     };
   }
 
   // General Admin Menu
   return {
     handled: true,
-    replyText: `👋 *Admin Control Panel*\n\nTo assign a ride:\n1. Send an Order ID (e.g. *#ORD845*)\n2. Send the Driver Voice Note to broadcast.`,
+    replyText: `👋 *Central Cabs Admin Control Panel*\n\n1. Send *CONFIRM HIR 001* or *HIR 001* (+ Voice Note) to confirm a ride.\n2. Send *RNT 001* to mark Rent a Car as Booked.\n3. Send *CONFIRM DEL 001 <Shop Location>* or pin to dispatch delivery.`,
   };
 }
 

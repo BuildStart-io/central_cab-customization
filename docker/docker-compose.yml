@@ -15,6 +15,8 @@ services:
   studio:
     container_name: supabase-studio
     image: supabase/studio:2026.08.03-sha-022b374
+    ports:
+      - "${STUDIO_PORT:-3030}:3000"
     restart: unless-stopped
     healthcheck:
       test:

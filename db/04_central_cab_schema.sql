@@ -145,6 +145,10 @@ BEGIN
         'cab_system_settings',
         '{
             "admin_whatsapp_number": "",
+            "broadcast_delay_seconds": 3,
+            "hire_driver_groups": [],
+            "rent_a_car_groups": [],
+            "delivery_driver_groups": [],
             "target_driver_groups": []
         }'::jsonb
     )

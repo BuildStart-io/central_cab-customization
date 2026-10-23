@@ -94,11 +94,11 @@ serve(async (req) => {
   }
 
   try {
-    const { to, message, sessionApiKey, imageUrl, mediaUrl, mediaType: explicitType } = await req.json();
+    const { to, message, sessionApiKey, imageUrl, mediaUrl, mediaType: explicitType, poll } = await req.json();
 
-    if (!to || (!message && !imageUrl && !mediaUrl)) {
+    if (!to || (!message && !imageUrl && !mediaUrl && !poll)) {
       return new Response(
-        JSON.stringify({ error: "Missing 'to' or 'message'/'mediaUrl' field" }),
+        JSON.stringify({ error: "Missing 'to' or 'message'/'mediaUrl'/'poll' field" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -108,11 +108,30 @@ serve(async (req) => {
     const url = mediaUrl || imageUrl;
     const detectedType = explicitType || (url ? detectMediaType(url) : null);
 
-    console.log(`[send-whatsapp-central_cab] Sending to ${chatId} (${detectedType || "text"}): ${(message || "").substring(0, 60)}`);
+    console.log(`[send-whatsapp-central_cab] Sending to ${chatId} (${poll ? "poll" : (detectedType || "text")}): ${(poll?.name || message || "").substring(0, 60)}`);
 
     let res: Response;
 
-    if (url) {
+    if (poll && poll.name && Array.isArray(poll.options)) {
+      console.log(`[send-whatsapp-central_cab] Sending Poll to ${chatId}: ${poll.name} (${poll.options.length} options)`);
+      res = await wahaFetch("/api/sendPoll", {
+        session: sessionName,
+        chatId,
+        poll: {
+          name: poll.name,
+          options: poll.options,
+          multipleAnswers: Boolean(poll.multipleAnswers || false),
+        },
+      });
+
+      // Graceful fallback to text menu if sendPoll fails on WAHA
+      if (!res.ok) {
+        const pollErr = await res.text();
+        console.warn(`[send-whatsapp-central_cab] sendPoll failed [${res.status}]: ${pollErr}. Falling back to formatted text...`);
+        const fallbackText = `${poll.name}\n\n` + poll.options.map((opt: string, i: number) => opt.startsWith(`${i + 1}`) ? opt : `${i + 1}. ${opt}`).join("\n");
+        res = await wahaFetch("/api/sendText", { session: sessionName, chatId, text: fallbackText });
+      }
+    } else if (url) {
       const fileName = filenameFromUrl(url);
       let file: any = null;
 

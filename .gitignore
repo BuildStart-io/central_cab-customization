@@ -61,3 +61,6 @@ rewrite.py
 *_filled.sql
 *create_superadmin*.sql
 
+# Exclude unsuffixed webhook-wsender symlink to avoid overwriting base tenant in shared server
+supabase/functions/webhook-wsender
+
