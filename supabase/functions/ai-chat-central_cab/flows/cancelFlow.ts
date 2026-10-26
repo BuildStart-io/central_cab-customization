@@ -187,7 +187,8 @@ export async function broadcastCancellation(
   phoneNumber: string,
   systemSettings: CabSystemSettings
 ) {
-  const cancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n📱 *Customer:* ${phoneNumber}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
+  const adminCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n📱 *Customer:* ${phoneNumber}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
+  const groupCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
 
   const adminPhone = systemSettings?.admin_whatsapp_number;
   if (adminPhone) {
@@ -199,7 +200,7 @@ export async function broadcastCancellation(
       },
       body: JSON.stringify({
         to: adminPhone,
-        message: cancelText,
+        message: adminCancelText,
         sessionApiKey,
       }),
     }).catch(err => console.error("Admin cancel alert failed:", err));
@@ -233,7 +234,7 @@ export async function broadcastCancellation(
         },
         body: JSON.stringify({
           to: targetChatId,
-          message: cancelText,
+          message: groupCancelText,
           sessionApiKey,
         }),
       }).catch(err => console.error(`Group cancel alert ${group.name} (${targetChatId}) failed:`, err));

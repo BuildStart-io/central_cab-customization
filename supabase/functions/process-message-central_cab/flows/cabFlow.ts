@@ -21,6 +21,7 @@ import {
   SupportedLanguage,
   isAffirmativeInput,
   isNegativeInput,
+  isHomeOrResetInput,
   isTimingNowChoice,
   isTimingScheduleChoice,
   getCategoryPoll,
@@ -28,6 +29,7 @@ import {
   getVehicleModelPoll,
   getTripTypePoll,
   getBookingConfirmPoll,
+  getBookingConfirmManualPrompt,
   getPostBookingPoll,
   getStepPromptText,
   getBookingSummaryCard,
@@ -427,8 +429,6 @@ export async function handleCabFlowStep(
 
       return {
         replyText: summary,
-        poll: getBookingConfirmPoll(lang),
-        sendTextWithPoll: true,
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_CONFIRM",
         sessionData: data,
@@ -473,10 +473,20 @@ export async function handleCabFlowStep(
           nextStep: "CATEGORY_CHOICE",
           sessionData: { language: lang },
         };
+      } else if (isHomeOrResetInput(trimmed)) {
+        const homeMsg = lang === "ta"
+          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
+          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        return {
+          replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+          poll: getCategoryPoll(lang),
+          nextFlow: "IDLE",
+          nextStep: "CATEGORY_CHOICE",
+          sessionData: { language: lang },
+        };
       } else {
         return await invalidFallback(
-          getStepPromptText("CAB_FLOW", "CAB_CONFIRM", lang),
-          getBookingConfirmPoll(lang)
+          getStepPromptText("CAB_FLOW", "CAB_CONFIRM", lang)
         );
       }
     }
@@ -670,7 +680,12 @@ export async function broadcastBooking(
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
       groupBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n${contactLine}\n🌐 *Website:* www.centralonline.lk`;
     } else {
-      groupBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
+      // Group broadcast for Transport / Hire: Contact number is the Hire Admin's number (NOT customer phone)
+      const hireAdminPhone = (systemSettings?.hire_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
+      const groupContact = hireAdminPhone || "Admin Office";
+      const groupContactLine = `📞 *Contact (Admin):* ${groupContact}`;
+
+      groupBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${groupContactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
     }
 
     // Admin broadcast text (Includes customer phone for direct follow-up)
@@ -684,7 +699,8 @@ export async function broadcastBooking(
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
       adminBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📱 *Customer Contact:* ${data.customer_phone || "N/A"}\n💬 *Customer WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n💡 To confirm this order and dispatch to delivery riders, reply:\n*CONFIRM ${orderCode} <Shop Pickup Location>* or send Shop Location Pin.`;
     } else {
-      adminBroadcastText = groupBroadcastText;
+      // Transport: Admin receives full customer phone and whatsapp details
+      adminBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign driver.`;
     }
 
     // 1. Send to Admin WhatsApp Numbers (Main Admin + Dedicated Service Admin)

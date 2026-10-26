@@ -8,6 +8,7 @@ import {
   SupportedLanguage,
   isAffirmativeInput,
   isNegativeInput,
+  isHomeOrResetInput,
   getCategoryPoll,
   getBookingConfirmPoll,
   getPostBookingPoll,
@@ -143,8 +144,6 @@ export async function handleDeliveryFlowStep(
 
       return {
         replyText: summary,
-        poll: getBookingConfirmPoll(lang),
-        sendTextWithPoll: true,
         nextFlow: "DELIVERY_FLOW",
         nextStep: "DELIVERY_CONFIRM",
         sessionData: data,
@@ -152,7 +151,7 @@ export async function handleDeliveryFlowStep(
     }
 
     // ------------------------------------------------------------------------
-    // Step 5: Confirm or Cancel Order
+    // Step 5: Confirm or Cancel Order (Yes / No / Home)
     // ------------------------------------------------------------------------
     case "DELIVERY_CONFIRM": {
       if (isAffirmativeInput(trimmed)) {
@@ -192,10 +191,20 @@ export async function handleDeliveryFlowStep(
           nextStep: "CATEGORY_CHOICE",
           sessionData: { language: lang },
         };
+      } else if (isHomeOrResetInput(trimmed)) {
+        const homeMsg = lang === "ta"
+          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
+          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        return {
+          replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+          poll: getCategoryPoll(lang),
+          nextFlow: "IDLE",
+          nextStep: "CATEGORY_CHOICE",
+          sessionData: { language: lang },
+        };
       } else {
         return await invalidFallback(
-          getStepPromptText("DELIVERY_FLOW", "DELIVERY_CONFIRM", lang),
-          getBookingConfirmPoll(lang)
+          getStepPromptText("DELIVERY_FLOW", "DELIVERY_CONFIRM", lang)
         );
       }
     }

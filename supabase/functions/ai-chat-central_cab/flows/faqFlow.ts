@@ -45,9 +45,6 @@ export function getStepPollForCurrentStep(
     if (step === "CAB_TRIP_TYPE") {
       return getTripTypePoll(lang);
     }
-    if (step === "CAB_CONFIRM") {
-      return getBookingConfirmPoll(lang);
-    }
   }
 
   if (flow === "RENT_A_CAR_FLOW") {
@@ -59,9 +56,6 @@ export function getStepPollForCurrentStep(
   if (flow === "DELIVERY_FLOW") {
     if (step === "DELIVERY_CATEGORY") {
       return getDeliveryCategoryPoll(lang);
-    }
-    if (step === "DELIVERY_CONFIRM") {
-      return getBookingConfirmPoll(lang);
     }
   }
 

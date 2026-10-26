@@ -11,6 +11,7 @@ import {
   SupportedLanguage,
   isAffirmativeInput,
   isNegativeInput,
+  isHomeOrResetInput,
   getCategoryPoll,
   getBookingConfirmPoll,
   getPostBookingPoll,
@@ -128,15 +129,13 @@ export async function handleRentFlowStep(
 
       return {
         replyText: summaryCard,
-        poll: getBookingConfirmPoll(lang),
-        sendTextWithPoll: true,
         nextFlow: "RENT_A_CAR_FLOW",
         nextStep: "RENT_CONFIRM",
         sessionData: data,
       };
     }
 
-    // 7. Confirmation Step (Yes / No)
+    // 7. Confirmation Step (Yes / No / Home)
     case "RENT_CONFIRM": {
       if (isAffirmativeInput(trimmed)) {
         const orderCode = await generateOrderCode(supabase, userId, "rent_a_car");
@@ -178,10 +177,20 @@ export async function handleRentFlowStep(
           nextStep: "CATEGORY_CHOICE",
           sessionData: { language: lang },
         };
+      } else if (isHomeOrResetInput(trimmed)) {
+        const homeMsg = lang === "ta"
+          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
+          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        return {
+          replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+          poll: getCategoryPoll(lang),
+          nextFlow: "IDLE",
+          nextStep: "CATEGORY_CHOICE",
+          sessionData: { language: lang },
+        };
       } else {
         return await invalidFallback(
-          getRentBookingSummaryCard(data, lang),
-          getBookingConfirmPoll(lang)
+          getRentBookingSummaryCard(data, lang)
         );
       }
     }

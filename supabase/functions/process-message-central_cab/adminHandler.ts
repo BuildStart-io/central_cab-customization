@@ -400,8 +400,11 @@ export async function handleAdminMessage(
     const dropoffDisplay = formatLocationDisplay(order.dropoff_address, order.dropoff_coords);
 
     const isHire = !sType.includes("delivery") && !sType.includes("rent");
+    const hireAdminPhone = (systemSettings?.hire_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
+    const groupHireContact = hireAdminPhone || "Admin Office";
+
     const broadcastTag = isHire
-      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
+      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupHireContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
       : (sType.includes("rent")
         ? `✅ *RENT A CAR BOOKED / CONFIRMED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n🚗 *Category:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`
         : `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}`);

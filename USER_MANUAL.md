@@ -45,10 +45,18 @@ Used for instant and scheduled passenger transport across all vehicle types (Mot
    - 🚌 Bus (Commercial passenger transport)
 3. **Pickup Location**: Customer sends a **WhatsApp Live Location Pin** or types a street address.
 4. **Drop-off Location**: Customer sends the destination pin or address.
-5. **Customer Confirmation**: Customer confirms their name and contact number.
-6. **Fare Calculation & Dispatch**: The system calculates the shortest road distance, computes the fare using your vehicle pricing chart, and assigns an Order ID (e.g., **`HIR 001`**).
-   - An alert is sent to the **Hire Driver WhatsApp Groups**.
-   - An alert is sent to the **Admin WhatsApp Number** with instructions for driver confirmation.
+5. **Customer Details**: Customer confirms their name and contact phone number.
+6. **Fare Calculation & Manual Confirmation Choices**:
+   - The system calculates the distance, computes the fare using your vehicle pricing chart, and displays the full booking summary.
+   - **Typed Confirmation Options (No Poll)**: The customer is given 3 clear options to type:
+     - 1️⃣ **Yes** (Type `1` or `YES`): Confirms the booking.
+     - 2️⃣ **Cancel** (Type `2` or `CANCEL`): Cancels the booking.
+     - 3️⃣ **Home** (Type `3` or `HOME`): Returns to the Main Menu.
+7. **Order Creation & Privacy-Protected Dispatch**:
+   - Assigns a unique Order ID (e.g., **`HIR 001`**).
+   - **Customer Phone Privacy**: The customer's personal phone number is sent **ONLY to the Admin**.
+   - **Driver Group Dispatch**: In the **Hire Driver WhatsApp Groups**, the **Hire Admin's contact number** is displayed instead of the customer's number, protecting customer privacy while allowing drivers to contact the admin/office.
+   - The Admin receives instructions on WhatsApp to confirm the driver voice note.
 
 ---
 
@@ -60,7 +68,8 @@ Designed for self-drive vehicle rentals, long-term hires, wedding car bookings, 
 2. **Rental Duration & Dates**: Customer states how many days or weeks they need the car and the start date.
 3. **Pickup / Delivery Location**: Customer sends their preferred delivery location.
 4. **Customer Information**: Customer enters their name and phone number.
-5. **Order Dispatch**: The system creates an order code (e.g., **`RNT 001`**) and immediately forwards the request to your **Rent a Car WhatsApp Groups** so fleet owners and vehicle partners can respond.
+5. **Summary & Typed Confirmation**: Shows request summary with manual typing choices (1 for Yes, 2 for Cancel, 3 for Home).
+6. **Order Dispatch**: The system creates an order code (e.g., **`RNT 001`**) and immediately forwards the request to your **Rent a Car WhatsApp Groups** so fleet owners and vehicle partners can respond.
 
 ---
 
@@ -72,7 +81,8 @@ Designed for grocery shopping, restaurant food deliveries, parcel dispatch, medi
 2. **Customer Drop-off Location**: Customer shares the home or office location where the parcel should be delivered.
 3. **Delivery Timing**: Customer selects **"Deliver Now"** or **"Schedule for Later"**.
 4. **Customer Information**: Customer enters their name and contact phone.
-5. **Order Alert**: Order is created (e.g., **`DEL 001`**) and sent to the **Delivery Shop Group** and the **Admin**.
+5. **Summary & Typed Confirmation**: Shows delivery order summary with manual typing choices (1 for Yes, 2 for Cancel, 3 for Home).
+6. **Order Alert**: Order is created (e.g., **`DEL 001`**) and sent to the **Delivery Shop Group** and the **Admin**.
 
 > 💡 **Why Customer Does Not Set Shop Pickup Location**:  
 > Customers know where they want their items delivered, but they may not know which specific shop, pharmacy, or branch has stock. Therefore, **the Admin assigns the Shop Pickup Location** during order confirmation.
