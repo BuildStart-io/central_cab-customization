@@ -670,20 +670,26 @@ export async function broadcastBooking(
     const timingHeader = isScheduled ? `📅 *SCHEDULED FOR:* ${data.scheduled_time}\n` : (isRent ? "" : `⚡ *RIDE NOW*\n`);
 
     // Group broadcast text (All in 100% clean English with guaranteed Google Maps links)
+    // Customer phone numbers are NEVER sent to driver/rider groups. Admin contact numbers are displayed instead.
     let groupBroadcastText = "";
     if (isRent) {
       const rentLocationText = data.rent_location || data.pickup_text || "N/A";
       const rentDisplay = formatLocationDisplay(rentLocationText, data.pickup_coords);
-      groupBroadcastText = `🚗 *NEW RENT A CAR INQUIRY: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name || "Customer"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model Preference:* ${data.rent_model || "Any Model"}\n⏱️ *Duration:* ${data.rent_duration || "1 Day"}\n📍 *Location:*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this rental.`;
+      const rentAdminPhone = (systemSettings?.rent_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+      groupBroadcastText = `🚗 *NEW RENT A CAR INQUIRY: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name || "Customer"}\n📞 *Contact (Admin):* ${rentAdminPhone}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model Preference:* ${data.rent_model || "Any Model"}\n⏱️ *Duration:* ${data.rent_duration || "1 Day"}\n📍 *Location:*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this rental.`;
     } else if (isDelivery) {
       const dropoffLoc = data.delivery_location || data.dropoff_address || data.dropoff_text || "Customer Location";
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
-      groupBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n${contactLine}\n🌐 *Website:* www.centralonline.lk`;
+      const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+      groupBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📞 *Contact (Admin):* ${deliveryAdminPhone}\n🌐 *Website:* www.centralonline.lk`;
     } else {
-      // Group broadcast for Transport / Hire: Contact number is the Hire Admin's number (NOT customer phone)
-      const hireAdminPhone = (systemSettings?.hire_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
-      const groupContact = hireAdminPhone || "Admin Office";
-      const groupContactLine = `📞 *Contact (Admin):* ${groupContact}`;
+      // Group broadcast for Transport / Hire / Cab: Contact number is the Service Admin's number (NOT customer phone)
+      const isRideNow = data.booking_type === "now";
+      const transportAdminPhone = (!isRideNow && systemSettings?.hire_admin_number
+        ? systemSettings.hire_admin_number
+        : (systemSettings?.admin_whatsapp_number || systemSettings?.hire_admin_number || "")
+      ).trim() || "Admin Office";
+      const groupContactLine = `📞 *Contact (Admin):* ${transportAdminPhone}`;
 
       groupBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${groupContactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
     }

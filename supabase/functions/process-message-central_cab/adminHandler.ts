@@ -243,7 +243,8 @@ export async function handleAdminMessage(
           ? systemSettings.delivery_rider_groups
           : (systemSettings.delivery_driver_groups || systemSettings.target_driver_groups || []);
 
-        const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Customer Contact:* ${targetOrder.customer_phone || targetOrder.whatsapp_phone || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+        const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+        const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
 
         for (const group of riderGroups) {
           const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -400,14 +401,26 @@ export async function handleAdminMessage(
     const dropoffDisplay = formatLocationDisplay(order.dropoff_address, order.dropoff_coords);
 
     const isHire = !sType.includes("delivery") && !sType.includes("rent");
-    const hireAdminPhone = (systemSettings?.hire_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
-    const groupHireContact = hireAdminPhone || "Admin Office";
+    const isRent = sType.includes("rent") || targetOrderCode.startsWith("RNT");
+    const isDelivery = sType.includes("delivery") || targetOrderCode.startsWith("DEL");
+
+    let serviceAdminPhone = (systemSettings?.admin_whatsapp_number || "").trim();
+    if (isHire && systemSettings?.hire_admin_number) {
+      serviceAdminPhone = systemSettings.hire_admin_number.trim();
+    } else if (isRent && systemSettings?.rent_admin_number) {
+      serviceAdminPhone = systemSettings.rent_admin_number.trim();
+    } else if (isDelivery && systemSettings?.delivery_admin_number) {
+      serviceAdminPhone = systemSettings.delivery_admin_number.trim();
+    }
+    const groupContact = serviceAdminPhone || "Admin Office";
 
     const broadcastTag = isHire
-      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupHireContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
-      : (sType.includes("rent")
-        ? `✅ *RENT A CAR BOOKED / CONFIRMED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n🚗 *Category:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`
-        : `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📱 *Contact:* ${order.customer_phone || "N/A"}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}`);
+      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
+      : (isRent
+        ? `✅ *RENT A CAR BOOKED / CONFIRMED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n📞 *Contact (Admin):* ${groupContact}\n🚗 *Category:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`
+        : (isDelivery
+          ? `✅ *DELIVERY ORDER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Delivery Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Delivery rider assigned.`
+          : `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}`));
 
     const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
 
@@ -709,7 +722,8 @@ export async function handleAdminMessage(
         ? systemSettings.delivery_rider_groups
         : shopGroups;
 
-      const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Customer Contact:* ${order.customer_phone || order.whatsapp_phone || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+      const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+      const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
 
       for (const group of riderGroups) {
         const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);

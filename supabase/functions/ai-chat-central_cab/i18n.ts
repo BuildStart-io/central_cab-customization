@@ -1091,10 +1091,10 @@ export function getBookingConfirmManualPrompt(lang: SupportedLanguage = "si"): s
 export function getRentBookingSummaryCard(data: any, lang: SupportedLanguage): string {
   const prompt = getBookingConfirmManualPrompt(lang);
   if (lang === "ta") {
-    return `🚗 *வாடகை வாகன முன்பதிவு விபரம் (Rent Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *பெயர்:* ${data.customer_name || "Customer"}\n📞 *தொடர்பு:* ${data.customer_phone || "N/A"}\n🚗 *வாகன வகை:* ${data.rent_vehicle_category || "Car"}\n🚘 *மாடல் விருப்பம்:* ${data.rent_model || "Any"}\n⏱️ *கால அளவு:* ${data.rent_duration || "N/A"}\n📍 *இடம்:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `🚗 *வாடகை வாகன முன்பதிவு விபரம் (Rent Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *பெயர்:* ${data.customer_name || "வாடிக்கையாளர்"}\n📞 *தொடர்பு:* ${data.customer_phone || "N/A"}\n🚗 *வாகன வகை:* ${data.rent_vehicle_category || "Car"}\n🚘 *மாடல் விருப்பம்:* ${data.rent_model || "எதுவும் (Any)"}\n⏱️ *கால அளவு:* ${data.rent_duration || "N/A"}\n📍 *இடம்:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
   if (lang === "si") {
-    return `🚗 *Rent a Car ඉල්ලුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *නම:* ${data.customer_name || "Customer"}\n📞 *දුරකථන:* ${data.customer_phone || "N/A"}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *මොඩලය:* ${data.rent_model || "Any"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "N/A"}\n📍 *ස්ථානය:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `🚗 *Rent a Car ඉල්ලුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *නම:* ${data.customer_name || "පාරිභෝගිකයා"}\n📞 *දුරකථන:* ${data.customer_phone || "N/A"}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *මොඩලය:* ${data.rent_model || "ඕනෑම මාදිලියක් (Any)"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "N/A"}\n📍 *ස්ථානය:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
   return `🚗 *Rent a Car Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name || "Customer"}\n📞 *Contact:* ${data.customer_phone || "N/A"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model:* ${data.rent_model || "Any"}\n⏱️ *Duration:* ${data.rent_duration || "N/A"}\n📍 *Location:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
@@ -1111,24 +1111,64 @@ export function getDeliveryOrderSummaryCard(data: any, lang: SupportedLanguage):
   return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:* ${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
 
+export function getVehicleLocalizedName(vehicleKey: string = "", lang: SupportedLanguage = "en"): string {
+  const vk = (vehicleKey || "").toLowerCase();
+  if (vk.includes("motor") || vk.includes("bike")) {
+    if (lang === "ta") return "மோட்டார் சைக்கிள் (Motorbike) 🏍️";
+    if (lang === "si") return "යතුරුපැදිය (Motorbike) 🏍️";
+    return "Motorbike 🏍️";
+  }
+  if (vk.includes("three") || vk.includes("tuk") || vk.includes("wheeler") || vk.includes("ත්‍රිරෝද") || vk.includes("முச்சக்கர")) {
+    if (lang === "ta") return "முச்சக்கர வண்டி (Three-wheeler) 🛺";
+    if (lang === "si") return "ත්‍රිරෝද රථය (Three-wheeler) 🛺";
+    return "Three-wheeler 🛺";
+  }
+  if (vk.includes("van") || vk.includes("kdh") || vk.includes("වෑන්") || vk.includes("வேன்")) {
+    if (lang === "ta") return "வேன் (Van) 🚐";
+    if (lang === "si") return "වෑන් (Van) 🚐";
+    return "Van 🚐";
+  }
+  if (vk.includes("lorry") || vk.includes("truck") || vk.includes("ලොරි") || vk.includes("லொறி")) {
+    if (lang === "ta") return "லொறி (Lorry) 🚚";
+    if (lang === "si") return "ලොරි (Lorry) 🚚";
+    return "Lorry 🚚";
+  }
+  if (vk.includes("bus") || vk.includes("බස්") || vk.includes("பஸ்")) {
+    if (lang === "ta") return "பஸ் (Bus) 🚌";
+    if (lang === "si") return "බස් (Bus) 🚌";
+    return "Bus 🚌";
+  }
+  if (vk.includes("car") || vk.includes("කාර්") || vk.includes("கார்")) {
+    if (lang === "ta") return "கார் (Car) 🚗";
+    if (lang === "si") return "කාර් (Car) 🚗";
+    return "Car 🚗";
+  }
+  return vehicleKey;
+}
+
 export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDelivery = false): string {
   const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-  const pickup = data.pickup_address || data.pickup_text || "Pickup Point";
-  const dropoff = data.dropoff_address || data.dropoff_text || "Drop-off Point";
+  const pickup = data.pickup_address || data.pickup_text || (lang === "ta" ? "புறப்படும் இடம்" : (lang === "si" ? "ආරම්භක ස්ථානය" : "Pickup Point"));
+  const dropoff = data.dropoff_address || data.dropoff_text || (lang === "ta" ? "சேரும் இடம்" : (lang === "si" ? "ගමනාන්තය" : "Drop-off Point"));
   const prompt = getBookingConfirmManualPrompt(lang);
   
+  const baseVehicleName = getVehicleLocalizedName(data.vehicle_key || data.vehicle_name || "car", lang);
+  const vehicleText = data.vehicle_model?.name
+    ? `${baseVehicleName} (${data.vehicle_model.name})`
+    : baseVehicleName;
+
   if (lang === "ta") {
-    const timingHeader = isScheduled ? `📅 *முன்பதிவு திகதி/நேரம்:* ${data.scheduled_time}\n` : `⚡ *உடனடி சேவை (Now)*\n`;
-    return `📋 *முன்பதிவு விபரம் (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *பெயர்:* ${data.customer_name}\n📱 *தொடர்பு:* ${data.customer_phone}\n🚗 *வாகனம்:* ${data.vehicle_name}\n📍 *புறப்படும் இடம்:* ${pickup}\n🏁 *சேரும் இடம்:* ${dropoff}\n${isDelivery ? `📦 *பொருட்கள்:* ${data.delivery_items}\n` : `🔄 *பயண வகை:* ${data.trip_type === "round_trip" ? "இரு வழி (Round Trip)" : "ஒரு வழி (One-Way)"}\n`}🛣️ *பயண தூரம்:* ${data.distance_text}\n💰 *கட்டணம்:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    const timingHeader = isScheduled ? `📅 *முன்பதிவு திகதி/நேரம்:* ${data.scheduled_time}\n` : `⚡ *உடனடி சேவை (Ride Now)*\n`;
+    return `📋 *முன்பதிவு விபரம் (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *பெயர்:* ${data.customer_name}\n📱 *தொடர்பு:* ${data.customer_phone}\n🚗 *வாகனம்:* ${vehicleText}\n📍 *புறப்படும் இடம்:* ${pickup}\n🏁 *சேரும் இடம்:* ${dropoff}\n${isDelivery ? `📦 *பொருட்கள்:* ${data.delivery_items}\n` : `🔄 *பயண வகை:* ${data.trip_type === "round_trip" ? "இரு வழி (Round Trip)" : "ஒரு வழி (One-Way)"}\n`}🛣️ *பயண தூரம்:* ${data.distance_text}\n💰 *கட்டணம்:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
   if (lang === "si") {
-    const timingHeader = isScheduled ? `📅 *SCHEDULED FOR:* ${data.scheduled_time}\n` : `⚡ *RIDE NOW*\n`;
-    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${data.vehicle_name}\n📍 *Pickup:* ${pickup}\n🏁 *Drop-off:* ${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    const timingHeader = isScheduled ? `📅 *වෙන්කළ දිනය/වේලාව:* ${data.scheduled_time}\n` : `⚡ *ක්ෂණික ගමන (Ride Now)*\n`;
+    return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):* ${pickup}\n🏁 *ගමනාන්තය (Drop-off):* ${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
   const timingHeader = isScheduled ? `📅 *Scheduled for:* ${data.scheduled_time}\n` : `⚡ *Immediate Ride*\n`;
-  return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup:* ${pickup}\n🏁 *Drop-off:* ${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup:* ${pickup}\n🏁 *Drop-off:* ${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
 
 
