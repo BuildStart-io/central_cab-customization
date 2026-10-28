@@ -88,6 +88,127 @@ export function extractOrderCode(text: string): string | null {
 }
 
 /**
+ * Helper to dispatch confirmed delivery order to Shop & Rider groups and notify customer
+ */
+export async function dispatchConfirmedDeliveryOrder(
+  supabase: any,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  sessionApiKey: string,
+  systemSettings: CabSystemSettings,
+  targetOrder: any,
+  shopLocationText: string,
+  shopCoords: { lat: number; lng: number } | null,
+  adminPhoneNumber: string,
+  userId: string
+): Promise<{ handled: boolean; replyText?: string }> {
+  const productList = targetOrder.delivery_items
+    || targetOrder.custom_fields?.raw_data?.delivery_products
+    || targetOrder.custom_fields?.raw_data?.delivery_items
+    || "Package / Items";
+  const category = targetOrder.custom_fields?.raw_data?.delivery_category || "Delivery";
+  const customerDropoff = targetOrder.dropoff_address
+    || targetOrder.custom_fields?.raw_data?.delivery_location
+    || "Customer Location";
+
+  // 1. Update order in database: status -> confirmed, pickup_address -> shopLocationText
+  await supabase
+    .schema("central_cab")
+    .from("orders")
+    .update({
+      status: "confirmed",
+      pickup_address: shopLocationText,
+      pickup_coords: shopCoords || null,
+      special_instructions: `[Shop Pickup: ${shopLocationText}] [Items: ${productList}]`,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", targetOrder.id);
+
+  // 2. Clear admin pending state in bot_sessions
+  await supabase
+    .schema("central_cab")
+    .from("bot_sessions")
+    .upsert({
+      phone_number: adminPhoneNumber,
+      user_id: userId,
+      flow_type: "ADMIN_FLOW",
+      current_step: "IDLE",
+      session_data: {},
+      updated_at: new Date().toISOString(),
+    });
+
+  const shopLocationDisplay = formatLocationDisplay(shopLocationText, shopCoords);
+  const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
+
+  // 3. Send Confirmed notice to Delivery Shop Groups (100% clean English)
+  const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
+    ? systemSettings.delivery_driver_groups
+    : (systemSettings.target_driver_groups || []);
+
+  const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
+
+  for (const group of shopGroups) {
+    const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+    if (targetChatId) {
+      console.log(`[AdminHandler] Forwarding delivery order confirmed notice to Shop group: ${group.name} (${targetChatId})`);
+      await sendWhatsAppMessage(
+        supabaseUrl,
+        supabaseServiceKey,
+        targetChatId,
+        shopConfirmNotice,
+        sessionApiKey
+      );
+    }
+  }
+
+  // 4. Dispatch Ride Job to Delivery Riders Groups (100% clean English)
+  const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
+    ? systemSettings.delivery_rider_groups
+    : shopGroups;
+
+  const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+  const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+
+  for (const group of riderGroups) {
+    const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+    if (targetChatId) {
+      console.log(`[AdminHandler] Forwarding delivery ride job to Rider group: ${group.name} (${targetChatId})`);
+      await sendWhatsAppMessage(
+        supabaseUrl,
+        supabaseServiceKey,
+        targetChatId,
+        riderJobNotice,
+        sessionApiKey
+      );
+    }
+  }
+
+  // 5. Send Confirmation Update to Customer WhatsApp
+  const targetCustomerNumber = targetOrder.whatsapp_phone || targetOrder.customer_whatsapp || targetOrder.customer_phone;
+  if (targetCustomerNumber) {
+    const orderLang = targetOrder.custom_fields?.language || "ta";
+    const customerConfirmText = orderLang === "ta"
+      ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
+      : (orderLang === "si"
+        ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
+        : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
+
+    await sendWhatsAppMessage(
+      supabaseUrl,
+      supabaseServiceKey,
+      targetCustomerNumber,
+      customerConfirmText,
+      sessionApiKey
+    );
+  }
+
+  return {
+    handled: true,
+    replyText: `✅ *Shop Pickup Location assigned for Delivery Order ${targetOrder.order_code}!* (உறுதி செய்யப்பட்டது)\n\n🏪 *Shop Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & confirmation sent to customer.`,
+  };
+}
+
+/**
  * Handle incoming message from Admin or Driver dispatch
  */
 export async function handleAdminMessage(
@@ -111,15 +232,94 @@ export async function handleAdminMessage(
   const lowerText = (messageText || "").trim().toLowerCase();
   const isExplicitConfirm = /\b(confirm|conform|confrm|cnf|confirmed|conformed|accept|accepted|ok|done|yes|book|booked)\b/i.test(lowerText);
 
+  // 0. Fetch Admin Session state
+  const { data: adminSession } = await supabase
+    .schema("central_cab")
+    .from("bot_sessions")
+    .select("session_data, current_step")
+    .eq("phone_number", adminPhoneNumber)
+    .maybeSingle();
+
+  const isAwaitingDeliveryLocation = adminSession?.current_step === "AWAITING_DELIVERY_SHOP_LOCATION"
+    && Boolean(adminSession?.session_data?.pending_admin_order_code);
+
+  // If Admin is in the middle of assigning Shop Location for a Delivery Order
+  if (isAwaitingDeliveryLocation) {
+    if (lowerText === "cancel" || lowerText === "exit") {
+      await supabase
+        .schema("central_cab")
+        .from("bot_sessions")
+        .upsert({
+          phone_number: adminPhoneNumber,
+          user_id: userId,
+          flow_type: "ADMIN_FLOW",
+          current_step: "IDLE",
+          session_data: {},
+          updated_at: new Date().toISOString(),
+        });
+      return {
+        handled: true,
+        replyText: `❌ Shop pickup location assignment cancelled.`,
+      };
+    }
+
+    // If admin sent a DIFFERENT order code (e.g. switching to another order), let it proceed below.
+    // Otherwise, this message is the Shop Location (Location Pin or Text address)!
+    if (!orderCode && !isVoice && !voiceMediaUrl) {
+      const pendingCode = adminSession.session_data.pending_admin_order_code;
+      let { data: targetOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .ilike("order_code", pendingCode)
+        .maybeSingle();
+
+      if (targetOrder) {
+        let shopCoords: { lat: number; lng: number } | null = null;
+        let shopLocText = (messageText || "").trim();
+
+        const locLat = rawPayload?.locationDetails?.latitude ?? rawPayload?.location?.latitude ?? rawPayload?.payload?.location?.latitude;
+        const locLng = rawPayload?.locationDetails?.longitude ?? rawPayload?.location?.longitude ?? rawPayload?.payload?.location?.longitude;
+        const locName = rawPayload?.locationDetails?.name || rawPayload?.locationDetails?.address || rawPayload?.location?.name || rawPayload?.location?.address || "";
+
+        if (locLat && locLng) {
+          shopCoords = {
+            lat: Number(locLat),
+            lng: Number(locLng),
+          };
+          shopLocText = locName ? `${locName} (${shopCoords.lat.toFixed(4)}, ${shopCoords.lng.toFixed(4)})` : `Shop Location (${shopCoords.lat.toFixed(4)}, ${shopCoords.lng.toFixed(4)})`;
+        } else {
+          const match = (messageText || "").match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+          if (match) {
+            shopCoords = { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+          }
+        }
+
+        if (!shopLocText || shopLocText.length < 2) {
+          return {
+            handled: true,
+            replyText: `⚠️ Please send a valid Shop Pickup Location (Pin 📍 or Name / Address) to confirm Order *${targetOrder.order_code}*.\n\n_(கடை அமைவிடத்தை Location Pin அல்லது முகவரியாக அனுப்பவும்)_`,
+          };
+        }
+
+        return await dispatchConfirmedDeliveryOrder(
+          supabase,
+          supabaseUrl,
+          supabaseServiceKey,
+          sessionApiKey,
+          systemSettings,
+          targetOrder,
+          shopLocText,
+          shopCoords,
+          adminPhoneNumber,
+          userId
+        );
+      }
+    }
+  }
+
   // If no order code directly in message text, check last admin session state
   if (!orderCode && (isVoice || voiceMediaUrl || isExplicitConfirm)) {
-    const { data: adminSession } = await supabase
-      .schema("central_cab")
-      .from("bot_sessions")
-      .select("session_data, current_step")
-      .eq("phone_number", adminPhoneNumber)
-      .maybeSingle();
-
     if (adminSession?.session_data?.pending_admin_order_code) {
       orderCode = adminSession.session_data.pending_admin_order_code;
     }
@@ -172,24 +372,27 @@ export async function handleAdminMessage(
       // 2. Check if there is an active delivery order to assign this shop location to
       let targetCode = orderCode;
       if (!targetCode) {
-        const { data: adminSession } = await supabase
-          .schema("central_cab")
-          .from("bot_sessions")
-          .select("session_data")
-          .eq("phone_number", adminPhoneNumber)
-          .maybeSingle();
         targetCode = adminSession?.session_data?.pending_admin_order_code || null;
       }
 
       let targetOrder: any = null;
       if (targetCode) {
-        const { data: o } = await supabase
+        let { data: o } = await supabase
           .schema("central_cab")
           .from("orders")
           .select("*")
           .eq("user_id", userId)
           .ilike("order_code", targetCode)
           .maybeSingle();
+        if (!o) {
+          const { data: globalO } = await supabase
+            .schema("central_cab")
+            .from("orders")
+            .select("*")
+            .ilike("order_code", targetCode)
+            .maybeSingle();
+          o = globalO;
+        }
         targetOrder = o;
       }
 
@@ -199,7 +402,6 @@ export async function handleAdminMessage(
           .schema("central_cab")
           .from("orders")
           .select("*")
-          .eq("user_id", userId)
           .eq("service_type", "delivery")
           .order("created_at", { ascending: false })
           .limit(1)
@@ -214,94 +416,18 @@ export async function handleAdminMessage(
           ? `${adminLocName} (${adminLocCoords.lat.toFixed(4)}, ${adminLocCoords.lng.toFixed(4)})`
           : `Shop Location (${adminLocCoords.lat.toFixed(4)}, ${adminLocCoords.lng.toFixed(4)})`;
 
-        // Update order in database
-        await supabase
-          .schema("central_cab")
-          .from("orders")
-          .update({
-            status: "confirmed",
-            pickup_address: cleanShopText,
-            pickup_coords: adminLocCoords,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", targetOrder.id);
-
-        const shopLocationDisplay = formatLocationDisplay(cleanShopText, adminLocCoords);
-        const customerDropoff = targetOrder.dropoff_address
-          || targetOrder.custom_fields?.raw_data?.delivery_location
-          || "Customer Location";
-        const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
-
-        const productList = targetOrder.delivery_items
-          || targetOrder.custom_fields?.raw_data?.delivery_products
-          || targetOrder.custom_fields?.raw_data?.delivery_items
-          || "Package / Items";
-        const category = targetOrder.custom_fields?.raw_data?.delivery_category || "Delivery";
-
-        // Dispatch to Delivery Riders Groups (100% clean English)
-        const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
-          ? systemSettings.delivery_rider_groups
-          : (systemSettings.delivery_driver_groups || systemSettings.target_driver_groups || []);
-
-        const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-        const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
-
-        for (const group of riderGroups) {
-          const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-          if (targetChatId) {
-            await sendWhatsAppMessage(
-              supabaseUrl,
-              supabaseServiceKey,
-              targetChatId,
-              riderJobNotice,
-              sessionApiKey
-            );
-          }
-        }
-
-        // Send confirmed notice to Delivery Shop Groups (100% clean English)
-        const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
-          ? systemSettings.delivery_driver_groups
-          : (systemSettings.target_driver_groups || []);
-
-        const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
-
-        for (const group of shopGroups) {
-          const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-          if (targetChatId) {
-            await sendWhatsAppMessage(
-              supabaseUrl,
-              supabaseServiceKey,
-              targetChatId,
-              shopConfirmNotice,
-              sessionApiKey
-            );
-          }
-        }
-
-        // Send customer update
-        const targetCustomerNumber = targetOrder.whatsapp_phone || targetOrder.customer_whatsapp || targetOrder.customer_phone;
-        if (targetCustomerNumber) {
-          const orderLang = targetOrder.custom_fields?.language || "ta";
-          const customerConfirmText = orderLang === "ta"
-            ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
-            : (orderLang === "si"
-              ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
-              : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
-
-          await sendWhatsAppMessage(
-            supabaseUrl,
-            supabaseServiceKey,
-            targetCustomerNumber,
-            customerConfirmText,
-            sessionApiKey
-          );
-        }
-
-        return {
-          handled: true,
-          replyText: `✅ Shop Pickup Location assigned for Delivery Order *${targetOrder.order_code}*!\n\n🏪 *Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & customer updated.`,
-        };
+        return await dispatchConfirmedDeliveryOrder(
+          supabase,
+          supabaseUrl,
+          supabaseServiceKey,
+          sessionApiKey,
+          systemSettings,
+          targetOrder,
+          cleanShopText,
+          adminLocCoords,
+          adminPhoneNumber,
+          userId
+        );
       }
 
       return {
@@ -638,156 +764,67 @@ export async function handleAdminMessage(
 
     const isDelivery = sType.includes("delivery") || orderCode.startsWith("DEL");
 
-    // Case B: Delivery Order: Admin sends order number + shop pickup location
+    // Case B: Delivery Order: Admin sends order number first, then shop pickup location
     if (isDelivery) {
       let shopPickupLocation = extractShopPickupLocation(messageText, orderCode);
       let shopPickupCoords: { lat: number; lng: number } | null = null;
 
-      // Check if coordinates exist in extracted text
-      const textCoordMatch = (shopPickupLocation || "").match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
-      if (textCoordMatch) {
-        shopPickupCoords = { lat: parseFloat(textCoordMatch[1]), lng: parseFloat(textCoordMatch[2]) };
+      // Check if coordinates exist in extracted text or location payload
+      const locLat = rawPayload?.locationDetails?.latitude ?? rawPayload?.location?.latitude ?? rawPayload?.payload?.location?.latitude;
+      const locLng = rawPayload?.locationDetails?.longitude ?? rawPayload?.location?.longitude ?? rawPayload?.payload?.location?.longitude;
+      if (locLat && locLng) {
+        shopPickupCoords = { lat: Number(locLat), lng: Number(locLng) };
+      } else {
+        const textCoordMatch = (shopPickupLocation || "").match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+        if (textCoordMatch) {
+          shopPickupCoords = { lat: parseFloat(textCoordMatch[1]), lng: parseFloat(textCoordMatch[2]) };
+        }
       }
 
-      // If no valid text location was provided in the command
+      // If no valid shop pickup location was provided in this message, prompt admin for it (Step 2)
       if (!shopPickupLocation || shopPickupLocation.length < 2) {
-        // 1. Check if admin session has last_admin_location saved recently (within last 30 mins)
-        const { data: adminSession } = await supabase
+        const productList = order.delivery_items
+          || order.custom_fields?.raw_data?.delivery_products
+          || order.custom_fields?.raw_data?.delivery_items
+          || "Package / Items";
+        const category = order.custom_fields?.raw_data?.delivery_category || "Delivery";
+        const customerDropoff = order.dropoff_address
+          || order.custom_fields?.raw_data?.delivery_location
+          || "Customer Location";
+        const dropoffDisplay = formatLocationDisplay(customerDropoff, order.dropoff_coords);
+
+        // Store waiting state in bot_sessions
+        await supabase
           .schema("central_cab")
           .from("bot_sessions")
-          .select("session_data")
-          .eq("phone_number", adminPhoneNumber)
-          .maybeSingle();
+          .upsert({
+            phone_number: adminPhoneNumber,
+            user_id: userId,
+            flow_type: "ADMIN_FLOW",
+            current_step: "AWAITING_DELIVERY_SHOP_LOCATION",
+            session_data: { pending_admin_order_code: order.order_code, pending_order_id: order.id },
+            updated_at: new Date().toISOString(),
+          });
 
-        const lastSavedLoc = adminSession?.session_data?.last_admin_location;
-        if (lastSavedLoc && lastSavedLoc.coords && (Date.now() - (lastSavedLoc.timestamp || 0) < 30 * 60 * 1000)) {
-          shopPickupCoords = lastSavedLoc.coords;
-          shopPickupLocation = lastSavedLoc.name
-            ? `${lastSavedLoc.name} (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`
-            : `Shop Location (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`;
-        } else {
-          // 2. Query central_cab.conversations for recent inbound location from this admin (last 15 mins)
-          const { data: recentInboundLoc } = await supabase
-            .schema("central_cab")
-            .from("conversations")
-            .select("message, message_type, created_at")
-            .eq("phone_number", adminPhoneNumber)
-            .eq("direction", "inbound")
-            .or("message_type.eq.location,message.ilike.Location:%")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (recentInboundLoc) {
-            const m = recentInboundLoc.message.match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
-            if (m) {
-              shopPickupCoords = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
-              shopPickupLocation = `Shop Location (${shopPickupCoords.lat.toFixed(4)}, ${shopPickupCoords.lng.toFixed(4)})`;
-            }
-          }
-        }
-
-        if (!shopPickupLocation && order.pickup_address && !order.pickup_address.includes("Pending") && order.pickup_address !== "Conform") {
-          shopPickupLocation = order.pickup_address;
-          shopPickupCoords = order.pickup_coords;
-        }
-
-        if (!shopPickupLocation || shopPickupLocation.length < 2) {
-          shopPickupLocation = "Shop Pickup Location (Pending Details)";
-        }
+        return {
+          handled: true,
+          replyText: `📦 *Delivery Order ${order.order_code} Selected!*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${category}\n📝 *Products:* ${productList}\n📍 *Customer Drop-off:* ${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Please send the Shop Pickup Location:*\n👉 Share WhatsApp Location Pin 📍 OR type the Shop Name / Address.\n━━━━━━━━━━━━━━━━━━━━\n_(கடை அமைவிடத்தை Location Pin அல்லது முகவரியாக அனுப்பவும்)_`,
+        };
       }
 
-      const productList = order.delivery_items
-        || order.custom_fields?.raw_data?.delivery_products
-        || order.custom_fields?.raw_data?.delivery_items
-        || "Package / Items";
-      const category = order.custom_fields?.raw_data?.delivery_category || "Delivery";
-      const customerDropoff = order.dropoff_address
-        || order.custom_fields?.raw_data?.delivery_location
-        || "Customer Location";
-
-      // 1. Update order in database: status -> confirmed, pickup_address -> shopPickupLocation
-      await supabase
-        .schema("central_cab")
-        .from("orders")
-        .update({
-          status: "confirmed",
-          pickup_address: shopPickupLocation,
-          pickup_coords: shopPickupCoords || null,
-          special_instructions: `[Shop Pickup: ${shopPickupLocation}] [Items: ${productList}]`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", order.id);
-
-      const shopLocationDisplay = formatLocationDisplay(shopPickupLocation, shopPickupCoords);
-      const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, order.dropoff_coords);
-
-      // 2. Send Confirmed message to Delivery Shop Groups (100% clean English)
-      const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
-        ? systemSettings.delivery_driver_groups
-        : (systemSettings.target_driver_groups || []);
-
-      const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
-
-      for (const group of shopGroups) {
-        const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-        if (targetChatId) {
-          console.log(`[AdminHandler] Forwarding delivery order confirmed notice to Shop group: ${group.name} (${targetChatId})`);
-          await sendWhatsAppMessage(
-            supabaseUrl,
-            supabaseServiceKey,
-            targetChatId,
-            shopConfirmNotice,
-            sessionApiKey
-          );
-        }
-      }
-
-      // 3. Dispatch Ride Job to Delivery Riders Groups (100% clean English)
-      const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
-        ? systemSettings.delivery_rider_groups
-        : shopGroups;
-
-      const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
-
-      for (const group of riderGroups) {
-        const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-        if (targetChatId) {
-          console.log(`[AdminHandler] Forwarding delivery ride job to Rider group: ${group.name} (${targetChatId})`);
-          await sendWhatsAppMessage(
-            supabaseUrl,
-            supabaseServiceKey,
-            targetChatId,
-            riderJobNotice,
-            sessionApiKey
-          );
-        }
-      }
-
-      // 4. Send Confirmation Update to Customer WhatsApp
-      const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
-      if (targetCustomerNumber) {
-        const orderLang = order.custom_fields?.language || "ta";
-        const customerConfirmText = orderLang === "ta"
-          ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
-          : (orderLang === "si"
-            ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
-            : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
-
-        await sendWhatsAppMessage(
-          supabaseUrl,
-          supabaseServiceKey,
-          targetCustomerNumber,
-          customerConfirmText,
-          sessionApiKey
-        );
-      }
-
-      return {
-        handled: true,
-        replyText: `✅ Delivery Order *${order.order_code}* confirmed!\n\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n🛵 Ride dispatched to ${riderGroups.length} Delivery Rider group(s) & notice sent to ${shopGroups.length} Shop group(s).`,
-      };
+      // If shop location was provided alongside the order code (e.g. "CONFIRM DEL 001 ABC Bakery")
+      return await dispatchConfirmedDeliveryOrder(
+        supabase,
+        supabaseUrl,
+        supabaseServiceKey,
+        sessionApiKey,
+        systemSettings,
+        order,
+        shopPickupLocation,
+        shopPickupCoords,
+        adminPhoneNumber,
+        userId
+      );
     }
 
     // Case C: Hire (Transport) Order: require driver voice note before dispatching to group
@@ -812,7 +849,7 @@ export async function handleAdminMessage(
   // General Admin Menu
   return {
     handled: true,
-    replyText: `👋 *Central Cabs Admin Control Panel*\n\n1. Send *CONFIRM HIR 001* or *HIR 001* (+ Voice Note) to confirm a ride.\n2. Send *RNT 001* to mark Rent a Car as Booked.\n3. Send *CONFIRM DEL 001 <Shop Location>* or pin to dispatch delivery.`,
+    replyText: `👋 *Central Cabs Admin Control Panel*\n\n1. Send *CONFIRM HIR 001* or *HIR 001* (+ Voice Note) to confirm a ride.\n2. Send *RNT 001* to mark Rent a Car as Booked.\n3. Send *DEL 001* to start Delivery Confirmation, then share Shop Location.`,
   };
 }
 
