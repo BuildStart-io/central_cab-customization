@@ -220,7 +220,6 @@ export async function broadcastCancellation(
     }
   }
 
-  const sType = (serviceType || "").toLowerCase();
   let driverGroups: any[] = [];
   if (sType.includes("delivery")) {
     driverGroups = systemSettings?.delivery_driver_groups?.length
