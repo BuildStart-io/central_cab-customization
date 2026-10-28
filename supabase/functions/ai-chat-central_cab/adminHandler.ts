@@ -373,6 +373,19 @@ export async function handleAdminMessage(
     }
 
     if (!order) {
+      const cleanCode = targetOrderCode.replace(/\s+/g, "");
+      const { data: globalOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .or(`order_code.ilike.%${targetOrderCode}%,order_code.ilike.%${cleanCode}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (globalOrder) order = globalOrder;
+    }
+
+    if (!order) {
       return {
         handled: true,
         replyText: `⚠️ Could not find Order ${targetOrderCode}. Please verify the Order ID.`,
@@ -526,6 +539,19 @@ export async function handleAdminMessage(
         .limit(1)
         .maybeSingle();
       if (altOrder) order = altOrder;
+    }
+
+    if (!order) {
+      const cleanCode = orderCode.replace(/\s+/g, "");
+      const { data: globalOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .or(`order_code.ilike.%${orderCode}%,order_code.ilike.%${cleanCode}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (globalOrder) order = globalOrder;
     }
 
     if (!order) {

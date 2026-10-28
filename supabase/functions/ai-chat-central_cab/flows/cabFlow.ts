@@ -544,13 +544,12 @@ export async function generateOrderCode(
     prefix = "RNT";
   }
 
-  if (supabase && userId) {
+  if (supabase) {
     try {
       const { data, error } = await supabase
         .schema("central_cab")
         .from("orders")
         .select("order_code")
-        .eq("user_id", userId)
         .ilike("order_code", `${prefix}%`);
 
       if (!error && Array.isArray(data)) {
@@ -639,6 +638,52 @@ export async function saveOrderToDatabase(
 
     if (error) {
       console.error("[saveOrderToDatabase] Error inserting order:", error);
+      if (error.code === "23505") {
+        const retryCode = await generateOrderCode(supabase, userId, serviceType);
+        console.log(`[saveOrderToDatabase] Retrying with fresh code: ${retryCode}`);
+        data.order_code = retryCode;
+        const { error: retryErr } = await supabase
+          .schema("central_cab")
+          .from("orders")
+          .insert({
+            order_code: retryCode,
+            user_id: userId,
+            service_type: serviceType,
+            booking_type: data.booking_type || "now",
+            scheduled_time: data.scheduled_time || null,
+            special_instructions: data.booking_type === "schedule" && data.scheduled_time
+              ? `[Scheduled: ${data.scheduled_time}]`
+              : null,
+            customer_name: data.customer_name || "Customer",
+            customer_phone: data.customer_phone || "",
+            whatsapp_phone: data.customer_whatsapp || data.customer_phone || "",
+            vehicle_type: data.vehicle_name || data.vehicle_key || "Car",
+            pickup_address: pickupDisplay,
+            dropoff_address: dropoffDisplay,
+            pickup_coords: data.pickup_coords || null,
+            dropoff_coords: data.dropoff_coords || null,
+            trip_type: data.trip_type || (serviceType === "delivery" ? "one_way" : "one_way"),
+            distance_km: data.distance_km || 0,
+            base_price: data.base_price || 0,
+            per_km_rate: data.per_km_rate || 0,
+            coverage_km: data.coverage_km || 0,
+            discount_percentage: data.discount_percentage || 0,
+            total_fare: data.total_fare || 0,
+            total_amount: data.total_fare || 0,
+            delivery_items: data.delivery_items || null,
+            status: "pending",
+            custom_fields: {
+              raw_data: data,
+              language: data.language || "si",
+              created_via: "whatsapp_bot",
+            },
+          });
+        if (retryErr) {
+          console.error("[saveOrderToDatabase] Retry insert failed:", retryErr);
+        } else {
+          console.log(`[saveOrderToDatabase] ✅ Successfully saved order on retry: ${retryCode}`);
+        }
+      }
     } else {
       console.log(`[saveOrderToDatabase] ✅ Successfully saved order ${data.order_code}`);
     }
