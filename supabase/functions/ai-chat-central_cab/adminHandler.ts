@@ -204,7 +204,7 @@ export async function dispatchConfirmedDeliveryOrder(
 
   return {
     handled: true,
-    replyText: `✅ *Shop Pickup Location assigned for Delivery Order ${targetOrder.order_code}!* (உறுதி செய்யப்பட்டது)\n\n🏪 *Shop Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & confirmation sent to customer.`,
+    replyText: `✅ *Shop Pickup Location assigned for Delivery Order ${targetOrder.order_code}!* (Confirmed)\n\n🏪 *Shop Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & confirmation sent to customer.`,
   };
 }
 
@@ -298,7 +298,7 @@ export async function handleAdminMessage(
         if (!shopLocText || shopLocText.length < 2) {
           return {
             handled: true,
-            replyText: `⚠️ Please send a valid Shop Pickup Location (Pin 📍 or Name / Address) to confirm Order *${targetOrder.order_code}*.\n\n_(கடை அமைவிடத்தை Location Pin அல்லது முகவரியாக அனுப்பவும்)_`,
+            replyText: `⚠️ Please send a valid Shop Pickup Location (Pin 📍 or Name / Address) to confirm Order *${targetOrder.order_code}*.`,
           };
         }
 
@@ -808,7 +808,7 @@ export async function handleAdminMessage(
 
         return {
           handled: true,
-          replyText: `📦 *Delivery Order ${order.order_code} Selected!*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${category}\n📝 *Products:* ${productList}\n📍 *Customer Drop-off:* ${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Please send the Shop Pickup Location:*\n👉 Share WhatsApp Location Pin 📍 OR type the Shop Name / Address.\n━━━━━━━━━━━━━━━━━━━━\n_(கடை அமைவிடத்தை Location Pin அல்லது முகவரியாக அனுப்பவும்)_`,
+          replyText: `📦 *Delivery Order ${order.order_code} Selected!*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${category}\n📝 *Products:* ${productList}\n📍 *Customer Drop-off:* ${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Please send the Shop Pickup Location:*\n👉 Share WhatsApp Location Pin 📍 OR type the Shop Name / Address.`,
         };
       }
 
