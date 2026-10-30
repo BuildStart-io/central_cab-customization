@@ -209,26 +209,26 @@ export async function handleCabFlowStep(
         );
       }
 
-      // 1. Ride Now: Only allow motorbike or three_wheeler
+      // 1. Short Trip (Ride Now): Only allow motorbike or three_wheeler
       if (isRideNow && vehicleKey !== "motorbike" && vehicleKey !== "three_wheeler") {
         const rideNowErr = lang === "ta"
-          ? "⚠️ உடனடி சவாரிக்கு (Ride Now) Motorbike அல்லது Three-wheeler மட்டுமே தெரிவு செய்ய முடியும். Car அல்லது Van முன்பதிவு செய்ய Schedule Ride-ஐப் பயன்படுத்தவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
+          ? "⚠️ குறுகிய தூரப் பயணத்திற்கு (Short Trip) Motorbike அல்லது Three-wheeler மட்டுமே தெரிவு செய்ய முடியும். Car அல்லது Van முன்பதிவு செய்ய நீண்ட தூரப் பயணத்தைத் (Long Trip) தேர்ந்தெடுக்கவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
           : (lang === "si"
-            ? "⚠️ Ride Now සඳහා Motorbike හෝ Three-wheeler පමණක් තෝරාගත හැක. Car හෝ Van සඳහා Schedule Ride තෝරන්න.\n\nකරුණාකර වාහනය තෝරන්න:"
-            : "⚠️ For Ride Now, only Motorbike or Three-wheeler can be selected. For Car or Van, please choose Schedule Ride.\n\nPlease select your vehicle:");
+            ? "⚠️ ලග ගමනක් සඳහා Motorbike හෝ Three-wheeler පමණක් තෝරාගත හැක. Car හෝ Van සඳහා දුර ගමනක් තෝරන්න.\n\nකරුණාකර වාහනය තෝරන්න:"
+            : "⚠️ For Short Distance Trip, only Motorbike or Three-wheeler can be selected. For Car or Van, please choose Long Distance Trip.\n\nPlease select your vehicle:");
         return await invalidFallback(
           rideNowErr,
           getVehiclePoll(lang, false, bookingType)
         );
       }
 
-      // 2. Schedule Ride: Only allow car, van, lorry, bus
+      // 2. Long Trip (Schedule Ride): Only allow car, van, lorry, bus
       if (!isRideNow && (vehicleKey === "motorbike" || vehicleKey === "three_wheeler")) {
         const scheduleErr = lang === "ta"
-          ? "⚠️ முன்பதிவு சவாரிக்கு (Schedule Ride) Car, Van, Lorry அல்லது Bus மட்டுமே தெரிவு செய்ய முடியும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
+          ? "⚠️ நீண்ட தூரப் பயணத்திற்கு (Long Trip) Car, Van, Lorry அல்லது Bus மட்டுமே தெரிவு செய்ய முடியும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
           : (lang === "si"
-            ? "⚠️ Schedule Ride සඳහා Car, Van, Lorry හෝ Bus පමණක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:"
-            : "⚠️ For Schedule Ride, please select Car, Van, Lorry, or Bus.\n\nPlease choose your vehicle:");
+            ? "⚠️ දුර ගමනක් සඳහා Car, Van, Lorry හෝ Bus පමණක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:"
+            : "⚠️ For Long Distance Trip, please select Car, Van, Lorry, or Bus.\n\nPlease choose your vehicle:");
         return await invalidFallback(
           scheduleErr,
           getVehiclePoll(lang, false, bookingType)
@@ -712,7 +712,7 @@ export async function broadcastBooking(
     const isDelivery = category.toLowerCase() === "delivery";
     const isRent = category.toLowerCase().includes("rent");
     const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-    const timingHeader = isScheduled ? `📅 *SCHEDULED FOR:* ${data.scheduled_time}\n` : (isRent ? "" : `⚡ *RIDE NOW*\n`);
+    const timingHeader = isScheduled ? `📅 *SCHEDULED FOR (LONG DISTANCE):* ${data.scheduled_time}\n` : (isRent ? "" : `⚡ *SHORT TRIP (RIDE NOW)*\n`);
 
     // Group broadcast text (All in 100% clean English with guaranteed Google Maps links)
     // Customer phone numbers are NEVER sent to driver/rider groups. Admin contact numbers are displayed instead.

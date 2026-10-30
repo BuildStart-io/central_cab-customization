@@ -101,13 +101,20 @@ export function isResetChoice(input: string): boolean {
 export function detectServiceCategory(input: string): ServiceCategory | null {
   const text = (input || "").trim().toLowerCase();
 
-  // 1. Ride Now (Immediate)
+  // 1. Short Trip / Ride Now (Immediate)
   if (
     text === "1" ||
     text.startsWith("1.") ||
     text.startsWith("1 ") ||
     text.includes("ride now") ||
     text.includes("now ride") ||
+    text.includes("short trip") ||
+    text.includes("short") ||
+    text.includes("ලග") ||
+    text.includes("ලඟ") ||
+    text.includes("laga") ||
+    text.includes("குறுகிய") ||
+    text.includes("kurukiya") ||
     text.includes("இப்போதே") ||
     text.includes("இப்போது") ||
     text.includes("உடனே") ||
@@ -120,13 +127,21 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
     return "ride_now";
   }
 
-  // 2. Schedule Ride (Advance reservation)
+  // 2. Long Trip / Schedule Ride (Advance reservation)
   if (
     text === "2" ||
     text.startsWith("2.") ||
     text.startsWith("2 ") ||
     text.includes("schedule ride") ||
     text.includes("schedule") ||
+    text.includes("long trip") ||
+    text.includes("long distance") ||
+    text.includes("long") ||
+    text.includes("දුර") ||
+    text.includes("dura") ||
+    text.includes("நீண்ட") ||
+    text.includes("neenda") ||
+    text.includes("outstation") ||
     text.includes("முன்பதிவு") ||
     text.includes("reserve") ||
     text.includes("පසුවට") ||
@@ -164,17 +179,25 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
     return "delivery";
   }
 
-  // 5. Ask a question
+  // 5. Ask a question / More details & App
   if (
     text === "5" ||
     text.startsWith("5.") ||
     text.startsWith("5 ") ||
+    text.includes("වැඩිවිස්තර") ||
+    text.includes("වැඩි විස්තර") ||
+    text.includes("ලබාගැනීමට") ||
+    text.includes("ඇප්") ||
+    text.includes("app") ||
+    text.includes("more details") ||
+    text.includes("details") ||
+    text.includes("விபரம்") ||
+    text.includes("மேலதிக") ||
     text.includes("ask") ||
     text.includes("question") ||
     text.includes("help") ||
     text.includes("inquiry") ||
     text.includes("கேள்வி") ||
-    text.includes("விபரம்") ||
     text.includes("ප්‍රශ්න") ||
     text.includes("විස්තර")
   ) {
@@ -342,6 +365,7 @@ export function isTimingNowChoice(text: string): boolean {
   const l = (text || "").toLowerCase().trim();
   if (l === "1" || l.startsWith("1.") || l.startsWith("1 ") || l === "1)") return true;
   if (l.includes("now") || l.includes("immediate") || l.includes("urgent")) return true;
+  if (l.includes("short") || l.includes("ලග") || l.includes("ලඟ") || l.includes("laga") || l.includes("குறுகிய")) return true;
   if (l.includes("ipo") || l.includes("ipova") || l.includes("ipove") || l.includes("இப்போது") || l.includes("உடனே")) return true;
   if (l.includes("dan") || l.includes("damma") || l.includes("danma") || l.includes("දැන්")) return true;
   return false;
@@ -351,6 +375,7 @@ export function isTimingScheduleChoice(text: string): boolean {
   const l = (text || "").toLowerCase().trim();
   if (l === "2" || l.startsWith("2.") || l.startsWith("2 ") || l.startsWith("2)")) return true;
   if (l.includes("sched") || l.includes("schd") || l.includes("later") || l.includes("reserve") || l.includes("advance")) return true;
+  if (l.includes("long") || l.includes("දුර") || l.includes("dura") || l.includes("நீண்ட")) return true;
   if (l.includes("passe") || l.includes("pasuwata") || l.includes("පසුව") || l.includes("කාලය")) return true;
   if (l.includes("naeram") || l.includes("neram") || l.includes("முன்பதிவு") || l.includes("பின்னே")) return true;
   return false;
@@ -377,11 +402,11 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
     return {
       name: "Central Cabs & Services - நீங்கள் விரும்பும் சேவையைத் தேர்ந்தெடுக்கவும்:",
       options: [
-        "1. ⚡ இப்போதே பயணம் (Ride Now)",
-        "2. 📅 முன்பதிவு பயணம் (Schedule Ride)",
+        "1. ⚡ குறுகிய தூரப் பயணம் (Short Trip)",
+        "2. 🚗 நீண்ட தூரப் பயணம் (Long Trip)",
         "3. 🚗 வாடகை கார் (Rent a Car)",
         "4. 📦 டெலிவரி (Delivery)",
-        "5. ❓ கேள்வி கேட்க (Ask a question)",
+        "5. ℹ️ மேலதிக விபரங்கள் மற்றும் App-ஐப் பெற",
       ],
       multipleAnswers: false,
     };
@@ -390,11 +415,11 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
     return {
       name: "Central Cabs & Services - ඔබට අවශ්‍ය සේවාව තෝරන්න:",
       options: [
-        "1. ⚡ දැන්ම Ride එකක් (Ride Now)",
-        "2. 📅 පසුවට Ride එකක් (Schedule Ride)",
+        "1. ⚡ ලග ගමනක් යන්න",
+        "2. 🚗 දුර ගමනක් යන්න",
         "3. 🚗 Rent a Car (කාර් කුලියට)",
         "4. 📦 Delivery (භාණ්ඩ ප්‍රවාහනය)",
-        "5. ❓ ප්‍රශ්නයක් අසන්න (Ask a question)",
+        "5. ℹ️ වැඩිවිස්තර සදහා සහ ඇප් එක ලබාගැනීමට",
       ],
       multipleAnswers: false,
     };
@@ -403,11 +428,11 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
     return {
       name: "Central Cabs & Services - Please select the service you need:",
       options: [
-        "1. ⚡ Ride Now",
-        "2. 📅 Schedule Ride",
+        "1. ⚡ Short Distance Trip (Short Trip)",
+        "2. 🚗 Long Distance Trip (Long Trip)",
         "3. 🚗 Rent a Car",
         "4. 📦 Delivery Service",
-        "5. ❓ Ask a question",
+        "5. ℹ️ More Details & Get App",
       ],
       multipleAnswers: false,
     };
@@ -416,11 +441,11 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
   return {
     name: "Welcome to Central Cabs & Delivery / සාදරයෙන් පිළිගනිමු / அன்புடன் வரவேற்கிறோம்!",
     options: [
-      "1. ⚡ Ride Now (இப்போதே / දැන්ම)",
-      "2. 📅 Schedule Ride (முன்பதிவு / පසුවට)",
+      "1. ⚡ Short Trip (குறுகிய தூரம் / ලග ගමනක්)",
+      "2. 🚗 Long Trip (நீண்ட தூரம் / දුර ගමනක්)",
       "3. 🚗 Rent a Car (வாடகை கார் / කුලියට)",
-      "4. 📦 Delivery (டெலிவரி / පාර්சල්)",
-      "5. ❓ Ask a question (விபரம் / විස්තර)",
+      "4. 📦 Delivery (டெலிவரி / පාර්සල්)",
+      "5. ℹ️ More Details & App (விபரம் / වැඩිවිස්තර)",
     ],
     multipleAnswers: false,
   };
@@ -432,10 +457,10 @@ export function getTimingPoll(lang: SupportedLanguage = "si", isDelivery = false
     return {
       name: isDelivery
         ? "டெலிவரி சேவை இப்போது வேண்டுமா அல்லது குறிப்பிட்ட நேரத்திற்கு முன்பதிவு செய்ய வேண்டுமா?"
-        : "வாகன சவாரி இப்போது தேவையா அல்லது குறிப்பிட்ட நேரத்திற்கு முன்பதிவு செய்ய வேண்டுமா?",
+        : "குறுகிய தூரப் பயணமா அல்லது நீண்ட தூரப் பயணமா?",
       options: [
-        "1. Now (இப்போது) ⚡",
-        "2. Schedule (முன்பதிவு) 📅",
+        "1. Short Trip (குறுகிய தூரம்) ⚡",
+        "2. Long Trip (நீண்ட தூரம்) 🚗",
         resetOption,
       ],
       multipleAnswers: false,
@@ -445,10 +470,10 @@ export function getTimingPoll(lang: SupportedLanguage = "si", isDelivery = false
     return {
       name: isDelivery
         ? "ඔබට Delivery පහසුකම දැන්ම අවශ්‍යද නැතහොත් Schedule කිරීමට අවශ්‍යද?"
-        : "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?",
+        : "ඔබට අවශ්‍ය ලග ගමනක්ද නැතහොත් දුර ගමනක්ද?",
       options: [
-        "1. Now (දැන්ම) ⚡",
-        "2. Schedule (පසුවට) 📅",
+        "1. ලග ගමනක් (Short Trip) ⚡",
+        "2. දුර ගමනක් (Long Trip) 🚗",
         resetOption,
       ],
       multipleAnswers: false,
@@ -457,10 +482,10 @@ export function getTimingPoll(lang: SupportedLanguage = "si", isDelivery = false
   return {
     name: isDelivery
       ? "Do you need Delivery right now or would you like to schedule for later?"
-      : "Do you need a ride right now or would you like to schedule for later?",
+      : "Do you need a Short Distance Trip or a Long Distance Trip?",
     options: [
-      "1. Now (Immediate) ⚡",
-      "2. Schedule (Later) 📅",
+      "1. Short Trip (Local Ride) ⚡",
+      "2. Long Trip (Outstation) 🚗",
       resetOption,
     ],
     multipleAnswers: false,
@@ -507,12 +532,12 @@ export function getVehiclePoll(
     };
   }
 
-  // 1. Ride Now: Only Motorbike and Three-wheeler
+  // 1. Short Trip (Ride Now): Only Motorbike and Three-wheeler
   const isSchedule = bookingType === "schedule";
   if (!isSchedule) {
     if (lang === "ta") {
       return {
-        name: "உடனடி சவாரிக்கு (Ride Now) வாகனத்தைத் தேர்ந்தெடுக்கவும்:",
+        name: "குறுகிய தூரப் பயணத்திற்கு (Short Trip) வாகனத்தைத் தேர்ந்தெடுக்கவும்:",
         options: [
           "1. Motorbike 🏍️",
           "2. Three-wheeler 🛺",
@@ -523,7 +548,7 @@ export function getVehiclePoll(
     }
     if (lang === "si") {
       return {
-        name: "කරුණාකර දැන් ගමන් කිරීමට (Ride Now) වාහනය තෝරන්න:",
+        name: "කරුණාකර ලග ගමනක් සඳහා වාහනය තෝරන්න:",
         options: [
           "1. Motorbike 🏍️",
           "2. Three-wheeler 🛺",
@@ -533,7 +558,7 @@ export function getVehiclePoll(
       };
     }
     return {
-      name: "Please choose vehicle for Ride Now:",
+      name: "Please choose vehicle for Short Distance Trip:",
       options: [
         "1. Motorbike 🏍️",
         "2. Three-wheeler 🛺",
@@ -543,10 +568,10 @@ export function getVehiclePoll(
     };
   }
 
-  // 2. Schedule Ride: The other 4 (Car, Van, Lorry, Bus)
+  // 2. Long Trip (Schedule Ride): The other 4 (Car, Van, Lorry, Bus)
   if (lang === "ta") {
     return {
-      name: "முன்பதிவு சவாரிக்கு (Schedule Ride) வாகனத்தைத் தேர்ந்தெடுக்கவும்:",
+      name: "நீண்ட தூரப் பயணத்திற்கு (Long Trip) வாகனத்தைத் தேர்ந்தெடுக்கவும்:",
       options: [
         "1. Car 🚗",
         "2. Van 🚐",
@@ -559,7 +584,7 @@ export function getVehiclePoll(
   }
   if (lang === "si") {
     return {
-      name: "කරුණාකර Schedule Ride සඳහා වාහනය තෝරන්න:",
+      name: "කරුණාකර දුර ගමනක් සඳහා වාහනය තෝරන්න:",
       options: [
         "1. Car 🚗",
         "2. Van 🚐",
@@ -571,7 +596,7 @@ export function getVehiclePoll(
     };
   }
   return {
-    name: "Please choose vehicle for Schedule Ride:",
+    name: "Please choose vehicle for Long Distance Trip:",
     options: [
       "1. Car 🚗",
       "2. Van 🚐",
@@ -916,9 +941,9 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
   if (flow === "CAB_FLOW") {
     switch (step) {
       case "CAB_TIMING_CHOICE":
-        if (lang === "ta") return "வாகன சவாரி இப்போது தேவையா அல்லது முன்பதிவு செய்ய வேண்டுமா?";
-        if (lang === "si") return "ඔබට ප්‍රවාහනය දැන්ම අවශ්‍යද නැතහොත් Ride එකක් Schedule කිරීමට අවශ්‍යද?";
-        return "Do you need a ride right now or would you like to schedule for later?";
+        if (lang === "ta") return "குறுகிய தூரப் பயணமா (Short Trip) அல்லது நீண்ட தூரப் பயணமா (Long Trip)?";
+        if (lang === "si") return "ඔබට අවශ්‍ය ලග ගමනක්ද නැතහොත් දුර ගමනක්ද?";
+        return "Do you need a Short Distance Trip or a Long Distance Trip?";
 
       case "CAB_SCHEDULE_DATE":
         if (lang === "ta") return "உங்கள் பயணத்திற்கான திகதியை (Date) குறிப்பிடவும்:\n(உதாரணம்: 2026/10/25, Tomorrow, அல்லது நாளை)";
@@ -1052,15 +1077,15 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
     }
   }
 
-  // 5. Ask a Question Flow
+  // 5. Ask a Question / More Details & Get App Flow
   if (flow === "FAQ_FLOW" || step === "FAQ_ASK") {
     if (lang === "ta") {
-      return "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். எங்கள் FAQ மற்றும் சேவை விபரங்களின் அடிப்படையில் உங்களுக்கு உடனடியாகப் பதிலளிக்கப்படும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)";
+      return "ℹ️ *மேலதிக விபரங்கள் மற்றும் App-ஐப் பெற (More Details & App)*\n\nஎமது சேவைகள் பற்றிய மேலதிக விபரங்களைப் பெற உங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும், அல்லது எமது செயலி / இணையத்தளத்தைப் (www.centralonline.lk) பார்வையிடவும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)";
     }
     if (lang === "si") {
-      return "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
+      return "ℹ️ *වැඩිවිස්තර සදහා සහ ඇප් එක ලබාගැනීමට*\n\nඅපගේ සේවාවන් පිළිබඳ වැඩිවිස්තර සඳහා ඔබගේ ප්‍රශ්නය මෙහි Type කරන්න, නැතහොත් අපගේ ඇප් එක / වෙබ් අඩවිය (www.centralonline.lk) වෙත පිවිසෙන්න.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
     }
-    return "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)";
+    return "ℹ️ *For More Details & Get App*\n\nPlease type your question or inquiry here, or visit our website (www.centralonline.lk) to download our app and learn more.\n\n(Type *Menu* anytime to return to main options)";
   }
 
   return lang === "ta" ? "தயவுசெய்து உங்கள் பதிலை வழங்கவும்." : (lang === "si" ? "කරුණාකර ඔබගේ පිළිතුර ලබා දෙන්න." : "Please provide your answer.");
@@ -1158,16 +1183,16 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
     : baseVehicleName;
 
   if (lang === "ta") {
-    const timingHeader = isScheduled ? `📅 *முன்பதிவு திகதி/நேரம்:* ${data.scheduled_time}\n` : `⚡ *உடனடி சேவை (Ride Now)*\n`;
+    const timingHeader = isScheduled ? `📅 *நீண்ட தூரப் பயணம் (Schedule):* ${data.scheduled_time}\n` : `⚡ *குறுகிய தூரப் பயணம் (Short Trip)*\n`;
     return `📋 *முன்பதிவு விபரம் (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *பெயர்:* ${data.customer_name}\n📱 *தொடர்பு:* ${data.customer_phone}\n🚗 *வாகனம்:* ${vehicleText}\n📍 *புறப்படும் இடம்:* ${pickup}\n🏁 *சேரும் இடம்:* ${dropoff}\n${isDelivery ? `📦 *பொருட்கள்:* ${data.delivery_items}\n` : `🔄 *பயண வகை:* ${data.trip_type === "round_trip" ? "இரு வழி (Round Trip)" : "ஒரு வழி (One-Way)"}\n`}🛣️ *பயண தூரம்:* ${data.distance_text}\n💰 *கட்டணம்:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
   if (lang === "si") {
-    const timingHeader = isScheduled ? `📅 *වෙන්කළ දිනය/වේලාව:* ${data.scheduled_time}\n` : `⚡ *ක්ෂණික ගමන (Ride Now)*\n`;
+    const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
     return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):* ${pickup}\n🏁 *ගමනාන්තය (Drop-off):* ${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
-  const timingHeader = isScheduled ? `📅 *Scheduled for:* ${data.scheduled_time}\n` : `⚡ *Immediate Ride*\n`;
+  const timingHeader = isScheduled ? `📅 *Long Distance Trip (Schedule):* ${data.scheduled_time}\n` : `⚡ *Short Distance Trip (Short Trip)*\n`;
   return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup:* ${pickup}\n🏁 *Drop-off:* ${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
 
