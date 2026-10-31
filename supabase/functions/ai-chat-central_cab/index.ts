@@ -199,6 +199,9 @@ async function handleSingleMessage(
         });
     }
   } else {
+    // 2.1 Register customer contact in central_cab.contact_usage for billing cycle tracking
+    await registerContact(supabase, userId, phoneNumber, corrId);
+
     // Customer 1-on-1 state machine
     console.log(`[${corrId}] Routing to Customer State Machine for ${phoneNumber}`);
     
@@ -334,3 +337,93 @@ async function handleSingleMessage(
     }
   }
 }
+
+/** Normalize a WhatsApp identifier to a stable contact key (digits only). */
+export function normalizeContactKey(raw: string): string {
+  return String(raw || "").split("@")[0].replace(/\D/g, "");
+}
+
+/** Start of the current billing cycle for a profile. */
+export function cycleStart(billingCycleStart: string | null | undefined): string {
+  if (!billingCycleStart) {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }
+  const now = new Date();
+  const current = new Date(billingCycleStart);
+  while (true) {
+    const next = new Date(current);
+    next.setMonth(next.getMonth() + 1);
+    if (next > now) break;
+    current.setTime(next.getTime());
+  }
+  return current.toISOString();
+}
+
+/**
+ * Registers an inbound contact against the current billing cycle in central_cab.contact_usage.
+ */
+async function registerContact(supabase: any, userId: string, phoneNumber: string, corrId: string) {
+  try {
+    const key = normalizeContactKey(phoneNumber);
+    if (!key) return { blocked: false, isNew: false };
+
+    const { data: profile } = await supabase
+      .schema("central_cab")
+      .from("profiles")
+      .select("billing_cycle_start, addon_contacts, plan_tier")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const periodStart = cycleStart(profile?.billing_cycle_start);
+
+    const { data: existing } = await supabase
+      .schema("central_cab")
+      .from("contact_usage")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("phone_number", key)
+      .eq("period_start", periodStart)
+      .maybeSingle();
+
+    if (existing) return { blocked: false, isNew: false };
+
+    // New contact — enforce allowance before counting them in
+    const { data: platformLimits } = await supabase
+      .schema("central_cab")
+      .from("platform_settings")
+      .select("value")
+      .eq("key", "plan_limits")
+      .maybeSingle();
+
+    const tier = profile?.plan_tier || "free";
+    const tierLimits = platformLimits?.value?.[tier] || {};
+    const limit = (tierLimits.contacts_per_month || 50) + (profile?.addon_contacts || 0);
+
+    const { data: used } = await supabase
+      .schema("central_cab")
+      .rpc("get_contact_usage", {
+        _user_id: userId,
+        _since: periodStart,
+      });
+
+    if ((used || 0) >= limit) {
+      console.log(`[${corrId}] Contact limit ${used}/${limit} reached for user ${userId}`);
+      return { blocked: true, isNew: true };
+    }
+
+    await supabase
+      .schema("central_cab")
+      .from("contact_usage")
+      .insert({ user_id: userId, phone_number: key, period_start: periodStart });
+
+    console.log(`[${corrId}] New contact registered (${(used || 0) + 1}/${limit}) for user ${userId}`);
+    return { blocked: false, isNew: true };
+  } catch (e) {
+    console.error(`[${corrId}] registerContact failed:`, e);
+    return { blocked: false, isNew: false };
+  }
+}
+
