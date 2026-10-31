@@ -648,18 +648,28 @@ ${fallbackErrorPrompt}`;
     if (aiGenerateUrl && botApiKey) {
       const res = await fetch(aiGenerateUrl, {
         method: "POST",
-        headers: { "x-bot-api-key": botApiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, model: "google/gemini-2.5-flash" }),
+        headers: {
+          "x-bot-key": botApiKey,
+          "x-bot-api-key": botApiKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messages,
+          model: "google/gemini-2.5-flash",
+          maxTokens: 400
+        }),
       });
       if (res.ok) {
         const j = await res.json();
         rawText = j.text || j.choices?.[0]?.message?.content || "";
+      } else {
+        console.warn("AI Generate gateway error:", res.status, await res.text());
       }
     } else if (lovableApiKey) {
-      const res = await fetch("https://ai.lovable.dev/v1/chat/completions", {
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, max_tokens: 300 }),
+        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, max_tokens: 400 }),
       });
       if (res.ok) {
         const j = await res.json();
