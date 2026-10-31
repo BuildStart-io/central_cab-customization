@@ -712,21 +712,21 @@ export async function broadcastBooking(
     const isDelivery = category.toLowerCase() === "delivery";
     const isRent = category.toLowerCase().includes("rent");
     const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-    const timingHeader = isScheduled ? `📅 *SCHEDULED FOR (LONG DISTANCE):* ${data.scheduled_time}\n` : (isRent ? "" : `⚡ *SHORT TRIP (RIDE NOW)*\n`);
+    const timingHeader = isScheduled ? `📅 *ගමන් දිනය/වේලාව:* ${data.scheduled_time} (දුර ගමනක්)\n` : (isRent ? "" : `⚡ *ක්ෂණික ගමනක් (ලග ගමනක්)*\n`);
 
-    // Group broadcast text (All in 100% clean English with guaranteed Google Maps links)
+    // Group broadcast text (Sinhala text for service groups)
     // Customer phone numbers are NEVER sent to driver/rider groups. Admin contact numbers are displayed instead.
     let groupBroadcastText = "";
     if (isRent) {
       const rentLocationText = data.rent_location || data.pickup_text || "N/A";
       const rentDisplay = formatLocationDisplay(rentLocationText, data.pickup_coords);
       const rentAdminPhone = (systemSettings?.rent_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      groupBroadcastText = `🚗 *NEW RENT A CAR INQUIRY: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name || "Customer"}\n📞 *Contact (Admin):* ${rentAdminPhone}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model Preference:* ${data.rent_model || "Any Model"}\n⏱️ *Duration:* ${data.rent_duration || "1 Day"}\n📍 *Location:*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this rental.`;
+      groupBroadcastText = `🚗 *නව Rent a Car ඉල්ලීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${rentAdminPhone}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *අවශ්‍ය මොඩලය:* ${data.rent_model || "Any Model"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "1 Day"}\n📍 *ස්ථානය (Location):*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම කුලී සේවාව සඳහා 10% ක කොමිස් මුදලක් අදාළ වේ.`;
     } else if (isDelivery) {
       const dropoffLoc = data.delivery_location || data.dropoff_address || data.dropoff_text || "Customer Location";
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
       const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      groupBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📞 *Contact (Admin):* ${deliveryAdminPhone}\n🌐 *Website:* www.centralonline.lk`;
+      groupBroadcastText = `📦 *නව Delivery ඇණවුමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *වර්ගය (Category):* ${data.delivery_category || "සාමාන්‍ය භාණ්ඩ"}\n📝 *අවශ්‍ය භාණ්ඩ:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n🌐 *වෙබ් අඩවිය:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර ඇණවුම පරීක්ෂා කර Shop Pickup Location එක ලබා දෙන්න.`;
     } else {
       // Group broadcast for Transport / Hire / Cab: Contact number is the Service Admin's number (NOT customer phone)
       const isRideNow = data.booking_type === "now";
@@ -734,9 +734,9 @@ export async function broadcastBooking(
         ? systemSettings.hire_admin_number
         : (systemSettings?.admin_whatsapp_number || systemSettings?.hire_admin_number || "")
       ).trim() || "Admin Office";
-      const groupContactLine = `📞 *Contact (Admin):* ${transportAdminPhone}`;
+      const groupContactLine = `📞 *කාර්යාල දුරකථන:* ${transportAdminPhone}`;
 
-      groupBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${groupContactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 10% commission applies to this ride.`;
+      groupBroadcastText = `🚖 *නව ප්‍රවාහන වෙන්කිරීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *පාරිභෝගිකයා:* ${data.customer_name}\n${groupContactLine}\n🚗 *වාහනය:* ${data.vehicle_name}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම සවාරිය සඳහා 10% ක කොමිස් මුදලක් අය කෙරේ.`;
     }
 
     // Admin broadcast text (Includes customer phone for direct follow-up)

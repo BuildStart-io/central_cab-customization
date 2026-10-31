@@ -140,12 +140,12 @@ export async function dispatchConfirmedDeliveryOrder(
   const shopLocationDisplay = formatLocationDisplay(shopLocationText, shopCoords);
   const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
 
-  // 3. Send Confirmed notice to Delivery Shop Groups (100% clean English)
+  // 3. Send Confirmed notice to Delivery Shop Groups (Sinhala text)
   const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
     ? systemSettings.delivery_driver_groups
     : (systemSettings.target_driver_groups || []);
 
-  const shopConfirmNotice = `✅ *DELIVERY ORDER CONFIRMED: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Products / Items:* ${productList}\n📂 *Category:* ${category}\n📍 *Customer Delivery Location:*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Order confirmed. Delivery rider has been dispatched for pickup.`;
+  const shopConfirmNotice = `✅ *Delivery ඇණවුම තහවුරු කරන ලදී: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 ඇණවුම තහවුරු කරන ලදී. භාණ්ඩ ලබාගැනීමට Delivery Rider පිටත්ව ඇත.`;
 
   for (const group of shopGroups) {
     const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -161,13 +161,13 @@ export async function dispatchConfirmedDeliveryOrder(
     }
   }
 
-  // 4. Dispatch Ride Job to Delivery Riders Groups (100% clean English)
+  // 4. Dispatch Ride Job to Delivery Riders Groups (Sinhala text)
   const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
     ? systemSettings.delivery_rider_groups
     : shopGroups;
 
   const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-  const riderJobNotice = `🛵 *NEW DELIVERY RIDE JOB: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location (Pick up items here):*\n${shopLocationDisplay}\n\n📍 *Customer Delivery Location (Drop off items here):*\n${dropoffLocationDisplay}\n\n📦 *Products to Pick Up:* ${productList}\n📂 *Category:* ${category}\n📞 *Contact (Delivery Admin):* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ Please accept this delivery ride and proceed to the shop for pickup!`;
+  const riderJobNotice = `🛵 *නව Delivery සවාරියක් (Ride Job): ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${shopLocationDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffLocationDisplay}\n\n📦 *ලබාගත යුතු භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
 
   for (const group of riderGroups) {
     const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -554,12 +554,12 @@ export async function handleAdminMessage(
     const groupContact = serviceAdminPhone || "Admin Office";
 
     const broadcastTag = isHire
-      ? `✅ *HIRE BOOKING CONFIRMED / DRIVER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Driver assigned. Booking confirmed.`
+      ? `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`
       : (isRent
-        ? `✅ *RENT A CAR BOOKED / CONFIRMED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n📞 *Contact (Admin):* ${groupContact}\n🚗 *Category:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`
+        ? `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`
         : (isDelivery
-          ? `✅ *DELIVERY ORDER ASSIGNED: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${order.customer_name || "Customer"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Delivery Location:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Delivery rider assigned.`
-          : `📢 *Update for Order ${targetOrderCode}*\n👤 *Customer:* ${order.customer_name || "N/A"}\n📞 *Contact (Admin):* ${groupContact}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}`));
+          ? `✅ *Delivery සවාරිය සඳහා Rider යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *භාරදිය යුතු ස්ථානය:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Delivery rider යොමු කරන ලදී.`
+          : `📢 *ඇණවුම පිළිබඳ යාවත්කාලීන කිරීමක්: ${targetOrderCode}*\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *Pickup:*\n${pickupDisplay}\n🏁 *Drop-off:*\n${dropoffDisplay}`));
 
     const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
 
@@ -722,7 +722,7 @@ export async function handleAdminMessage(
 
       const rentDuration = order.custom_fields?.raw_data?.rent_duration || "N/A";
       const rentLocationDisplay = formatLocationDisplay(order.pickup_address, order.pickup_coords);
-      const rentBookedText = `✅ *RENT A CAR BOOKED / CONFIRMED: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n⏱️ *Duration:* ${rentDuration}\n📍 *Location:*\n${rentLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 This vehicle has been booked and confirmed. No longer available.`;
+      const rentBookedText = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n⏱️ *කාල සීමාව:* ${rentDuration}\n📍 *ස්ථානය (Location):*\n${rentLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
 
       for (const group of rentGroups) {
         const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);

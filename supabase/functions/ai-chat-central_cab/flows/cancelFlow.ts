@@ -188,7 +188,7 @@ export async function broadcastCancellation(
   systemSettings: CabSystemSettings
 ) {
   const adminCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n📱 *Customer:* ${phoneNumber}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
-  const groupCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
+  const groupCancelText = `🚫 *ඇණවුම අවලංගු කරන ලදී (Order Cancelled)*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order Code:* ${orderCode}\n📁 *සේවාව:* ${serviceType}\n━━━━━━━━━━━━━━━━━━━━\nමෙම වෙන්කිරීම පාරිභෝගිකයා විසින් අවලංගු කර ඇති බැවින් තවදුරටත් වලංගු නොවේ.`;
 
   const adminRecipients = new Set<string>();
   if (systemSettings?.admin_whatsapp_number) {
@@ -222,9 +222,12 @@ export async function broadcastCancellation(
 
   let driverGroups: any[] = [];
   if (sType.includes("delivery")) {
-    driverGroups = systemSettings?.delivery_driver_groups?.length
-      ? systemSettings.delivery_driver_groups
-      : systemSettings?.target_driver_groups || [];
+    const deliveryDriverGroups = systemSettings?.delivery_driver_groups || [];
+    const deliveryRiderGroups = systemSettings?.delivery_rider_groups || [];
+    driverGroups = [...deliveryDriverGroups, ...deliveryRiderGroups];
+    if (driverGroups.length === 0) {
+      driverGroups = systemSettings?.target_driver_groups || [];
+    }
   } else if (sType.includes("rent")) {
     driverGroups = systemSettings?.rent_a_car_groups?.length
       ? systemSettings.rent_a_car_groups
