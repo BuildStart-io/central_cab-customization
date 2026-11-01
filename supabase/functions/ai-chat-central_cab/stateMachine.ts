@@ -42,22 +42,30 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
   if (text.includes("http://") || text.includes("https://")) return false;
   
   const engWords = [
-    "price", "how much", "rate", "cost", "charge", "charges",
-    "keeyada", "kiyada", "gaana", "gani", "mudal",
-    "thiyenawada", "puluwanda", "puluwandha", "puluwan", "koheda", "wisthara", "visthara", "detail", "details",
-    "ac", "aircon", "van ekak", "car ekak", "bus ekak",
-    "what", "how", "when", "where", "why", "can you", "do you", "can i", "is it", "possible",
-    "wrong", "incorrect", "distance", "pila", "waradi", "dura", "weradi",
-    "mudiyuma", "mudiyatha", "ealuma", "theriyuma", "iruka", "irukka", "irukkuma", "vilai", "ethana", "evvalavu", "thavarana", "maathu",
-    "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage", "driver"
+    "price", "how much", "rate", "rates", "cost", "charge", "charges", "fare", "estimate", "calculation",
+    "km", "kilometer", "distance", "keeyada", "kiyada", "gaana", "gani", "mudal",
+    "thiyenawada", "puluwanda", "puluwandha", "puluwan", "koheda", "kohomada", "mokakda", "monawada", "wisthara", "visthara", "detail", "details",
+    "ac", "aircon", "van", "car", "bus", "lorry", "bike", "tuk", "kdh", "alto", "wagonr", "prius", "aqua", "axio",
+    "what", "how", "when", "where", "why", "who", "which", "can you", "do you", "can i", "is it", "possible", "available",
+    "wrong", "incorrect", "pila", "waradi", "dura", "weradi",
+    "mudiyuma", "mudiyatha", "ealuma", "theriyuma", "iruka", "irukka", "irukkuma", "vilai", "katnam", "ethana", "evvalavu", "thavarana", "maathu",
+    "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage", "driver",
+    "seating", "seats", "passenger", "passengers", "cancel", "safe", "service", "hours", "delivery", "rent", "hire", "cab", "cabs",
+    "epadi", "eppadi", "enna", "enga", "eppo", "vahanam", "varuma", "tharuveengala", "varum", "wahanayak", "wahana"
   ];
   
-  const sinWords = ["මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය"];
+  const sinWords = [
+    "මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය",
+    "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "වාහන", "ලොරි", "වෑන්", "කාර්", "බස්", "ත්‍රීවීල්", "බයික්",
+    "ඒසී", "ඩ්‍රයිවර්", "කැබ්", "ගාස්තු", "ගාස්තුව", "කොමිස්", "ප්‍රවාහන", "ඩිලිවරි", "රෙන්ට්"
+  ];
 
   const tamWords = [
     "கேள்வி", "சந்தேகம்", "உதவி", "விலை", "கட்டணம்", "முடியுமா", "முடியாதா",
     "இருக்கா", "இருக்குமா", "எப்படி", "எப்போது", "எங்கே", "என்ன", "எத்தனை",
-    "ஏசி", "தள்ளுபடி", "ரத்து", "லக்கேஜ்", "முன்பணம்", "விபரம்", "பாதுகாப்பு"
+    "ஏசி", "தள்ளுபடி", "ரத்து", "லக்கேஜ்", "முன்பணம்", "விபரம்", "பாதுகாப்பு",
+    "வாகனம்", "கார்", "வேன்", "லொறி", "பஸ்", "பைக்", "ஆட்டோ", "டிரைவர்", "சாரதி",
+    "வாடகை", "டெலிவரி", "முறை", "நேரம்", "எப்போ", "என்னென்ன", "யார்"
   ];
 
   if (text.length > 80 && !lower.startsWith("location:")) return true;
@@ -240,14 +248,35 @@ export async function processCustomerChatStep(
       return {
         replyText: fallbackStr,
         poll: stepPoll,
+        sendTextWithPoll: !!stepPoll,
         nextFlow: flow,
         nextStep: step,
         sessionData: data,
       };
     }
+
+    // AI answered the question or returned unknown info: format clean resumption
+    let finalAnswer = aiReply.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
+    if (finalAnswer.includes("UNKNOWN_INFO") || finalAnswer.includes("Sorry, I don't have that information")) {
+      finalAnswer = lang === "ta"
+        ? "💡 எமது FAQ விபரங்களின்படி உங்கள் கேள்விக்கான நேரடித் தகவல் தற்போது கிடைக்கவில்லை. எமது முகவர் அல்லது சாரதி விரைவில் உங்களைத் தொடர்புகொண்டு தேவையான விபரங்களைத் தெரிவிப்பார்."
+        : (lang === "si"
+          ? "💡 අපගේ FAQ විස්තර වල ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු දැනට ඇතුළත් කර නොමැත. අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත."
+          : "💡 We do not currently have specific information for this query in our FAQs. Our customer agent will assist you shortly with the details.");
+    }
+
+    const resumeHeader = lang === "ta"
+      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *உங்கள் முன்பதிவைத் தொடரலாம்:*\n"
+      : (lang === "si"
+        ? "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n"
+        : "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n");
+
+    const effectivePoll = stepPoll || getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
+
     return {
-      replyText: aiReply,
-      poll: stepPoll,
+      replyText: `${finalAnswer}\n\n${resumeHeader}${fallbackStr}`,
+      poll: effectivePoll,
+      sendTextWithPoll: !!effectivePoll,
       nextFlow: flow,
       nextStep: step,
       sessionData: data,
@@ -458,6 +487,24 @@ export async function processCustomerChatStep(
       };
     }
 
+    // If user asked a question at the Main Menu, answer it and re-display Category Poll
+    if (isPossibleQuestion(trimmed)) {
+      const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
+      const followUpNote = lang === "ta"
+        ? "\n\n💡 மேலதிக கேள்வி கேட்கலாம் அல்லது கீழேயுள்ள தெரிவுகளில் இருந்து சேவையைத் தேர்ந்தெடுக்கவும்:"
+        : (lang === "si"
+          ? "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ පහත මෙනුවෙන් සේවාවක් තෝරන්න:"
+          : "\n\n💡 Feel free to ask another question or select a service from the menu below:");
+      return {
+        replyText: `${answer}${followUpNote}`,
+        poll: getCategoryPoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: data,
+      };
+    }
+
     // Unrecognized selection: re-display Main Category Poll
     return {
       replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
@@ -583,57 +630,98 @@ async function handleAiFallback(
     return "NOT_A_QUESTION";
   }
 
-  // Fetch FAQs
-  const { data: faqs } = await supabase
-    .schema("central_cab")
-    .from("faqs")
-    .select("question, answer, category")
-    .eq("is_active", true)
-    .eq("user_id", userId);
+  // 1. Fetch FAQs from database
+  let faqText = "No custom FAQs available in database.";
+  try {
+    const { data: faqs, error } = await supabase
+      .schema("central_cab")
+      .from("faqs")
+      .select("question, answer, category")
+      .eq("is_active", true)
+      .eq("user_id", userId);
 
-  const faqText = (faqs || []).map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join("\n\n");
+    if (!error && Array.isArray(faqs) && faqs.length > 0) {
+      faqText = faqs.map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join("\n\n");
+    }
+  } catch (err) {
+    console.warn("[handleAiFallback] Error fetching faqs:", err);
+  }
+
+  // 2. Build Models and Pricing Context
+  const carModels = (pricingSettings.car?.models || []).map((m: any) => m.name).join(", ") || "Alto, WagonR, Prius, Axio, Aqua";
+  const vanModels = (pricingSettings.van?.models || []).map((m: any) => m.name).join(", ") || "KDH (High Roof / Flat Roof), Caravan, Dolphin";
+  const lorryModels = (pricingSettings.lorry?.models || []).map((m: any) => m.name).join(", ") || "Dimo Batta, Canter, Light Trucks";
 
   const pricingContext = `
-Motorbike: LKR ${pricingSettings.motorbike.per_km_rate}/km (Base: LKR ${pricingSettings.motorbike.base_price})
-Three-wheeler: LKR ${pricingSettings.three_wheeler.per_km_rate}/km (Base: LKR ${pricingSettings.three_wheeler.base_price})
-Car: LKR ${pricingSettings.car.per_km_rate}/km (Base: LKR ${pricingSettings.car.base_price})
-Van: LKR ${pricingSettings.van.per_km_rate}/km (Base: LKR ${pricingSettings.van.base_price})
-Lorry: LKR ${pricingSettings.lorry.per_km_rate}/km (Base: LKR ${pricingSettings.lorry.base_price})
-Bus: LKR ${pricingSettings.bus.per_km_rate}/km (Base: LKR ${pricingSettings.bus.base_price})
+=== DYNAMIC VEHICLE PRICING (LKR) ===
+- Motorbike: Base LKR ${pricingSettings.motorbike?.base_price || 200} (covers first ${pricingSettings.motorbike?.coverage_km || 2} km), then LKR ${pricingSettings.motorbike?.per_km_rate || 80}/km
+- Three-wheeler: Base LKR ${pricingSettings.three_wheeler?.base_price || 300} (covers first ${pricingSettings.three_wheeler?.coverage_km || 2} km), then LKR ${pricingSettings.three_wheeler?.per_km_rate || 100}/km
+- Car: Base LKR ${pricingSettings.car?.base_price || 600} (covers first ${pricingSettings.car?.coverage_km || 3} km), then LKR ${pricingSettings.car?.per_km_rate || 150}/km | Models: ${carModels}
+- Van: Base LKR ${pricingSettings.van?.base_price || 900} (covers first ${pricingSettings.van?.coverage_km || 3} km), then LKR ${pricingSettings.van?.per_km_rate || 200}/km | Models: ${vanModels}
+- Lorry: Base LKR ${pricingSettings.lorry?.base_price || 1500} (covers first ${pricingSettings.lorry?.coverage_km || 5} km), then LKR ${pricingSettings.lorry?.per_km_rate || 300}/km | Models: ${lorryModels}
+- Bus: Base LKR ${pricingSettings.bus?.base_price || 3000} (covers first ${pricingSettings.bus?.coverage_km || 10} km), then LKR ${pricingSettings.bus?.per_km_rate || 500}/km
+(Note: Live trip total fare is computed live via Google Maps once pickup and dropoff points are provided).
+`;
+
+  // 3. Service Architecture and Specifications Context
+  const serviceKnowledge = `
+=== CENTRAL CABS & DELIVERY SERVICE SPECIFICATIONS ===
+1. Transport / Hire Cabs:
+- Two Distinct Booking Options:
+  a) 'ළඟ ගමනක් යන්න' (Ride Now / Local Trips): Immediate instant travel. Allowed vehicles are strictly Motorbike (1 passenger) and Three-wheeler (up to 3 passengers).
+  b) 'දුර ගමනක් යන්න' (Ride Later / Scheduled Trips): Advance booking with date and time. Allowed vehicles: Car (Sedan/Hatchback, 4 passengers, AC), Van (KDH/Caravan, 6-14 passengers, AC), Lorry (Goods/House shifting), Bus (20-54 passengers, pilgrimages/tours).
+- Trip Types: One-Way (එක් පැත්තක්) or Round Trip (දෙපැත්තම - Up & Down return journey).
+- Booking Process in WhatsApp: Select Ride Now/Schedule -> Name -> Phone -> Vehicle & Model -> Pickup Location pin/address -> Drop-off Location pin/address -> Live fare calculated via Google Maps -> Order Confirmed -> Broadcasted to verified driver groups -> Driver assigned.
+- Commission: 10% commission applies.
+- Cancellation: Free cancellation anytime before the driver arrives by typing "cancel" or "අවලංගු" or "ரத்து".
+
+2. Rent a Car (Self-drive / With Driver Rentals):
+- Customer chooses vehicle category (Car, Van, etc.) and model preference.
+- Customer specifies rental duration (days/weeks) and pickup location.
+- Order is broadcasted to verified rent a car providers. A dedicated rental agent will contact the customer directly on WhatsApp/Phone with photos, vehicle options, pricing, and deposit details.
+- 10% commission applies.
+
+3. Delivery Service:
+- Delivery of food, groceries, medicine/pharmacy, parcels, documents, and retail items.
+- Products can be browsed on www.centralonline.lk or customer can specify custom items list & drop-off location.
+- Admin verifies and sets the shop pickup location, and dispatches the order to verified Delivery Riders.
+- Delivery rider picks up items from the shop and delivers directly to the customer.
+
+4. Vehicle Capacities & Features:
+- Motorbike: 1 passenger, budget/quick local rides or small parcel delivery.
+- Three-wheeler (Tuk Tuk): Up to 3 passengers, local rides, moderate luggage.
+- Car (Sedan / Hatchback): Up to 4 passengers, 2-3 bags/suitcases, fully air-conditioned (AC). Models: Alto, WagonR, Prius, Axio, Aqua. Available for Scheduled trips and Rent.
+- Van: 6 to 14 passengers, spacious luggage room, fully air-conditioned (AC). Models: KDH (High Roof / Flat Roof), Caravan, Dolphin. Ideal for tours, family trips, airport drops/pickups.
+- Lorry: Goods, furniture, house shifting, heavy parcels. Models: Dimo Batta, Canter, etc.
+- Bus: 20 to 54 passengers, AC and non-AC options, ideal for pilgrimages, staff transport, school trips, and large tour groups.
 `;
 
   const langRule = lang === "ta"
-    ? "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in conversational Tamil using Tamil script (தமிழ்)."
+    ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Tamil using Tamil script (தமிழ்)."
     : (lang === "en"
-      ? "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
-      : "7. CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in conversational Sinhala using Sinhala script.");
+      ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
+      : "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Sinhala using Sinhala script (සිංහල).");
 
-  const cancelRule = lang === "ta"
-    ? '1. If the user asks about cancellation policy or if cancellation is free, answer politely in Tamil (mentioning that they can cancel before the driver arrives for free by typing "cancel").'
-    : (lang === "en"
-      ? '1. If the user asks about cancellation policy or if cancellation is free, answer politely in English (mentioning that they can cancel before the driver arrives for free by typing "cancel").'
-      : '1. If the user asks a question about cancellation policy or whether cancellation is possible/free, answer it politely and concisely in Sinhala using the FAQs (mentioning that they can cancel before the driver arrives for free by typing "cancel").');
+  const systemPrompt = `You are the strict, hallucination-free virtual assistant for Ceylon Central Cabs & Delivery.
+The customer sent: "${userMessage}"
 
-  const systemPrompt = `You are a strict, hallucination-free assistant for Ceylon Central Cabs. 
-The user said: "${userMessage}"
+${serviceKnowledge}
 
-Your job is to determine if the user is asking a valid question that can be answered ONLY using the provided FAQs or Pricing Details below.
-
-PRICING DETAILS:
 ${pricingContext}
 
-FAQs:
-${faqText || "No FAQs available"}
+=== VERIFIED DATABASE FAQS ===
+${faqText}
 
-RULES:
-${cancelRule}
-2. If the user asks a clear question that can be answered by the Pricing Details or FAQs, answer it briefly in 1-2 sentences.
-3. CRITICAL CANCEL INTENT: If the user explicitly demands, orders, or insists to cancel or abort their active booking right now (e.g., "cancel my booking", "cancel it now", "epa danma cancel karanna", "cancel pannunga", "stop booking"), you MUST reply EXACTLY with the text: "INTENT_CANCEL_ORDER".
-4. CRITICAL WRONG LOCATION / DISTANCE INTENT: If the user complains that the "pickup location", "dropoff location", "distance", or "price" is incorrect or wrong (e.g., "distance is wrong", "wrong location", "not 180km", "location pila", "dura weradi", "location thavarana"), you MUST reply EXACTLY with the text: "INTENT_WRONG_LOCATION".
-5. If the user asks something outside of the provided FAQs/Pricing, DO NOT guess or hallucinate. You MUST reply exactly with: "Sorry, I don't have that information."
-6. If the user's message is NOT a question (e.g. it's just an answer to a booking step like a name, location, or 'yes'/'no'), you MUST reply exactly with the text: "NOT_A_QUESTION".
-${langRule}
-8. If you provide an answer or say "Sorry, I don't have that information.", you MUST append the original system prompt exactly as provided below at the very end of your response, separated by two newlines.
+=== STRICT ZERO-HALLUCINATION RULES ===
+1. Answer the customer's question ONLY using the factual details provided above in SERVICE SPECIFICATIONS, VEHICLE PRICING, VEHICLE CAPACITIES, and FAQS.
+2. ZERO HALLUCINATION: DO NOT fabricate, guess, extrapolate, or invent any facts, numbers, phone numbers, vehicle models, or policies not explicitly written above.
+3. If the user's question CANNOT be answered from the provided knowledge, DO NOT guess or make up an answer. You MUST reply EXACTLY with: "UNKNOWN_INFO".
+4. If the message is NOT a question or inquiry (e.g. it is simply answering a booking step like giving a name, a phone number, an address, a date, or saying 'ok', 'yes', 'no'), you MUST reply EXACTLY with: "NOT_A_QUESTION".
+5. INTENT TO CANCEL: If the customer explicitly demands or insists to cancel their active booking/order right now (e.g., "cancel my booking", "cancel it", "danma cancel karanna", "cancel pannunga"), you MUST reply EXACTLY with: "INTENT_CANCEL_ORDER".
+6. INTENT WRONG LOCATION / DISTANCE: If the customer states or complains that their pickup location, dropoff location, distance, or price is wrong or calculated incorrectly (e.g., "wrong location", "location thavarana", "dura weradi", "location pila"), you MUST reply EXACTLY with: "INTENT_WRONG_LOCATION".
+7. ${langRule}
+8. Keep the answer concise (1 to 3 sentences maximum), friendly, and professional.
+9. If you provide an answer or say "UNKNOWN_INFO", append the original system prompt exactly as provided below at the very end of your response, separated by two newlines.
 
 SYSTEM PROMPT TO APPEND:
 ${fallbackErrorPrompt}`;
@@ -656,6 +744,7 @@ ${fallbackErrorPrompt}`;
         body: JSON.stringify({
           messages,
           model: "google/gemini-2.5-flash",
+          temperature: 0.1,
           maxTokens: 400
         }),
       });
@@ -669,7 +758,7 @@ ${fallbackErrorPrompt}`;
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, max_tokens: 400 }),
+        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.1, max_tokens: 400 }),
       });
       if (res.ok) {
         const j = await res.json();
