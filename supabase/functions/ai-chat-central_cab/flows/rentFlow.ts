@@ -26,6 +26,7 @@ import {
   generateOrderCode,
   saveOrderToDatabase,
   broadcastBooking,
+  runInBackground,
 } from "./cabFlow.ts";
 
 export async function handleRentFlowStep(
@@ -138,24 +139,52 @@ export async function handleRentFlowStep(
     // 7. Confirmation Step (Yes / No / Home)
     case "RENT_CONFIRM": {
       if (isAffirmativeInput(trimmed)) {
+        if (data.order_code) {
+          console.warn(`[RENT_CONFIRM] Order ${data.order_code} already created for this session, returning existing confirmation.`);
+          return {
+            replyText: getBookingSuccessMessage(data.order_code, lang, "rent_a_car"),
+            poll: getPostBookingPoll(lang),
+            sendTextWithPoll: true,
+            nextFlow: "IDLE",
+            nextStep: "BOOKING_COMPLETED",
+            sessionData: { language: lang, last_order_code: data.order_code },
+          };
+        }
+
         const orderCode = await generateOrderCode(supabase, userId, "rent_a_car");
         data.order_code = orderCode;
         data.customer_phone = data.customer_phone || phoneNumber;
         data.customer_whatsapp = phoneNumber;
         data.customer_name = data.customer_name || "Customer";
 
+        // Immediately update session in DB so concurrent requests see BOOKING_COMPLETED
+        await supabase
+          .schema("central_cab")
+          .from("bot_sessions")
+          .upsert({
+            phone_number: phoneNumber,
+            user_id: userId,
+            flow_type: "IDLE",
+            current_step: "BOOKING_COMPLETED",
+            session_data: { language: lang, last_order_code: orderCode },
+            last_interaction: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+
         // Save order in central_cab.orders
         await saveOrderToDatabase(supabase, userId, "rent_a_car", data);
 
-        // Broadcast to Driver Groups (without customer phone) & Admins (with customer phone)
-        await broadcastBooking(
-          supabaseUrl,
-          supabaseServiceKey,
-          sessionApiKey,
-          orderCode,
-          "Rent a Car",
-          data,
-          systemSettings
+        // Broadcast to Driver Groups (without customer phone) & Admins (with customer phone) in background
+        runInBackground(
+          broadcastBooking(
+            supabaseUrl,
+            supabaseServiceKey,
+            sessionApiKey,
+            orderCode,
+            "Rent a Car",
+            data,
+            systemSettings
+          )
         );
 
         return {

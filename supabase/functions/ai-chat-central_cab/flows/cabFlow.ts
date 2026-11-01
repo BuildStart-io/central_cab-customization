@@ -437,21 +437,49 @@ export async function handleCabFlowStep(
 
     case "CAB_CONFIRM": {
       if (isAffirmativeInput(trimmed)) {
+        if (data.order_code) {
+          console.warn(`[CAB_CONFIRM] Order ${data.order_code} already created for this session, returning existing confirmation.`);
+          return {
+            replyText: getBookingSuccessMessage(data.order_code, lang),
+            poll: getPostBookingPoll(lang),
+            sendTextWithPoll: true,
+            nextFlow: "IDLE",
+            nextStep: "BOOKING_COMPLETED",
+            sessionData: { language: lang, last_order_code: data.order_code },
+          };
+        }
+
         const orderCode = await generateOrderCode(supabase, userId, "transport");
         data.order_code = orderCode;
+
+        // Immediately update session in DB so any concurrent incoming message sees BOOKING_COMPLETED
+        await supabase
+          .schema("central_cab")
+          .from("bot_sessions")
+          .upsert({
+            phone_number: phoneNumber,
+            user_id: userId,
+            flow_type: "IDLE",
+            current_step: "BOOKING_COMPLETED",
+            session_data: { language: lang, last_order_code: orderCode },
+            last_interaction: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
 
         // 1. Save order in central_cab.orders
         await saveOrderToDatabase(supabase, userId, "transport", data);
 
-        // 2. Alert Admin & Broadcast to Driver Groups
-        await broadcastBooking(
-          supabaseUrl,
-          supabaseServiceKey,
-          sessionApiKey,
-          orderCode,
-          "Transport",
-          data,
-          systemSettings
+        // 2. Alert Admin & Broadcast to Driver Groups in background (non-blocking)
+        runInBackground(
+          broadcastBooking(
+            supabaseUrl,
+            supabaseServiceKey,
+            sessionApiKey,
+            orderCode,
+            "Transport",
+            data,
+            systemSettings
+          )
         );
 
         return {
@@ -692,6 +720,19 @@ export async function saveOrderToDatabase(
   }
 }
 
+export function runInBackground(task: Promise<any>) {
+  try {
+    const rt = (globalThis as any).EdgeRuntime;
+    if (rt && typeof rt.waitUntil === "function") {
+      rt.waitUntil(task);
+      return;
+    }
+  } catch (err) {
+    console.warn("[runInBackground] EdgeRuntime.waitUntil error:", err);
+  }
+  task.catch((err) => console.error("[runInBackground] Background task failed:", err));
+}
+
 export async function broadcastBooking(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -769,18 +810,24 @@ export async function broadcastBooking(
     for (const adminPhone of adminRecipients) {
       if (adminPhone) {
         console.log(`[broadcastBooking] Sending booking alert to Admin: ${adminPhone}`);
-        fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseServiceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: adminPhone,
-            message: adminBroadcastText,
-            sessionApiKey,
-          }),
-        }).catch(err => console.error(`Admin dispatch to ${adminPhone} failed:`, err));
+        try {
+          const aRes = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: adminPhone,
+              message: adminBroadcastText,
+              sessionApiKey,
+            }),
+          });
+          const aResText = await aRes.text();
+          console.log(`[broadcastBooking] Admin alert dispatch to ${adminPhone} - status ${aRes.status}: ${aResText.slice(0, 100)}`);
+        } catch (err) {
+          console.error(`[broadcastBooking] Admin dispatch to ${adminPhone} failed:`, err);
+        }
       }
     }
 
@@ -815,18 +862,24 @@ export async function broadcastBooking(
           await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
         }
         console.log(`[broadcastBooking] Forwarding order ${orderCode} to driver group: ${group.name} (${targetChatId})`);
-        fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseServiceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: targetChatId,
-            message: groupBroadcastText,
-            sessionApiKey,
-          }),
-        }).catch(err => console.error(`Group dispatch ${group.name} (${targetChatId}) failed:`, err));
+        try {
+          const gRes = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: targetChatId,
+              message: groupBroadcastText,
+              sessionApiKey,
+            }),
+          });
+          const gResText = await gRes.text();
+          console.log(`[broadcastBooking] Group ${group.name} (${targetChatId}) - status ${gRes.status}: ${gResText.slice(0, 100)}`);
+        } catch (err) {
+          console.error(`[broadcastBooking] Group dispatch ${group.name} (${targetChatId}) failed:`, err);
+        }
       } else {
         console.warn(`[broadcastBooking] Skipping group ${group.name}: No valid chat_id found!`, group);
       }

@@ -26,6 +26,7 @@ import {
   generateOrderCode,
   saveOrderToDatabase,
   broadcastBooking,
+  runInBackground,
 } from "./cabFlow.ts";
 
 export async function handleDeliveryFlowStep(
@@ -155,21 +156,49 @@ export async function handleDeliveryFlowStep(
     // ------------------------------------------------------------------------
     case "DELIVERY_CONFIRM": {
       if (isAffirmativeInput(trimmed)) {
+        if (data.order_code) {
+          console.warn(`[DELIVERY_CONFIRM] Order ${data.order_code} already created for this session, returning existing confirmation.`);
+          return {
+            replyText: getBookingSuccessMessage(data.order_code, lang, "delivery"),
+            poll: getPostBookingPoll(lang),
+            sendTextWithPoll: true,
+            nextFlow: "IDLE",
+            nextStep: "BOOKING_COMPLETED",
+            sessionData: { language: lang, last_order_code: data.order_code },
+          };
+        }
+
         const orderCode = await generateOrderCode(supabase, userId, "delivery");
         data.order_code = orderCode;
+
+        // Immediately update session in DB so concurrent requests see BOOKING_COMPLETED
+        await supabase
+          .schema("central_cab")
+          .from("bot_sessions")
+          .upsert({
+            phone_number: phoneNumber,
+            user_id: userId,
+            flow_type: "IDLE",
+            current_step: "BOOKING_COMPLETED",
+            session_data: { language: lang, last_order_code: orderCode },
+            last_interaction: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
 
         // 1. Save order in central_cab.orders
         await saveOrderToDatabase(supabase, userId, "delivery", data);
 
-        // 2. Alert Delivery Admin & Broadcast to Delivery Shop Group
-        await broadcastBooking(
-          supabaseUrl,
-          supabaseServiceKey,
-          sessionApiKey,
-          orderCode,
-          "Delivery",
-          data,
-          systemSettings
+        // 2. Alert Delivery Admin & Broadcast to Delivery Shop Group in background
+        runInBackground(
+          broadcastBooking(
+            supabaseUrl,
+            supabaseServiceKey,
+            sessionApiKey,
+            orderCode,
+            "Delivery",
+            data,
+            systemSettings
+          )
         );
 
         return {
