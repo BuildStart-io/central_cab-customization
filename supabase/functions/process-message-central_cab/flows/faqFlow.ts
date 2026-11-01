@@ -151,12 +151,18 @@ export async function queryFaqsAndAi(
       }
     }
 
-    if (bestFaq && highestScore >= 3) {
-      return bestFaq.answer;
+    // Only return direct database FAQ answer if it matches the customer's selected language and has high confidence
+    if (bestFaq && highestScore >= 10) {
+      const hasSinhalaChars = /[\u0D80-\u0DFF]/.test(bestFaq.answer);
+      const hasTamilChars = /[\u0B80-\u0BFF]/.test(bestFaq.answer);
+      const langMatches = (lang === "si" && hasSinhalaChars) || (lang === "ta" && hasTamilChars) || (lang === "en" && !hasSinhalaChars && !hasTamilChars);
+      if (langMatches) {
+        return bestFaq.answer;
+      }
     }
   }
 
-  // 3. Fallback to Gemini AI with all FAQs and Pricing details
+  // 3. Fallback to Gemini AI with all FAQs, Service Flow & Pricing details
   try {
     const aiAnswer = await handleAiFallback(
       supabase,
@@ -173,7 +179,10 @@ export async function queryFaqsAndAi(
       !aiAnswer.includes("UNKNOWN_INFO") &&
       !aiAnswer.includes("Sorry, I don't have that information")
     ) {
-      const cleaned = aiAnswer.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
+      let cleaned = aiAnswer.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+      }
       if (cleaned) {
         return cleaned;
       }

@@ -721,10 +721,7 @@ ${faqText}
 6. INTENT WRONG LOCATION / DISTANCE: If the customer states or complains that their pickup location, dropoff location, distance, or price is wrong or calculated incorrectly (e.g., "wrong location", "location thavarana", "dura weradi", "location pila"), you MUST reply EXACTLY with: "INTENT_WRONG_LOCATION".
 7. ${langRule}
 8. Keep the answer concise (1 to 3 sentences maximum), friendly, and professional.
-9. If you provide an answer or say "UNKNOWN_INFO", append the original system prompt exactly as provided below at the very end of your response, separated by two newlines.
-
-SYSTEM PROMPT TO APPEND:
-${fallbackErrorPrompt}`;
+9. OUTPUT ONLY the direct answer. DO NOT output internal thinking, notes, thoughts, or explanations.`;
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -745,7 +742,7 @@ ${fallbackErrorPrompt}`;
           messages,
           model: "google/gemini-2.5-flash",
           temperature: 0.1,
-          maxTokens: 400
+          maxTokens: 1200
         }),
       });
       if (res.ok) {
@@ -758,7 +755,7 @@ ${fallbackErrorPrompt}`;
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.1, max_tokens: 400 }),
+        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.1, max_tokens: 1200 }),
       });
       if (res.ok) {
         const j = await res.json();
@@ -766,8 +763,13 @@ ${fallbackErrorPrompt}`;
       }
     }
 
-    if (rawText.trim()) {
-      return rawText.trim();
+    let cleaned = rawText.trim();
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+    }
+
+    if (cleaned) {
+      return cleaned;
     }
   } catch (err) {
     console.warn("AI Fallback failed:", err);
