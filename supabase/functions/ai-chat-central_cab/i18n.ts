@@ -771,9 +771,9 @@ export function detectDeliveryCategory(text: string): string | null {
   if (t === "4" || t.startsWith("4.") || t.startsWith("4 ") || t.includes("cosmetic") || t.includes("அழகு")) return "Cosmetics 💄";
   if (t === "5" || t.startsWith("5.") || t.startsWith("5 ") || t.includes("gift")) return "Gift Items 🎁";
   if (t === "6" || t.startsWith("6.") || t.startsWith("6 ") || t.includes("food") || t.includes("drink") || t.includes("உணவு")) return "Food & Drinks 🍔🥤";
-  if (t === "7" || t.startsWith("7.") || t.startsWith("7 ") || t.includes("mobile") || t.includes("phone")) return "Mobile & Phones 📱";
+  if (t === "7" || t.startsWith("7.") || t.startsWith("7 ") || t.includes("mobile") || (t.includes("phone") && !t.includes("headphone")) || t.includes("දුරකථන") || t.includes("தொலைபேசி")) return "Mobile & Phones 📱";
   if (t === "8" || t.startsWith("8.") || t.startsWith("8 ") || t.includes("party") || t.includes("school")) return "Party & School Items 🎉📚";
-  if (t === "9" || t.startsWith("9.") || t.startsWith("9 ") || t.includes("electronic") || t.includes("headphone")) return "Electronics & Headphones 🎧";
+  if (t === "9" || t.startsWith("9.") || t.startsWith("9 ") || t.includes("electronic") || t.includes("headphone") || t.includes("විදුලි") || t.includes("மின்னணு")) return "Electronics & Headphones 🎧";
   if (t === "10" || t.startsWith("10.") || t.startsWith("10 ") || t.includes("other") || t.includes("ஏனைய")) return "General / Other Items 📦";
   if (t.length >= 2) return text.trim();
   return null;

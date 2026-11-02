@@ -3,12 +3,17 @@
 // Strict Conversational Booking Orchestrator with Modular Category Sub-Files
 // ============================================================================
 
-import { PricingSettings } from "./pricingEngine.ts";
+import { PricingSettings, normalizeVehicleKey } from "./pricingEngine.ts";
 import { CabSystemSettings } from "./adminHandler.ts";
 import {
   SupportedLanguage,
   detectLanguageSelection,
   detectServiceCategory,
+  detectRentVehicleCategory,
+  detectDeliveryCategory,
+  isAffirmativeInput,
+  isNegativeInput,
+  isHomeOrResetInput,
   isResetChoice,
   isHelpChoice,
   getLanguagePoll,
@@ -27,6 +32,62 @@ import { handleCancelFlowStep, startCancelFlow } from "./flows/cancelFlow.ts";
 
 export type { BotSessionState, StepProcessResult, PollPayload };
 
+function isExpectedStepAnswer(
+  flow: string,
+  step: string,
+  trimmed: string,
+  data: any,
+  pricingSettings: PricingSettings
+): boolean {
+  if (isHomeOrResetInput(trimmed)) return true;
+  const lower = trimmed.toLowerCase();
+
+  // Digit menu selections: e.g. "1", "2", "1. Car", "2. Van", "1 - One way"
+  if (/^\s*\d+[\.\)\s-]/.test(lower) || /^\s*\d+\s*$/.test(lower)) {
+    return true;
+  }
+
+  if (flow === "CAB_FLOW") {
+    if (step === "CAB_VEHICLE") {
+      const vKey = normalizeVehicleKey(trimmed, data.booking_type);
+      if (vKey) return true;
+    } else if (step === "CAB_MODEL") {
+      const vKey = data.vehicle_key || "car";
+      const models = pricingSettings[vKey]?.models || [];
+      if (models.some((m) => lower.includes(m.name.toLowerCase()))) return true;
+    } else if (step === "CAB_TRIP_TYPE") {
+      if (lower.includes("one-way") || lower.includes("one way") || lower.includes("round") || lower.includes("single")) return true;
+    } else if (step === "CAB_CONFIRM") {
+      if (isAffirmativeInput(trimmed) || isNegativeInput(trimmed)) return true;
+    } else if (step === "CAB_PHONE") {
+      const digits = trimmed.replace(/\D/g, "");
+      if (digits.length >= 7) return true;
+    }
+  } else if (flow === "RENT_A_CAR_FLOW") {
+    if (step === "RENT_VEHICLE_CHOICE") {
+      const cat = detectRentVehicleCategory(trimmed);
+      if (cat) return true;
+    } else if (step === "RENT_CONFIRM") {
+      if (isAffirmativeInput(trimmed) || isNegativeInput(trimmed)) return true;
+    } else if (step === "RENT_PHONE") {
+      const digits = trimmed.replace(/\D/g, "");
+      if (digits.length >= 7) return true;
+    }
+  } else if (flow === "DELIVERY_FLOW") {
+    if (step === "DELIVERY_CATEGORY") {
+      const cat = detectDeliveryCategory(trimmed);
+      if (cat) return true;
+    } else if (step === "DELIVERY_CONFIRM") {
+      if (isAffirmativeInput(trimmed) || isNegativeInput(trimmed)) return true;
+    } else if (step === "DELIVERY_PHONE") {
+      const digits = trimmed.replace(/\D/g, "");
+      if (digits.length >= 7) return true;
+    }
+  }
+
+  return false;
+}
+
 function isPossibleQuestion(text: string, messageType?: string): boolean {
   if (messageType === "location") return false;
   const lower = (text || "").toLowerCase().trim();
@@ -38,6 +99,17 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
   ) {
     return false;
   }
+
+  // Poll options and menu choices starting with digits (e.g. "1. Car", "2. Van", "1)") are NOT questions
+  if (/^\s*\d+[\.\)\s-]/.test(lower) || /^\s*\d+\s*$/.test(lower)) {
+    return false;
+  }
+
+  // Confirmation or reset inputs are NOT questions
+  if (isAffirmativeInput(text) || isNegativeInput(text) || isHomeOrResetInput(text)) {
+    return false;
+  }
+
   if (lower.includes("?")) return true;
   if (text.includes("http://") || text.includes("https://")) return false;
   
@@ -45,27 +117,25 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
     "price", "how much", "rate", "rates", "cost", "charge", "charges", "fare", "estimate", "calculation",
     "km", "kilometer", "distance", "keeyada", "kiyada", "gaana", "gani", "mudal",
     "thiyenawada", "puluwanda", "puluwandha", "puluwan", "koheda", "kohomada", "mokakda", "monawada", "wisthara", "visthara", "detail", "details",
-    "ac", "aircon", "van", "car", "bus", "lorry", "bike", "tuk", "kdh", "alto", "wagonr", "prius", "aqua", "axio",
+    "ac", "aircon",
     "what", "how", "when", "where", "why", "who", "which", "can you", "do you", "can i", "is it", "possible", "available",
     "wrong", "incorrect", "pila", "waradi", "dura", "weradi",
     "mudiyuma", "mudiyatha", "ealuma", "theriyuma", "iruka", "irukka", "irukkuma", "vilai", "katnam", "ethana", "evvalavu", "thavarana", "maathu",
-    "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage", "driver",
-    "seating", "seats", "passenger", "passengers", "cancel", "safe", "service", "hours", "delivery", "rent", "hire", "cab", "cabs",
-    "epadi", "eppadi", "enna", "enga", "eppo", "vahanam", "varuma", "tharuveengala", "varum", "wahanayak", "wahana"
+    "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage",
+    "seating", "seats", "passenger", "passengers", "safe", "hours",
+    "epadi", "eppadi", "enna", "enga", "eppo", "varuma", "tharuveengala", "wahanayak"
   ];
   
   const sinWords = [
     "මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය",
-    "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "වාහන", "ලොරි", "වෑන්", "කාර්", "බස්", "ත්‍රීවීල්", "බයික්",
-    "ඒසී", "ඩ්‍රයිවර්", "කැබ්", "ගාස්තු", "ගාස්තුව", "කොමිස්", "ප්‍රවාහන", "ඩිලිවරි", "රෙන්ට්"
+    "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "ඒසී", "ගාස්තු", "ගාස්තුව", "කොමිස්"
   ];
 
   const tamWords = [
     "கேள்வி", "சந்தேகம்", "உதவி", "விலை", "கட்டணம்", "முடியுமா", "முடியாதா",
     "இருக்கா", "இருக்குமா", "எப்படி", "எப்போது", "எங்கே", "என்ன", "எத்தனை",
     "ஏசி", "தள்ளுபடி", "ரத்து", "லக்கேஜ்", "முன்பணம்", "விபரம்", "பாதுகாப்பு",
-    "வாகனம்", "கார்", "வேன்", "லொறி", "பஸ்", "பைக்", "ஆட்டோ", "டிரைவர்", "சாரதி",
-    "வாடகை", "டெலிவரி", "முறை", "நேரம்", "எப்போ", "என்னென்ன", "யார்"
+    "முறை", "நேரம்", "எப்போ", "என்னென்ன", "யார்"
   ];
 
   if (text.length > 80 && !lower.startsWith("location:")) return true;
@@ -291,7 +361,8 @@ export async function processCustomerChatStep(
     || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
 
   const isLocationStep = step === "DELIVERY_LOCATION" || step === "CAB_PICKUP" || step === "CAB_DROPOFF" || step === "RENT_LOCATION";
-  const shouldInterceptQuestion = !isLocationMsg && (!isLocationStep || trimmed.includes("?"));
+  const isExpectedAnswer = isExpectedStepAnswer(flow, step, trimmed, data, pricingSettings);
+  const shouldInterceptQuestion = !isLocationMsg && !isExpectedAnswer && (!isLocationStep || trimmed.includes("?"));
 
   // Question interception for active booking flows (Answers question and resumes flow!)
   if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldInterceptQuestion && isPossibleQuestion(trimmed, messageType)) {
