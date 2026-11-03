@@ -22,6 +22,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Radio,
   Car,
   Store,
@@ -45,8 +53,19 @@ import {
   History,
   Copy,
   Info,
-  Check
+  Check,
+  FileText,
+  Image as ImageIcon,
+  Paperclip,
+  Trash2,
+  FolderPlus,
+  ArrowRightLeft,
+  ChevronDown,
+  Plus,
+  X,
+  UploadCloud,
 } from "lucide-react";
+import { uploadMedia } from "@/lib/mediaStorage";
 import { DriverGroup, ServiceGroupType } from "./CabSystemSettings";
 
 export interface GroupItemWithCategory extends DriverGroup {
@@ -94,7 +113,14 @@ export default function BroadcastManager() {
   const [campaignTitle, setCampaignTitle] = useState("Driver Announcement");
   const [messageText, setMessageText] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
+  const [mediaFileName, setMediaFileName] = useState("");
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [showManualUrlInput, setShowManualUrlInput] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewSpintaxText, setPreviewSpintaxText] = useState("");
+
+  // Discovered WhatsApp Groups from WAHA account
+  const [discoveredWahaGroups, setDiscoveredWahaGroups] = useState<{ id: string; name: string }[]>([]);
 
   // Anti-Ban Strategies
   const [delaySeconds, setDelaySeconds] = useState(8);
@@ -225,51 +251,42 @@ export default function BroadcastManager() {
             }))
             .filter((g) => Boolean(g.id));
 
+          setDiscoveredWahaGroups(liveWahaGroups);
+
           if (liveWahaGroups.length > 0) {
-            // Map live groups to categories, preserving any existing categorizations
-            const refreshedList: GroupItemWithCategory[] = liveWahaGroups.map((lg, i) => {
-              const existing = combined.find((c) => c.chat_id === lg.id);
-              const cat: ServiceGroupType = existing?.category || "hire";
-              const catLabel = existing?.categoryLabel || (
-                cat === "hire" ? "Hire Driver" :
-                cat === "rent_a_car" ? "Rent a Car" :
-                cat === "delivery_shop" ? "Delivery Shop" : "Delivery Rider"
-              );
-              return {
-                id: String(existing?.id || `live_${i}`),
-                name: lg.name || existing?.name || `Group ${i + 1}`,
+            if (combined.length === 0) {
+              // Initial population if no groups existed in settings
+              combined = liveWahaGroups.map((lg, i) => ({
+                id: `hire_${lg.id}`,
+                name: lg.name || `Hire Driver Group ${i + 1}`,
                 chat_id: lg.id,
-                category: cat,
-                categoryLabel: catLabel,
-              };
-            });
+                category: "hire" as ServiceGroupType,
+                categoryLabel: "Hire Driver",
+              }));
+            } else {
+              // Update names of existing groups from fresh live data
+              combined = combined.map((cg) => {
+                const liveMatch = liveWahaGroups.find((lg) => lg.id === cg.chat_id);
+                return liveMatch && liveMatch.name ? { ...cg, name: liveMatch.name } : cg;
+              });
 
-            combined = refreshedList;
-            setSelectedGroupIds(new Set(refreshedList.map((g) => g.id)));
+              // Add newly discovered groups that are not in ANY category yet
+              liveWahaGroups.forEach((lg) => {
+                const exists = combined.some((cg) => cg.chat_id === lg.id);
+                if (!exists) {
+                  combined.push({
+                    id: `hire_${lg.id}`,
+                    name: lg.name || "New Group",
+                    chat_id: lg.id,
+                    category: "hire",
+                    categoryLabel: "Hire Driver",
+                  });
+                }
+              });
+            }
 
-            // Save the updated live groups into cab_system_settings so they persist
-            const hireGroups = combined.filter((g) => g.category === "hire").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-            const rentGroups = combined.filter((g) => g.category === "rent_a_car").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-            const shopGroups = combined.filter((g) => g.category === "delivery_shop").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-            const riderGroups = combined.filter((g) => g.category === "delivery_riders").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-
-            const updatedVal = {
-              ...(data?.value || {}),
-              hire_driver_groups: hireGroups,
-              rent_a_car_groups: rentGroups,
-              delivery_driver_groups: shopGroups,
-              delivery_rider_groups: riderGroups,
-              target_driver_groups: hireGroups,
-            };
-
-            await supabase
-              .schema("central_cab")
-              .from("settings")
-              .upsert({
-                user_id: user?.id,
-                key: "cab_system_settings",
-                value: updatedVal,
-              }, { onConflict: "user_id,key" });
+            // Persist the synced groups
+            await persistGroupsToSettings(combined);
           }
         }
       } catch (wahaErr) {
@@ -278,8 +295,8 @@ export default function BroadcastManager() {
 
       setAllGroups(combined);
 
-      // Select all groups by default if none selected yet
-      if (selectedGroupIds.size === 0 && combined.length > 0) {
+      // Select all groups by default if none selected yet, or on refresh
+      if (showToast || selectedGroupIds.size === 0) {
         setSelectedGroupIds(new Set(combined.map((g) => g.id)));
       }
 
@@ -299,6 +316,301 @@ export default function BroadcastManager() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const persistGroupsToSettings = async (groupsList: GroupItemWithCategory[]) => {
+    if (!user) return;
+    try {
+      const hireGroups = groupsList.filter((g) => g.category === "hire").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+      const rentGroups = groupsList.filter((g) => g.category === "rent_a_car").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+      const shopGroups = groupsList.filter((g) => g.category === "delivery_shop").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+      const riderGroups = groupsList.filter((g) => g.category === "delivery_riders").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+
+      const { data: existingData } = await supabase
+        .schema("central_cab")
+        .from("settings")
+        .select("value")
+        .eq("user_id", user.id)
+        .eq("key", "cab_system_settings")
+        .maybeSingle();
+
+      const updatedVal = {
+        ...(existingData?.value || {}),
+        hire_driver_groups: hireGroups,
+        rent_a_car_groups: rentGroups,
+        delivery_driver_groups: shopGroups,
+        delivery_rider_groups: riderGroups,
+        target_driver_groups: hireGroups,
+      };
+
+      await supabase
+        .schema("central_cab")
+        .from("settings")
+        .upsert(
+          {
+            user_id: user.id,
+            key: "cab_system_settings",
+            value: updatedVal,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,key" }
+        );
+    } catch (err) {
+      console.error("Failed to persist groups to settings:", err);
+    }
+  };
+
+  const handleMoveGroupCategory = async (groupId: string, newCategory: ServiceGroupType) => {
+    const targetGroup = allGroups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+    if (targetGroup.category === newCategory) return;
+
+    const newLabel =
+      newCategory === "hire" ? "Hire Driver" :
+      newCategory === "rent_a_car" ? "Rent a Car" :
+      newCategory === "delivery_shop" ? "Delivery Shop" : "Delivery Rider";
+
+    const newId = `${newCategory}_${targetGroup.chat_id || Date.now()}`;
+    const updatedList = allGroups.map((g) => {
+      if (g.id !== groupId) return g;
+      return {
+        ...g,
+        id: newId,
+        category: newCategory,
+        categoryLabel: newLabel,
+      };
+    });
+
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+        next.add(newId);
+      }
+      return next;
+    });
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: "Group Moved",
+      description: `Moved "${targetGroup.name}" to ${newLabel}.`,
+    });
+  };
+
+  const handleCopyGroupToCategory = async (group: GroupItemWithCategory, targetCategory: ServiceGroupType) => {
+    const targetLabel =
+      targetCategory === "hire" ? "Hire Driver" :
+      targetCategory === "rent_a_car" ? "Rent a Car" :
+      targetCategory === "delivery_shop" ? "Delivery Shop" : "Delivery Rider";
+
+    const newId = `${targetCategory}_${group.chat_id}`;
+    if (allGroups.some((g) => g.chat_id === group.chat_id && g.category === targetCategory)) {
+      toast({
+        title: "Already in Category",
+        description: `"${group.name}" is already in ${targetLabel}.`,
+      });
+      return;
+    }
+
+    const newItem: GroupItemWithCategory = {
+      id: newId,
+      name: group.name,
+      chat_id: group.chat_id,
+      category: targetCategory,
+      categoryLabel: targetLabel,
+    };
+
+    const updatedList = [...allGroups, newItem];
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => new Set([...prev, newId]));
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: "Group Added to " + targetLabel,
+      description: `"${group.name}" is now available in ${targetLabel}.`,
+    });
+  };
+
+  const handleCopyGroupToAllCategories = async (group: GroupItemWithCategory) => {
+    const cats: ServiceGroupType[] = ["hire", "rent_a_car", "delivery_shop", "delivery_riders"];
+    const additions: GroupItemWithCategory[] = [];
+
+    for (const cat of cats) {
+      if (!allGroups.some((g) => g.chat_id === group.chat_id && g.category === cat)) {
+        const catLabel =
+          cat === "hire" ? "Hire Driver" :
+          cat === "rent_a_car" ? "Rent a Car" :
+          cat === "delivery_shop" ? "Delivery Shop" : "Delivery Rider";
+        additions.push({
+          id: `${cat}_${group.chat_id}`,
+          name: group.name,
+          chat_id: group.chat_id,
+          category: cat,
+          categoryLabel: catLabel,
+        });
+      }
+    }
+
+    if (additions.length === 0) {
+      toast({ title: "Already in All Categories", description: `"${group.name}" is already added across all 4 categories.` });
+      return;
+    }
+
+    const updatedList = [...allGroups, ...additions];
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      additions.forEach((a) => next.add(a.id));
+      return next;
+    });
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: "Added to All Categories",
+      description: `"${group.name}" is now available across all 4 service categories.`,
+    });
+  };
+
+  const handleRemoveGroupFromCategory = async (groupId: string) => {
+    const targetGroup = allGroups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+
+    const updatedList = allGroups.filter((g) => g.id !== groupId);
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      next.delete(groupId);
+      return next;
+    });
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: "Group Removed",
+      description: `Removed "${targetGroup.name}" from ${targetGroup.categoryLabel}.`,
+    });
+  };
+
+  const handleQuickAddWahaGroup = async (wahaGroup: { id: string; name: string }, targetCat: ServiceGroupType) => {
+    const targetLabel =
+      targetCat === "hire" ? "Hire Driver" :
+      targetCat === "rent_a_car" ? "Rent a Car" :
+      targetCat === "delivery_shop" ? "Delivery Shop" : "Delivery Rider";
+
+    const newId = `${targetCat}_${wahaGroup.id}`;
+    if (allGroups.some((g) => g.chat_id === wahaGroup.id && g.category === targetCat)) {
+      toast({
+        title: "Already Added",
+        description: `"${wahaGroup.name}" is already in ${targetLabel}.`,
+      });
+      return;
+    }
+
+    const newItem: GroupItemWithCategory = {
+      id: newId,
+      name: wahaGroup.name,
+      chat_id: wahaGroup.id,
+      category: targetCat,
+      categoryLabel: targetLabel,
+    };
+
+    const updatedList = [...allGroups, newItem];
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => new Set([...prev, newId]));
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: `Added to ${targetLabel}`,
+      description: `Added "${wahaGroup.name}" to ${targetLabel}.`,
+    });
+  };
+
+  const handleAddAllWahaGroupsToCategory = async (targetCat: ServiceGroupType) => {
+    const targetLabel =
+      targetCat === "hire" ? "Hire Driver" :
+      targetCat === "rent_a_car" ? "Rent a Car" :
+      targetCat === "delivery_shop" ? "Delivery Shop" : "Delivery Rider";
+
+    const groupsPool = discoveredWahaGroups.length > 0
+      ? discoveredWahaGroups
+      : Array.from(new Map(allGroups.map((g) => [g.chat_id, { id: g.chat_id, name: g.name }])).values());
+
+    const toAdd = groupsPool.filter(
+      (wg) => !allGroups.some((g) => g.chat_id === wg.id && g.category === targetCat)
+    );
+
+    if (toAdd.length === 0) {
+      toast({
+        title: "All Groups Present",
+        description: `All connected WhatsApp groups are already added to ${targetLabel}.`,
+      });
+      return;
+    }
+
+    const newItems: GroupItemWithCategory[] = toAdd.map((wg) => ({
+      id: `${targetCat}_${wg.id}`,
+      name: wg.name,
+      chat_id: wg.id,
+      category: targetCat,
+      categoryLabel: targetLabel,
+    }));
+
+    const updatedList = [...allGroups, ...newItems];
+    setAllGroups(updatedList);
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      newItems.forEach((item) => next.add(item.id));
+      return next;
+    });
+
+    await persistGroupsToSettings(updatedList);
+
+    toast({
+      title: `Added ${newItems.length} Group(s) to ${targetLabel}`,
+      description: `All connected WhatsApp groups are now available in ${targetLabel}.`,
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Maximum file size is 50MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsUploadingMedia(true);
+      const url = await uploadMedia(file, "broadcast");
+      setMediaUrl(url);
+      setMediaFileName(file.name);
+      toast({
+        title: "Media Uploaded Successfully! ✅",
+        description: `Attached ${file.name} to this broadcast.`,
+      });
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      toast({
+        title: "Upload Failed",
+        description: err.message || "Failed to upload file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingMedia(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -1194,14 +1506,62 @@ export default function BroadcastManager() {
 
               {/* Group Cards Grid */}
               {filteredGroups.length === 0 ? (
-                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-slate-50 dark:bg-slate-900/50 space-y-2">
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    No WhatsApp groups configured in this category yet.
+                <div className="p-8 text-center border-2 border-dashed rounded-xl bg-slate-50 dark:bg-slate-900/50 space-y-3">
+                  <div className="flex items-center justify-center gap-2 font-bold text-sm text-foreground">
+                    {activeCategoryFilter === "hire" && <Radio className="h-5 w-5 text-amber-500" />}
+                    {activeCategoryFilter === "rent_a_car" && <Car className="h-5 w-5 text-blue-500" />}
+                    {activeCategoryFilter === "delivery_shop" && <Store className="h-5 w-5 text-emerald-500" />}
+                    {activeCategoryFilter === "delivery_riders" && <Bike className="h-5 w-5 text-purple-500" />}
+                    <span>No WhatsApp groups configured in {activeCategoryFilter === "all" ? "this view" : getCategoryMeta(activeCategoryFilter).label} yet</span>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                    {discoveredWahaGroups.length > 0 || allGroups.length > 0
+                      ? `Your connected WhatsApp account has ${discoveredWahaGroups.length || allGroups.length} group(s) available. You can add them with one click below:`
+                      : "Go to Driver Groups & Admin tab or click Refresh Groups to detect your WhatsApp groups."}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Go to the <strong>Driver Groups & Admin</strong> tab to add your WhatsApp groups or scan your
-                    phone.
-                  </p>
+
+                  {activeCategoryFilter !== "all" && (
+                    <div className="flex flex-col items-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        onClick={() => handleAddAllWahaGroupsToCategory(activeCategoryFilter)}
+                        className={`text-xs font-bold gap-1.5 shadow-sm ${
+                          activeCategoryFilter === "hire" ? "bg-amber-500 hover:bg-amber-600 text-slate-950" :
+                          activeCategoryFilter === "rent_a_car" ? "bg-blue-600 hover:bg-blue-700 text-white" :
+                          activeCategoryFilter === "delivery_shop" ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
+                          "bg-purple-600 hover:bg-purple-700 text-white"
+                        }`}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add All Connected WhatsApp Groups to {getCategoryMeta(activeCategoryFilter).label}
+                      </Button>
+
+                      {/* Individual discovered group pills */}
+                      {(discoveredWahaGroups.length > 0
+                        ? discoveredWahaGroups
+                        : Array.from(new Map(allGroups.map((g) => [g.chat_id, { id: g.chat_id, name: g.name }])).values())
+                      ).length > 0 && (
+                        <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
+                          <span className="text-[11px] text-muted-foreground mr-1">Or add individually:</span>
+                          {(discoveredWahaGroups.length > 0
+                            ? discoveredWahaGroups
+                            : Array.from(new Map(allGroups.map((g) => [g.chat_id, { id: g.chat_id, name: g.name }])).values())
+                          ).map((wg) => (
+                            <Button
+                              key={wg.id}
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleQuickAddWahaGroup(wg, activeCategoryFilter)}
+                              className="text-xs h-7 hover:border-primary"
+                            >
+                              + {wg.name}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1230,10 +1590,77 @@ export default function BroadcastManager() {
                             />
                             <div>
                               <div className="flex items-center gap-1.5">
-                                <Badge className={`text-[10px] font-bold px-1.5 py-0 border ${meta.badgeColor}`}>
-                                  {group.categoryLabel}
-                                </Badge>
+                                {/* Interactive Category Switcher Dropdown */}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-colors cursor-pointer ${meta.badgeColor} hover:opacity-80`}
+                                      title="Click to move or copy group across service categories"
+                                    >
+                                      <span>{group.categoryLabel}</span>
+                                      <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="start" className="w-56 text-xs" onClick={(e) => e.stopPropagation()}>
+                                    <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+                                      Move to Category:
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuItem
+                                      disabled={group.category === "hire"}
+                                      onClick={() => handleMoveGroupCategory(group.id, "hire")}
+                                      className="text-xs gap-2"
+                                    >
+                                      <Radio className="h-3.5 w-3.5 text-amber-500" />
+                                      <span>🚖 Hire Drivers</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={group.category === "rent_a_car"}
+                                      onClick={() => handleMoveGroupCategory(group.id, "rent_a_car")}
+                                      className="text-xs gap-2"
+                                    >
+                                      <Car className="h-3.5 w-3.5 text-blue-500" />
+                                      <span>🚗 Rent a Car</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={group.category === "delivery_shop"}
+                                      onClick={() => handleMoveGroupCategory(group.id, "delivery_shop")}
+                                      className="text-xs gap-2"
+                                    >
+                                      <Store className="h-3.5 w-3.5 text-emerald-500" />
+                                      <span>🏪 Delivery Shops</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={group.category === "delivery_riders"}
+                                      onClick={() => handleMoveGroupCategory(group.id, "delivery_riders")}
+                                      className="text-xs gap-2"
+                                    >
+                                      <Bike className="h-3.5 w-3.5 text-purple-500" />
+                                      <span>🛵 Delivery Riders</span>
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+                                      Copy or Remove:
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuItem
+                                      onClick={() => handleCopyGroupToAllCategories(group)}
+                                      className="text-xs gap-2 font-semibold text-primary"
+                                    >
+                                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                      <span>Copy to All 4 Categories 🌐</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => handleRemoveGroupFromCategory(group.id)}
+                                      className="text-xs gap-2 text-destructive hover:!text-destructive"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <span>Remove from {group.categoryLabel}</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
+
                               <h4 className="text-sm font-bold text-foreground mt-1 leading-snug">
                                 {group.name || "Unnamed Group"}
                               </h4>
@@ -1396,26 +1823,175 @@ export default function BroadcastManager() {
             </CardHeader>
 
             <CardContent className="space-y-3.5">
-              {/* Campaign Title & Media URL */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs font-semibold">Campaign Title (Internal Reference)</Label>
-                  <Input
-                    value={campaignTitle}
-                    onChange={(e) => setCampaignTitle(e.target.value)}
-                    placeholder="e.g. Driver Announcement"
-                    className="mt-1"
-                  />
+              {/* Campaign Title */}
+              <div>
+                <Label className="text-xs font-semibold">Campaign Title (Internal Reference)</Label>
+                <Input
+                  value={campaignTitle}
+                  onChange={(e) => setCampaignTitle(e.target.value)}
+                  placeholder="e.g. Driver Announcement"
+                  className="mt-1"
+                />
+              </div>
+
+              {/* Media Attachment (Image or PDF) */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <Paperclip className="h-3.5 w-3.5 text-primary" />
+                    Attach Media (Image or PDF Document)
+                  </Label>
+                  {mediaUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setMediaUrl("");
+                        setMediaFileName("");
+                      }}
+                      className="h-6 text-[11px] text-destructive hover:bg-destructive/10 px-2"
+                    >
+                      <X className="h-3 w-3 mr-1" /> Remove Attachment
+                    </Button>
+                  )}
                 </div>
-                <div>
-                  <Label className="text-xs font-semibold">Optional Media / Image URL</Label>
-                  <Input
-                    value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    placeholder="https://example.com/banner.jpg"
-                    className="mt-1 font-mono text-xs"
-                  />
-                </div>
+
+                {/* If Media is Uploaded / Set */}
+                {mediaUrl ? (
+                  <div className="p-3 rounded-xl border bg-slate-50 dark:bg-slate-900/60 flex items-center gap-3">
+                    {/* Icon / Thumbnail */}
+                    {mediaUrl.toLowerCase().endsWith(".pdf") || mediaFileName.toLowerCase().endsWith(".pdf") ? (
+                      <div className="h-14 w-14 rounded-lg bg-red-100 dark:bg-red-950/60 border border-red-300 flex flex-col items-center justify-center text-red-600 shrink-0">
+                        <FileText className="h-6 w-6" />
+                        <span className="text-[9px] font-bold mt-0.5">PDF</span>
+                      </div>
+                    ) : (
+                      <div className="h-14 w-14 rounded-lg overflow-hidden border bg-muted shrink-0 relative">
+                        <img
+                          src={mediaUrl}
+                          alt="Preview"
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = "none";
+                          }}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/10 -z-10">
+                          <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          className={
+                            mediaUrl.toLowerCase().endsWith(".pdf") || mediaFileName.toLowerCase().endsWith(".pdf")
+                              ? "bg-red-100 text-red-800 border-red-300 text-[10px]"
+                              : "bg-blue-100 text-blue-800 border-blue-300 text-[10px]"
+                          }
+                        >
+                          {mediaUrl.toLowerCase().endsWith(".pdf") || mediaFileName.toLowerCase().endsWith(".pdf")
+                            ? "📄 PDF Document"
+                            : "🖼️ Image Banner"}
+                        </Badge>
+                        <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" /> Attached
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-foreground truncate mt-1">
+                        {mediaFileName || mediaUrl.split("/").pop() || "Uploaded File"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate">
+                        {mediaUrl}
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        setMediaUrl("");
+                        setMediaFileName("");
+                      }}
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 shrink-0"
+                      title="Remove file"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  /* Upload Dropzone */
+                  <div className="space-y-2">
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all hover:border-primary/60 hover:bg-primary/5 ${
+                        isUploadingMedia ? "opacity-50 pointer-events-none" : "border-slate-300 dark:border-slate-700 bg-background"
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/jpg,application/pdf,.pdf"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                      />
+
+                      {isUploadingMedia ? (
+                        <div className="flex flex-col items-center justify-center py-2 space-y-2">
+                          <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                          <p className="text-xs font-semibold text-foreground">Uploading file to media cloud...</p>
+                          <p className="text-[11px] text-muted-foreground">Please wait a moment</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center space-y-2">
+                          <div className="flex items-center gap-2 text-primary">
+                            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600">
+                              <ImageIcon className="h-5 w-5" />
+                            </div>
+                            <span className="text-muted-foreground text-xs font-bold">+</span>
+                            <div className="p-2 rounded-lg bg-red-500/10 text-red-600">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-foreground">
+                              Click to Upload Image or PDF Document
+                            </p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Supports PNG, JPG, WEBP banners or PDF brochures & rate cards (up to 50MB)
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Manual URL toggle fallback */}
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowManualUrlInput(!showManualUrlInput)}
+                        className="text-[11px] text-primary hover:underline font-medium"
+                      >
+                        {showManualUrlInput ? "Hide manual URL input" : "Or enter external media URL manually"}
+                      </button>
+                    </div>
+
+                    {showManualUrlInput && (
+                      <Input
+                        value={mediaUrl}
+                        onChange={(e) => {
+                          setMediaUrl(e.target.value);
+                          setMediaFileName(e.target.value.split("/").pop() || "External Media");
+                        }}
+                        placeholder="https://example.com/banner.jpg or https://example.com/rates.pdf"
+                        className="font-mono text-xs mt-1"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Message Textarea */}

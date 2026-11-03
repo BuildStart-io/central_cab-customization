@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type MediaFolder = "products" | "videos" | "welcome" | "faq";
+export type MediaFolder = "products" | "videos" | "welcome" | "faq" | "broadcast";
 
 const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/media-storage-central_cab`;
 
