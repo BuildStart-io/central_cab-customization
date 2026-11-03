@@ -33,7 +33,14 @@ serve(async (req) => {
 
   if (requestAction === "run_tests") {
     console.log("[process-message-central_cab] Executing automated test suite...");
-    const defaultUserId = "33806ba5-1df3-4a46-8705-49069b72a483";
+    let defaultUserId = "33806ba5-1df3-4a46-8705-49069b72a483";
+    const { data: ownerUser } = await supabase.from("orders").select("user_id").limit(1).maybeSingle();
+    if (ownerUser?.user_id) {
+      defaultUserId = ownerUser.user_id;
+    } else {
+      const { data: settingUser } = await supabase.from("settings").select("user_id").limit(1).maybeSingle();
+      if (settingUser?.user_id) defaultUserId = settingUser.user_id;
+    }
     const testReport = await runAllAutomatedTests(supabase, supabaseUrl, supabaseServiceKey, defaultUserId);
     return new Response(JSON.stringify(testReport, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
