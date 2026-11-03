@@ -3,6 +3,13 @@
 // Secure Google Maps Distance Matrix API Integration & Fare Calculator
 // ============================================================================
 
+export interface DistanceDiscountSlab {
+  id?: string;
+  from_km: number;
+  to_km?: number | null;
+  discount_percentage: number;
+}
+
 export interface VehicleModel {
   id: string;
   name: string;
@@ -10,14 +17,20 @@ export interface VehicleModel {
   base_price: number;
   per_km_rate: number;
   coverage_km: number;
-  discount_percentage: number;
+  discount_percentage?: number;
+  discount_slabs?: DistanceDiscountSlab[];
 }
 
 export interface VehiclePricingConfig {
+  label?: string;
+  icon?: string;
+  badge_color?: string;
+  is_ride_now?: boolean;
   base_price: number;
   per_km_rate: number;
   coverage_km: number;
-  discount_percentage: number;
+  discount_percentage?: number;
+  discount_slabs?: DistanceDiscountSlab[];
   models?: VehicleModel[];
 }
 
@@ -61,13 +74,31 @@ export interface FareCalculationResult {
  * 6 -> Bus
  * As well as Sinhala/Tamil/English vehicle names and colloquial variations.
  */
-export function normalizeVehicleKey(vehicle: string, bookingType?: string): string {
+export function normalizeVehicleKey(
+  vehicle: string,
+  bookingType?: string,
+  pricingSettings?: PricingSettings
+): string {
   const raw = (vehicle || "").trim();
   if (!raw) return "";
 
-  const v = raw.toLowerCase().replace(/[-_\s]/g, "");
+  const lowerRaw = raw.toLowerCase();
+  const v = lowerRaw.replace(/[-_\s]/g, "");
 
-  // 1. Explicit vehicle names first (so "1. Car 🚗" or "2. Van 🚐" match car/van and not digit 1/2)
+  // 1. Dynamic exact/label check against categories in pricingSettings if provided
+  if (pricingSettings) {
+    for (const key of Object.keys(pricingSettings)) {
+      const cfg = pricingSettings[key];
+      const keyNormalized = key.toLowerCase().replace(/[-_\s]/g, "");
+      const labelNormalized = (cfg?.label || "").toLowerCase().replace(/[-_\s]/g, "");
+
+      if (v === keyNormalized || (labelNormalized && v === labelNormalized)) {
+        return key;
+      }
+    }
+  }
+
+  // 2. Explicit vehicle names first (so "1. Car 🚗" or "2. Van 🚐" match car/van and not digit 1/2)
   if (v.includes("car") || v.includes("sedan") || v.includes("alto") || v.includes("wagonr") || v.includes("කාර්") || v.includes("கார்")) {
     return "car";
   }
@@ -84,7 +115,7 @@ export function normalizeVehicleKey(vehicle: string, bookingType?: string): stri
     return "bus";
   }
 
-  // 2. Explicit Three-wheeler text (e.g. "3wheeler", "3-wheeler", "3 wheeler", "threewheeler", "tuktuk")
+  // 3. Explicit Three-wheeler text (e.g. "3wheeler", "3-wheeler", "3 wheeler", "threewheeler", "tuktuk")
   if (
     v.includes("3wheeler") ||
     v.includes("threewheeler") ||
@@ -100,24 +131,61 @@ export function normalizeVehicleKey(vehicle: string, bookingType?: string): stri
     return "three_wheeler";
   }
 
-  // 3. Motorbike
+  // 4. Motorbike
   if (v.includes("bike") || v.includes("motor") || v.includes("මෝටර්") || v.includes("பைக்")) {
     return "motorbike";
   }
 
-  // 4. Direct menu number check: matches "1", "1.", "1)", "2", "3", etc.
-  const numPrefixMatch = raw.match(/^\s*([1-6])(?:\.|\)|\s|$)/);
+  // 5. Check any custom categories in pricingSettings by substring
+  if (pricingSettings) {
+    for (const key of Object.keys(pricingSettings)) {
+      if (key !== "motorbike" && key !== "three_wheeler" && key !== "car" && key !== "van" && key !== "lorry" && key !== "bus") {
+        const cfg = pricingSettings[key];
+        const keyLower = key.toLowerCase();
+        const labelLower = (cfg?.label || "").toLowerCase();
+        if (lowerRaw.includes(keyLower) || (labelLower && lowerRaw.includes(labelLower))) {
+          return key;
+        }
+      }
+    }
+  }
+
+  // 6. Direct menu number check: matches "1", "1.", "1)", "2", "3", etc.
+  const numPrefixMatch = raw.match(/^\s*(\d+)(?:\.|\)|\s|$)/);
   if (numPrefixMatch) {
-    const digit = numPrefixMatch[1];
+    const digitNum = parseInt(numPrefixMatch[1], 10);
+
+    // If dynamic pricingSettings is present, map menu indices to configured categories
+    if (pricingSettings) {
+      if (bookingType === "schedule") {
+        const scheduleKeys = Object.keys(pricingSettings).filter(
+          (k) => k !== "motorbike" && k !== "three_wheeler" && !pricingSettings[k]?.is_ride_now
+        );
+        const idx = digitNum - 1;
+        if (idx >= 0 && idx < scheduleKeys.length) {
+          return scheduleKeys[idx];
+        }
+      } else {
+        const rideNowKeys = Object.keys(pricingSettings).filter(
+          (k) => k === "motorbike" || k === "three_wheeler" || Boolean(pricingSettings[k]?.is_ride_now)
+        );
+        const idx = digitNum - 1;
+        if (idx >= 0 && idx < rideNowKeys.length) {
+          return rideNowKeys[idx];
+        }
+      }
+    }
+
+    // Standard fallback digit mapping
     if (bookingType === "schedule") {
-      switch (digit) {
+      switch (String(digitNum)) {
         case "1": return "car";
         case "2": return "van";
         case "3": return "lorry";
         case "4": return "bus";
       }
     } else {
-      switch (digit) {
+      switch (String(digitNum)) {
         case "1": return "motorbike";
         case "2": return "three_wheeler";
         case "3": return "car";
@@ -134,7 +202,20 @@ export function normalizeVehicleKey(vehicle: string, bookingType?: string): stri
 /**
  * Display name formatting for vehicles
  */
-export function getVehicleDisplayName(vehicleKey: string): string {
+export function getVehicleDisplayName(vehicleKey: string, pricingSettings?: PricingSettings): string {
+  if (pricingSettings && pricingSettings[vehicleKey]?.label) {
+    const l = pricingSettings[vehicleKey].label!;
+    const emoji = pricingSettings[vehicleKey].icon || (
+      vehicleKey === "motorbike" ? "🏍️" :
+      vehicleKey === "three_wheeler" ? "🛺" :
+      vehicleKey === "car" ? "🚗" :
+      vehicleKey === "van" ? "🚐" :
+      vehicleKey === "lorry" ? "🚚" :
+      vehicleKey === "bus" ? "🚌" : "🚙"
+    );
+    return `${l} ${emoji}`.trim();
+  }
+
   switch (vehicleKey) {
     case "motorbike": return "Motorbike 🏍️";
     case "three_wheeler": return "Three-wheeler 🛺";
@@ -308,11 +389,52 @@ function isValidLatLng(lat: number, lng: number): boolean {
   return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
 
+export function isGoogleMapsUrl(str: string): boolean {
+  if (!str) return false;
+  return /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(str);
+}
+
+/**
+ * Validates whether the incoming input is an acceptable location.
+ * Strictly accepts:
+ * 1. Native WhatsApp location pins
+ * 2. Full or shortened Google Maps links
+ * 3. Exact GPS coordinate strings (e.g. 6.9271, 79.8612)
+ * Rejects plain typed text (e.g. "Colombo", "Kandy", "airport").
+ */
+export function isValidLocationInput(text: string, rawPayload: any): boolean {
+  // 1. Direct WhatsApp location pin or payload coordinates
+  const locDetails = rawPayload?.locationDetails;
+  if (locDetails && locDetails.latitude && locDetails.longitude) {
+    return true;
+  }
+  const wMsg = rawPayload?._data?.message || {};
+  if (wMsg.locationMessage?.degreesLatitude && wMsg.locationMessage?.degreesLongitude) {
+    return true;
+  }
+  if (rawPayload?.type === "location" || rawPayload?._data?.type === "location") {
+    return true;
+  }
+
+  // 2. Contains Google Maps link
+  const str = (text || "").trim();
+  if (isGoogleMapsUrl(str)) {
+    return true;
+  }
+
+  // 3. Explicit GPS Coordinates: e.g. "6.9271, 79.8612" or "GPS: 6.9271, 79.8612"
+  if (/^(?:gps:?\s*)?[+-]?\d{1,2}\.\d+[\s,]+[+-]?\d{1,3}\.\d+$/i.test(str)) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Extract GPS coordinates from text, raw coordinates, or any Google Maps URL format
  * Supports:
  * - Direct params: ?q=lat,lng / ?query=lat,lng / ll=lat,lng
- * - Path params: /@lat,lng,...
+ * - Path params: /@lat,lng,... or !3dlat!4dlng
  * - Raw coordinate string: "6.7972, 79.9012"
  * - Short links: maps.app.goo.gl / goo.gl/maps via redirect resolution
  */
@@ -336,6 +458,14 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
     if (isValidLatLng(lat, lng)) return { lat, lng };
   }
 
+  // 2b. Data params: !3dlat!4dlng
+  const dMatch = str.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i);
+  if (dMatch) {
+    const lat = parseFloat(dMatch[1]);
+    const lng = parseFloat(dMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat, lng };
+  }
+
   // 3. Query param: ll=lat,lng, center=lat,lng, destination=lat,lng
   const llMatch = str.match(/[?&](?:ll|destination|origin|center)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
   if (llMatch) {
@@ -352,8 +482,8 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
     if (isValidLatLng(lat, lng)) return { lat, lng };
   }
 
-  // 5. Shortened Google Maps links: maps.app.goo.gl or goo.gl/maps
-  if (str.includes("goo.gl") || str.includes("maps.app")) {
+  // 5. Shortened or full Google Maps links: maps.app.goo.gl, goo.gl/maps, or google.com/maps
+  if (str.includes("goo.gl") || str.includes("maps.app") || str.includes("google.com/maps")) {
     try {
       const urlMatch = str.match(/https?:\/\/[^\s]+/i);
       if (urlMatch) {
@@ -364,7 +494,8 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
         });
         const finalUrl = res.url || "";
         const finalMatch = finalUrl.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
-                           finalUrl.match(/[?&](?:q|query)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
+                           finalUrl.match(/[?&](?:q|query)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
+                           finalUrl.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i);
         if (finalMatch) {
           const lat = parseFloat(finalMatch[1]);
           const lng = parseFloat(finalMatch[2]);
@@ -373,11 +504,21 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
         const html = await res.text();
         const htmlMatch = html.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
                           html.match(/center=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i) ||
-                          html.match(/ll=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i);
+                          html.match(/ll=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i) ||
+                          html.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i) ||
+                          html.match(/staticmap\?center=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i);
         if (htmlMatch) {
           const lat = parseFloat(htmlMatch[1]);
           const lng = parseFloat(htmlMatch[2]);
           if (isValidLatLng(lat, lng)) return { lat, lng };
+        }
+
+        // Fallback: Check if redirected to a place name in the URL (e.g. /maps/place/Galle+Fort/...)
+        const placeMatch = finalUrl.match(/\/maps\/place\/([^/@?]+)/i);
+        if (placeMatch) {
+          const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
+          const placeCoords = await resolveLocationCoords({ text: placeName });
+          if (placeCoords) return placeCoords;
         }
       }
     } catch (e) {
@@ -528,9 +669,10 @@ export const getGoogleMapsDistance = getRoutingDistance;
 /**
  * Calculate Dynamic Pricing according to the exact business rules
  * 
- * Let D = exact distance, C = Base Price Coverage KM
- * One-Way: If D <= C -> Fare = Base Price. If D > C -> Fare = Base Price + ((D - C) * Per KM Rate)
- * Round Trip: D_total = One-Way * 2. Calculate gross fare using above logic, then apply Discount Percentage.
+ * 1. Base Price covers the first Base Coverage KM (coverage_km).
+ * 2. Beyond Base Coverage KM, if Progressive Distance Slabs are defined:
+ *    - Each KM segment is charged at its slab's discounted rate: slab_km * (per_km_rate * (1 - slab_discount / 100)).
+ * 3. Fallback: If no slabs are configured, standard per-km rate applies with round-trip discount if applicable.
  */
 export function calculateFare(
   distanceKm: number,
@@ -540,20 +682,26 @@ export function calculateFare(
   pricingSettings: PricingSettings,
   customModel?: VehicleModel
 ): FareCalculationResult {
-  const config = customModel || pricingSettings[vehicleKey] || {
+  const categoryConfig = pricingSettings[vehicleKey] || {
     base_price: 500,
     per_km_rate: 120,
     coverage_km: 2,
     discount_percentage: 10,
   };
 
-  const basePrice = Number(config.base_price) || 0;
-  const perKmRate = Number(config.per_km_rate) || 0;
-  const coverageKm = Number(config.coverage_km) || 0;
-  const discountPercentage = Number(config.discount_percentage) || 0;
+  const basePrice = Number(customModel?.base_price ?? categoryConfig.base_price) || 0;
+  const perKmRate = Number(customModel?.per_km_rate ?? categoryConfig.per_km_rate) || 0;
+  const coverageKm = Number(customModel?.coverage_km ?? categoryConfig.coverage_km) || 0;
+  const discountPercentage = Number(customModel?.discount_percentage ?? categoryConfig.discount_percentage) || 0;
+
+  // Slabs: customModel slabs take priority, then categoryConfig slabs
+  const slabs: DistanceDiscountSlab[] =
+    customModel?.discount_slabs && customModel.discount_slabs.length > 0
+      ? customModel.discount_slabs
+      : (categoryConfig.discount_slabs && categoryConfig.discount_slabs.length > 0 ? categoryConfig.discount_slabs : []);
 
   let effectiveDistance = distanceKm;
-  let isRoundTrip = tripType === "round_trip";
+  const isRoundTrip = tripType === "round_trip";
 
   if (isRoundTrip) {
     effectiveDistance = distanceKm * 2;
@@ -566,12 +714,48 @@ export function calculateFare(
   let discountAmount = 0;
   let totalFare = grossFare;
 
-  if (isRoundTrip && discountPercentage > 0) {
-    discountAmount = Math.round((grossFare * (discountPercentage / 100)) * 100) / 100;
-    totalFare = grossFare - discountAmount;
+  // 1. Progressive Slab-by-Slab Calculation (When slabs are defined)
+  if (slabs.length > 0 && chargeableKm > 0) {
+    const sortedSlabs = [...slabs].sort((a, b) => (Number(a.from_km) || 0) - (Number(b.from_km) || 0));
+
+    let totalSlabKmCharge = 0;
+    let coveredKm = 0;
+
+    for (const slab of sortedSlabs) {
+      const slabStart = Math.max(0, Number(slab.from_km) || 0);
+      const slabEnd = slab.to_km != null && Number(slab.to_km) > slabStart ? Number(slab.to_km) : Infinity;
+
+      // The chargeable portion that overlaps this slab
+      const effectiveStart = Math.max(slabStart, coverageKm);
+      const effectiveEnd = Math.min(slabEnd, effectiveDistance);
+
+      if (effectiveEnd > effectiveStart) {
+        const kmInSlab = effectiveEnd - effectiveStart;
+        const discountPct = Math.max(0, Math.min(100, Number(slab.discount_percentage) || 0));
+        const effectiveRate = perKmRate * (1 - discountPct / 100);
+        totalSlabKmCharge += kmInSlab * effectiveRate;
+        coveredKm += kmInSlab;
+      }
+    }
+
+    // Any distance not covered by defined slabs charged at standard rate
+    const remainingKm = Math.max(0, chargeableKm - coveredKm);
+    if (remainingKm > 0) {
+      totalSlabKmCharge += remainingKm * perKmRate;
+    }
+
+    totalFare = basePrice + totalSlabKmCharge;
+    discountAmount = Math.max(0, grossFare - totalFare);
+  } else {
+    // 2. Legacy fallback calculation (Round trip discount percentage)
+    if (isRoundTrip && discountPercentage > 0) {
+      discountAmount = Math.round((grossFare * (discountPercentage / 100)) * 100) / 100;
+      totalFare = grossFare - discountAmount;
+    }
   }
 
-  // Round final fare to 2 decimals
+  // Round final fares to 2 decimals
+  discountAmount = Math.round(discountAmount * 100) / 100;
   totalFare = Math.round(totalFare * 100) / 100;
 
   return {

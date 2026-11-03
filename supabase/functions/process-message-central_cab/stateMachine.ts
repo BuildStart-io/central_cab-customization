@@ -49,12 +49,20 @@ function isExpectedStepAnswer(
 
   if (flow === "CAB_FLOW") {
     if (step === "CAB_VEHICLE") {
-      const vKey = normalizeVehicleKey(trimmed, data.booking_type);
+      const vKey = normalizeVehicleKey(trimmed, data.booking_type, pricingSettings);
       if (vKey) return true;
     } else if (step === "CAB_MODEL") {
       const vKey = data.vehicle_key || "car";
       const models = pricingSettings[vKey]?.models || [];
       if (models.some((m) => lower.includes(m.name.toLowerCase()))) return true;
+    } else if (step === "CAB_DROPOFF") {
+      if (
+        lower === "1" || lower.startsWith("1.") || lower.includes("தெரியும்") || lower.includes("දන්නවා") || lower.includes("direct link") || lower.includes("i know") ||
+        lower === "2" || lower.startsWith("2.") || lower.includes("தெரியாது") || lower.includes("දන්නේ නෑ") || lower.includes("help") || lower.includes("guide") ||
+        /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(trimmed)
+      ) {
+        return true;
+      }
     } else if (step === "CAB_TRIP_TYPE") {
       if (lower.includes("one-way") || lower.includes("one way") || lower.includes("round") || lower.includes("single")) return true;
     } else if (step === "CAB_CONFIRM") {
@@ -245,7 +253,7 @@ export async function processCustomerChatStep(
   // GLOBAL HELP / FAQ INTERCEPTION
   // =========================================================================
   const isHelpCmd = isHelpChoice(trimmed);
-  if (isHelpCmd && !isConfirmationStep) {
+  if (isHelpCmd && !isConfirmationStep && (session.current_step || "WELCOME") !== "CAB_DROPOFF") {
     const isPausedFromBooking = (session.flow_type === "CAB_FLOW" || session.flow_type === "DELIVERY_FLOW" || session.flow_type === "RENT_A_CAR_FLOW");
     if (isPausedFromBooking) {
       data.paused_flow = session.flow_type;
@@ -358,6 +366,7 @@ export async function processCustomerChatStep(
     || lower.startsWith("location:")
     || lower.includes("whatsapp location pin")
     || Boolean(rawPayload?.locationDetails)
+    || /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(trimmed)
     || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
 
   const isLocationStep = step === "DELIVERY_LOCATION" || step === "CAB_PICKUP" || step === "CAB_DROPOFF" || step === "RENT_LOCATION";

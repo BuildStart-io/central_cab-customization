@@ -15,6 +15,8 @@ import {
   buildGoogleMapsLink,
   formatLocationDisplay,
   resolveLocationCoords,
+  isValidLocationInput,
+  isGoogleMapsUrl,
 } from "../pricingEngine.ts";
 import { CabSystemSettings } from "../adminHandler.ts";
 import {
@@ -28,6 +30,11 @@ import {
   getVehiclePoll,
   getVehicleModelPoll,
   getTripTypePoll,
+  getDropoffHelpPoll,
+  getDropoffHelpGuide,
+  getDropoffDirectLinkPrompt,
+  getLocationRejectMessage,
+  formatLocationLinkForCustomer,
   getBookingConfirmPoll,
   getBookingConfirmManualPrompt,
   getPostBookingPoll,
@@ -190,7 +197,7 @@ export async function handleCabFlowStep(
       const bookingType = data.booking_type || "now";
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_VEHICLE", lang),
-        poll: getVehiclePoll(lang, false, bookingType),
+        poll: getVehiclePoll(lang, false, bookingType, pricingSettings),
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_VEHICLE",
         sessionData: data,
@@ -200,17 +207,19 @@ export async function handleCabFlowStep(
     case "CAB_VEHICLE": {
       const bookingType = data.booking_type || "now";
       const isRideNow = bookingType === "now";
-      const vehicleKey = normalizeVehicleKey(trimmed, bookingType);
+      const vehicleKey = normalizeVehicleKey(trimmed, bookingType, pricingSettings);
 
       if (!vehicleKey) {
         return await invalidFallback(
           getStepPromptText("CAB_FLOW", "CAB_VEHICLE", lang),
-          getVehiclePoll(lang, false, bookingType)
+          getVehiclePoll(lang, false, bookingType, pricingSettings)
         );
       }
 
-      // 1. Short Trip (Ride Now): Only allow motorbike or three_wheeler
-      if (isRideNow && vehicleKey !== "motorbike" && vehicleKey !== "three_wheeler") {
+      const isRideNowVehicle = vehicleKey === "motorbike" || vehicleKey === "three_wheeler" || Boolean(pricingSettings[vehicleKey]?.is_ride_now);
+
+      // 1. Short Trip (Ride Now): Only allow ride-now vehicles
+      if (isRideNow && !isRideNowVehicle) {
         const rideNowErr = lang === "ta"
           ? "⚠️ குறுகிய தூரப் பயணத்திற்கு (Short Trip) Motorbike அல்லது Three-wheeler மட்டுமே தெரிவு செய்ய முடியும். Car அல்லது Van முன்பதிவு செய்ய நீண்ட தூரப் பயணத்தைத் (Long Trip) தேர்ந்தெடுக்கவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
           : (lang === "si"
@@ -218,20 +227,20 @@ export async function handleCabFlowStep(
             : "⚠️ For Short Distance Trip, only Motorbike or Three-wheeler can be selected. For Car or Van, please choose Long Distance Trip.\n\nPlease select your vehicle:");
         return await invalidFallback(
           rideNowErr,
-          getVehiclePoll(lang, false, bookingType)
+          getVehiclePoll(lang, false, bookingType, pricingSettings)
         );
       }
 
-      // 2. Long Trip (Schedule Ride): Only allow car, van, lorry, bus
-      if (!isRideNow && (vehicleKey === "motorbike" || vehicleKey === "three_wheeler")) {
+      // 2. Long Trip (Schedule Ride): Only allow schedule vehicles (Car, Van, Lorry, Bus, SUV, etc.)
+      if (!isRideNow && isRideNowVehicle) {
         const scheduleErr = lang === "ta"
-          ? "⚠️ நீண்ட தூரப் பயணத்திற்கு (Long Trip) Car, Van, Lorry அல்லது Bus மட்டுமே தெரிவு செய்ய முடியும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
+          ? "⚠️ நீண்ட தூரப் பயணத்திற்கு (Long Trip) Car, Van, Lorry அல்லது Bus போன்ற வாகனங்களைத் தேர்ந்தெடுக்கவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
           : (lang === "si"
-            ? "⚠️ දුර ගමනක් සඳහා Car, Van, Lorry හෝ Bus පමණක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:"
-            : "⚠️ For Long Distance Trip, please select Car, Van, Lorry, or Bus.\n\nPlease choose your vehicle:");
+            ? "⚠️ දුර ගමනක් සඳහා Car, Van, Lorry හෝ Bus වැනි වාහනයක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:"
+            : "⚠️ For Long Distance Trip, please select Car, Van, Lorry, Bus or available vehicles.\n\nPlease choose your vehicle:");
         return await invalidFallback(
           scheduleErr,
-          getVehiclePoll(lang, false, bookingType)
+          getVehiclePoll(lang, false, bookingType, pricingSettings)
         );
       }
 
@@ -241,12 +250,12 @@ export async function handleCabFlowStep(
       if (!isRideNow) {
         const availableModels: VehicleModel[] = pricingSettings[vehicleKey]?.models || [];
         if (availableModels.length > 0) {
-          const modelPoll = getVehicleModelPoll(vehicleKey, availableModels, lang);
+          const modelPoll = getVehicleModelPoll(vehicleKey, availableModels, lang, pricingSettings);
           const promptText = lang === "ta"
-            ? `தயவுசெய்து நீங்கள் விரும்பும் *${getVehicleDisplayName(vehicleKey)}* மாடலைத் தேர்ந்தெடுக்கவும்:`
+            ? `தயவுசெய்து நீங்கள் விரும்பும் *${getVehicleDisplayName(vehicleKey, pricingSettings)}* மாடலைத் தேர்ந்தெடுக்கவும்:`
             : (lang === "si"
-              ? `කරුණාකර ඔබ කැමති *${getVehicleDisplayName(vehicleKey)}* මාදිලිය තෝරන්න:`
-              : `Please choose your preferred *${getVehicleDisplayName(vehicleKey)}* model:`);
+              ? `කරුණාකර ඔබ කැමති *${getVehicleDisplayName(vehicleKey, pricingSettings)}* මාදිලිය තෝරන්න:`
+              : `Please choose your preferred *${getVehicleDisplayName(vehicleKey, pricingSettings)}* model:`);
 
           return {
             replyText: promptText,
@@ -259,7 +268,7 @@ export async function handleCabFlowStep(
         }
       }
 
-      data.vehicle_name = getVehicleDisplayName(vehicleKey);
+      data.vehicle_name = getVehicleDisplayName(vehicleKey, pricingSettings);
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
         nextFlow: "CAB_FLOW",
@@ -283,7 +292,7 @@ export async function handleCabFlowStep(
         }
       }
 
-      // 2. Try matching by model name (e.g. "Alto", "Wagon R", "Prius", "KDH")
+      // 2. Try matching by model name (e.g. "Alto", "Wagon R", "Prius", "Sedan", "SUV")
       if (!matchedModel) {
         const lowerInput = trimmed.toLowerCase();
         matchedModel = availableModels.find((m) =>
@@ -299,12 +308,12 @@ export async function handleCabFlowStep(
             : (lang === "si"
               ? "⚠️ කරුණාකර පහත දැක්වෙන මාදිලි වලින් එකක් තෝරන්න:"
               : "⚠️ Please choose one of the models listed below:"),
-          getVehicleModelPoll(vehicleKey, availableModels, lang)
+          getVehicleModelPoll(vehicleKey, availableModels, lang, pricingSettings)
         );
       }
 
       data.vehicle_model = matchedModel;
-      data.vehicle_name = `${getVehicleDisplayName(vehicleKey)} (${matchedModel.name}${matchedModel.description ? ` - ${matchedModel.description}` : ""})`;
+      data.vehicle_name = `${getVehicleDisplayName(vehicleKey, pricingSettings)} (${matchedModel.name}${matchedModel.description ? ` - ${matchedModel.description}` : ""})`;
 
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
@@ -315,18 +324,23 @@ export async function handleCabFlowStep(
     }
 
     case "CAB_PICKUP": {
-      const loc = extractLocation(trimmed, rawPayload);
-      if (!loc.text && !loc.coords) {
-        return await invalidFallback(getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang));
+      // Must be a valid WhatsApp Location Pin, Google Maps Link, or GPS Coordinates (NO plain text names)
+      if (!isValidLocationInput(trimmed, rawPayload)) {
+        return await invalidFallback(getLocationRejectMessage(lang, "pickup"));
       }
+
+      const loc = extractLocation(trimmed, rawPayload);
       if (!loc.coords && loc.text) {
         const resolved = await resolveLocationCoords(loc);
         if (resolved) loc.coords = resolved;
       }
       data.pickup_text = loc.text;
       data.pickup_coords = loc.coords;
+
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_DROPOFF", lang),
+        poll: getDropoffHelpPoll(lang),
+        sendTextWithPoll: true,
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_DROPOFF",
         sessionData: data,
@@ -334,24 +348,74 @@ export async function handleCabFlowStep(
     }
 
     case "CAB_DROPOFF": {
-      const loc = extractLocation(trimmed, rawPayload);
-      if (!loc.text && !loc.coords) {
-        return await invalidFallback(getStepPromptText("CAB_FLOW", "CAB_DROPOFF", lang));
-      }
-      if (!loc.coords && loc.text) {
-        const resolved = await resolveLocationCoords(loc);
-        if (resolved) loc.coords = resolved;
-      }
-      data.dropoff_text = loc.text;
-      data.dropoff_coords = loc.coords;
+      // 1. Direct valid location provided: Google Maps link, WhatsApp Location Pin, or GPS coordinates
+      if (isValidLocationInput(trimmed, rawPayload)) {
+        const loc = extractLocation(trimmed, rawPayload);
+        if (!loc.coords && loc.text) {
+          const resolved = await resolveLocationCoords(loc);
+          if (resolved) loc.coords = resolved;
+        }
+        data.dropoff_text = loc.text;
+        data.dropoff_coords = loc.coords;
 
-      return {
-        replyText: getStepPromptText("CAB_FLOW", "CAB_TRIP_TYPE", lang),
-        poll: getTripTypePoll(lang),
-        nextFlow: "CAB_FLOW",
-        nextStep: "CAB_TRIP_TYPE",
-        sessionData: data,
-      };
+        return {
+          replyText: getStepPromptText("CAB_FLOW", "CAB_TRIP_TYPE", lang),
+          poll: getTripTypePoll(lang),
+          sendTextWithPoll: true,
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_TRIP_TYPE",
+          sessionData: data,
+        };
+      }
+
+      // 2. User selected Option 2 or asked for help / instructions
+      const isHelpChoice =
+        trimmed === "2" ||
+        lower.startsWith("2.") ||
+        lower.startsWith("2 ") ||
+        lower.includes("தெரியாது") ||
+        lower.includes("දන්නේ නෑ") ||
+        lower.includes("don't know") ||
+        lower.includes("dont know") ||
+        lower.includes("help") ||
+        lower.includes("guide") ||
+        lower.includes("உதவி") ||
+        lower.includes("උපදෙස්");
+
+      if (isHelpChoice) {
+        return {
+          replyText: getDropoffHelpGuide(lang),
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_DROPOFF",
+          sessionData: data,
+        };
+      }
+
+      // 3. User selected Option 1 / knows how to share link directly
+      const isDirectLinkChoice =
+        trimmed === "1" ||
+        lower.startsWith("1.") ||
+        lower.startsWith("1 ") ||
+        lower.includes("தெரியும்") ||
+        lower.includes("දන්නවා") ||
+        lower.includes("i know") ||
+        lower.includes("direct link");
+
+      if (isDirectLinkChoice) {
+        return {
+          replyText: getDropoffDirectLinkPrompt(lang),
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_DROPOFF",
+          sessionData: data,
+        };
+      }
+
+      // 4. Plain typed text (e.g. "Colombo", "Kandy") or invalid input:
+      // Strictly reject and prompt for Google Maps link, re-rendering the help poll
+      return await invalidFallback(
+        getLocationRejectMessage(lang, "dropoff"),
+        getDropoffHelpPoll(lang)
+      );
     }
 
     case "CAB_TRIP_TYPE": {
@@ -615,17 +679,8 @@ export async function saveOrderToDatabase(
   data: any
 ) {
   try {
-    const pickupDisplay = data.pickup_coords
-      ? (data.pickup_text?.includes(data.pickup_coords.lat.toFixed(4))
-          ? data.pickup_text
-          : `${data.pickup_text || "Pickup Point"} (${data.pickup_coords.lat.toFixed(4)}, ${data.pickup_coords.lng.toFixed(4)})`)
-      : (data.pickup_text || "Pickup Point");
-
-    const dropoffDisplay = data.dropoff_coords
-      ? (data.dropoff_text?.includes(data.dropoff_coords.lat.toFixed(4))
-          ? data.dropoff_text
-          : `${data.dropoff_text || "Dropoff Point"} (${data.dropoff_coords.lat.toFixed(4)}, ${data.dropoff_coords.lng.toFixed(4)})`)
-      : (data.dropoff_text || "Dropoff Point");
+    const pickupDisplay = formatLocationDisplay(data.pickup_text, data.pickup_coords);
+    const dropoffDisplay = formatLocationDisplay(data.dropoff_text, data.dropoff_coords);
 
     const { error } = await supabase
       .schema("central_cab")

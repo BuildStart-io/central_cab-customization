@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { processCustomerChatStep, BotSessionState } from "./stateMachine.ts";
 import { handleAdminMessage, isAdminUser, extractOrderCode, CabSystemSettings } from "./adminHandler.ts";
 import { PricingSettings } from "./pricingEngine.ts";
+import { runAllAutomatedTests } from "./testRunner.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,11 +23,22 @@ serve(async (req) => {
 
   let triggerSource = "cron";
   let triggerCorrelationId = "";
+  let requestAction = "";
   try {
     const body = await req.json();
     triggerSource = body?.trigger || "cron";
     triggerCorrelationId = body?.correlationId || "";
+    requestAction = body?.action || "";
   } catch { /* empty body fine */ }
+
+  if (requestAction === "run_tests") {
+    console.log("[process-message-central_cab] Executing automated test suite...");
+    const defaultUserId = "33806ba5-1df3-4a46-8705-49069b72a483";
+    const testReport = await runAllAutomatedTests(supabase, supabaseUrl, supabaseServiceKey, defaultUserId);
+    return new Response(JSON.stringify(testReport, null, 2), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   console.log(`[process-message-central_cab] Triggered by: ${triggerSource}${triggerCorrelationId ? ` (corr: ${triggerCorrelationId})` : ""}`);
 

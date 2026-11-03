@@ -495,7 +495,8 @@ export function getTimingPoll(lang: SupportedLanguage = "si", isDelivery = false
 export function getVehiclePoll(
   lang: SupportedLanguage = "si",
   isDelivery = false,
-  bookingType: string = "now"
+  bookingType: string = "now",
+  pricingSettings?: any
 ): PollDefinition {
   const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව / மீண்டும்)";
   if (isDelivery) {
@@ -568,42 +569,60 @@ export function getVehiclePoll(
     };
   }
 
-  // 2. Long Trip (Schedule Ride): The other 4 (Car, Van, Lorry, Bus)
+  // 2. Long Trip (Schedule Ride): Dynamically read categories from pricingSettings if available
+  let dynamicOptions: string[] = [];
+  if (pricingSettings && typeof pricingSettings === "object") {
+    const scheduleKeys = Object.keys(pricingSettings).filter(
+      (k) => k !== "motorbike" && k !== "three_wheeler" && !pricingSettings[k]?.is_ride_now
+    );
+    if (scheduleKeys.length > 0) {
+      dynamicOptions = scheduleKeys.map((k, idx) => {
+        const item = pricingSettings[k];
+        const label = item?.label || (
+          k === "car" ? "Car" :
+          k === "van" ? "Van" :
+          k === "lorry" ? "Lorry" :
+          k === "bus" ? "Bus" : k
+        );
+        const icon = item?.icon || (
+          k === "car" ? "🚗" :
+          k === "van" ? "🚐" :
+          k === "lorry" ? "🚚" :
+          k === "bus" ? "🚌" : "🚙"
+        );
+        return `${idx + 1}. ${label} ${icon}`;
+      });
+    }
+  }
+
+  if (dynamicOptions.length === 0) {
+    dynamicOptions = [
+      "1. Car 🚗",
+      "2. Van 🚐",
+      "3. Lorry 🚚",
+      "4. Bus 🚌",
+    ];
+  }
+
+  dynamicOptions.push(resetOption);
+
   if (lang === "ta") {
     return {
       name: "நீண்ட தூரப் பயணத்திற்கு (Long Trip) வாகனத்தைத் தேர்ந்தெடுக்கவும்:",
-      options: [
-        "1. Car 🚗",
-        "2. Van 🚐",
-        "3. Lorry 🚚",
-        "4. Bus 🚌",
-        resetOption,
-      ],
+      options: dynamicOptions,
       multipleAnswers: false,
     };
   }
   if (lang === "si") {
     return {
       name: "කරුණාකර දුර ගමනක් සඳහා වාහනය තෝරන්න:",
-      options: [
-        "1. Car 🚗",
-        "2. Van 🚐",
-        "3. Lorry 🚚",
-        "4. Bus 🚌",
-        resetOption,
-      ],
+      options: dynamicOptions,
       multipleAnswers: false,
     };
   }
   return {
     name: "Please choose vehicle for Long Distance Trip:",
-    options: [
-      "1. Car 🚗",
-      "2. Van 🚐",
-      "3. Lorry 🚚",
-      "4. Bus 🚌",
-      resetOption,
-    ],
+    options: dynamicOptions,
     multipleAnswers: false,
   };
 }
@@ -611,19 +630,21 @@ export function getVehiclePoll(
 export function getVehicleModelPoll(
   vehicleKey: string,
   models: any[],
-  lang: SupportedLanguage = "si"
+  lang: SupportedLanguage = "si",
+  pricingSettings?: any
 ): PollDefinition {
   const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව / மீண்டும்)";
-  const vName =
-    vehicleKey === "car"
-      ? "Car 🚗"
-      : vehicleKey === "van"
-      ? "Van 🚐"
-      : vehicleKey === "lorry"
-      ? "Lorry 🚚"
-      : vehicleKey === "bus"
-      ? "Bus 🚌"
-      : vehicleKey;
+  const vName = pricingSettings?.[vehicleKey]?.label
+    ? `${pricingSettings[vehicleKey].label} ${pricingSettings[vehicleKey].icon || "🚗"}`
+    : vehicleKey === "car"
+    ? "Car 🚗"
+    : vehicleKey === "van"
+    ? "Van 🚐"
+    : vehicleKey === "lorry"
+    ? "Lorry 🚚"
+    : vehicleKey === "bus"
+    ? "Bus 🚌"
+    : vehicleKey;
 
   let title = `Central Cabs - Choose ${vName} model:`;
   if (lang === "ta") {
@@ -777,6 +798,138 @@ export function detectDeliveryCategory(text: string): string | null {
   if (t === "10" || t.startsWith("10.") || t.startsWith("10 ") || t.includes("other") || t.includes("ஏனைய")) return "General / Other Items 📦";
   if (t.length >= 2) return text.trim();
   return null;
+}
+
+export function getDropoffHelpPoll(lang: SupportedLanguage = "si"): PollDefinition {
+  const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව / மீண்டும்)";
+  if (lang === "ta") {
+    return {
+      name: "சேரும் இடத்தின் Link பகிர தெரியுமா? (Drop Location):",
+      options: [
+        "1. எனக்கு தெரியும் (Direct Link அனுப்ப) 🔗",
+        "2. எனக்கு தெரியாது (Help / வழிகாட்டல்) ❓",
+        resetOption,
+      ],
+      multipleAnswers: false,
+    };
+  }
+  if (lang === "si") {
+    return {
+      name: "ගමනාන්තයේ Link එක share කිරීමට දන්නවාද? (Drop Location):",
+      options: [
+        "1. මම දන්නවා (Direct Link යවන්න) 🔗",
+        "2. මම දන්නේ නෑ (Help / උපදෙස්) ❓",
+        resetOption,
+      ],
+      multipleAnswers: false,
+    };
+  }
+  return {
+    name: "Do you know how to share the drop-off location link?",
+    options: [
+      "1. I know (Share Link Directly) 🔗",
+      "2. Don't know (Need Help Guide) ❓",
+      resetOption,
+    ],
+    multipleAnswers: false,
+  };
+}
+
+export function getDropoffHelpGuide(lang: SupportedLanguage): string {
+  if (lang === "ta") {
+    return `🗺️ *Google Maps Link பகிர்வது எப்படி? (வழிகாட்டல்):*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ உங்கள் போனில் *Google Maps* செயலியைத் (App) திறக்கவும்.\n2️⃣ Search பாரில் நீங்கள் செல்ல வேண்டிய இடத்தைத் தேடவும் (அல்லது Map-ல் அந்த இடத்தை அழுத்திப் பிடித்து Pin செய்யவும் 📍).\n3️⃣ கீழே வரும் விபரங்களில் *Share (பகிர்)* என்ற பொத்தானை அழுத்தவும்.\n4️⃣ *Copy Link (இணைப்பை நகலெடு)* என்பதைத் தெரிவுசெய்து Link-ஐ Copy செய்யவும்.\n5️⃣ மீண்டும் இந்த WhatsApp Chat-க்கு வந்து, அந்த Link-ஐ Paste செய்து அனுப்பவும்!\n━━━━━━━━━━━━━━━━━━━━\n👉 இப்போது உங்கள் சேரும் இடத்தின் (Drop-off) *Google Maps Link*-ஐ இங்கே அனுப்பவும்:`;
+  }
+  if (lang === "si") {
+    return `🗺️ *Google Maps Link එක Share කරන්නේ කෙසේද? (උපදෙස්):*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ ඔබගේ දුරකථනයේ *Google Maps* App එක විවෘත කරන්න.\n2️⃣ Search bar එකේ ඔබ යා යුතු ස්ථානය Search කරන්න (හෝ Map එකේ අදාළ ස්ථානය Long Press කර Pin කරන්න 📍).\n3️⃣ පහතින් දිස්වන විස්තර අතරින් *Share* බොත්තම ඔබන්න.\n4️⃣ *Copy Link* තෝරාගෙන Link එක Copy කරගන්න.\n5️⃣ නැවත මෙම WhatsApp Chat එකට පැමිණ එම Link එක Paste කර එවන්න!\n━━━━━━━━━━━━━━━━━━━━\n👉 කරුණාකර ඔබගේ ගමනාන්තයේ (Drop-off) *Google Maps Link* එක මෙහි එවන්න:`;
+  }
+  return `🗺️ *How to Share a Google Maps Link (Guide):*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ Open the *Google Maps* app on your mobile phone.\n2️⃣ Search for your destination in the search bar (or long-press on the map to drop a pin 📍).\n3️⃣ Tap the *Share* button in the place details below.\n4️⃣ Tap *Copy link* to copy the location URL.\n5️⃣ Come back to this WhatsApp chat, Paste the link, and send it!\n━━━━━━━━━━━━━━━━━━━━\n👉 Now, please send your destination (Drop-off) *Google Maps Link* here:`;
+}
+
+export function getDropoffDirectLinkPrompt(lang: SupportedLanguage): string {
+  if (lang === "ta") {
+    return `📍 தயவுசெய்து உங்கள் சேரும் இடத்தின் (Drop-off Location) *Google Maps Link*-ஐ இங்கே பகிரவும்:`;
+  }
+  if (lang === "si") {
+    return `📍 කරුණාකර ඔබගේ ගමනාන්තයේ (Drop-off Location) *Google Maps Link* එක මෙහි share කරන්න:`;
+  }
+  return `📍 Please share the *Google Maps Link* of your drop-off destination here:`;
+}
+
+export function getLocationRejectMessage(
+  lang: SupportedLanguage,
+  type: "pickup" | "dropoff" | "delivery" = "pickup"
+): string {
+  if (type === "pickup") {
+    if (lang === "ta") {
+      return `⚠️ எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது (Typing not accepted).\n\nதயவுசெய்து உங்கள் தற்போதைய நேரடி *WhatsApp Location Pin* ஐப் பகிரவும் அல்லது *Google Maps Link* ஐ மட்டும் இங்கே அனுப்பவும்.`;
+    }
+    if (lang === "si") {
+      return `⚠️ ස්ථානයේ නම Type කිරීම පිළිගත නොහැක.\n\nකරුණාකර ඔබගේ සජීවී *WhatsApp Location Pin* එකක් හෝ *Google Maps Link* එකක් පමණක් මෙහි share කරන්න.`;
+    }
+    return `⚠️ Typing location names is not accepted.\n\nPlease share your live *WhatsApp Location Pin* or send a valid *Google Maps Link* directly.`;
+  }
+
+  if (type === "dropoff") {
+    if (lang === "ta") {
+      return `⚠️ எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது (Typing not accepted).\n\nதயவுசெய்து நீங்கள் செல்ல வேண்டிய இடத்தின் *Google Maps Link* ஐ மட்டும் இங்கே அனுப்பவும்.\nஉங்களுக்கு Link அனுப்பத் தெரியாவிட்டால் கீழே உள்ள *2. எனக்கு தெரியாது (Help)* தெரிவைத் தேர்ந்தெடுக்கவும் அல்லது *Help* என தட்டச்சு செய்யவும்.`;
+    }
+    if (lang === "si") {
+      return `⚠️ ස්ථානයේ නම Type කිරීම පිළිගත නොහැක.\n\nකරුණාකර ඔබගේ ගමනාන්තයේ *Google Maps Link* එක පමණක් මෙහි share කරන්න.\nඔබට Link එක යැවීමට නොදන්නේ නම් පහත *2. මම දන්නේ නෑ (Help)* තෝරන්න හෝ *Help* ලෙස Type කරන්න.`;
+    }
+    return `⚠️ Typing location names is not accepted.\n\nPlease share the *Google Maps Link* of your destination directly.\nIf you don't know how to get the link, select *2. Don't know (Need Help)* below or type *Help*.`;
+  }
+
+  // Delivery
+  if (lang === "ta") {
+    return `⚠️ எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது.\n\nதயவுசெய்து பொருட்கள் டெலிவரி செய்யப்பட வேண்டிய உங்கள் இடத்தின் நேரடி *WhatsApp Location Pin* அல்லது *Google Maps Link* ஐ இங்கே பகிரவும்.`;
+  }
+  if (lang === "si") {
+    return `⚠️ ස්ථානයේ නම Type කිරීම පිළිගත නොහැක.\n\nකරුණාකර භාණ්ඩ භාරදිය යුතු ඔබගේ ස්ථානයේ සජීවී *WhatsApp Location Pin* එකක් හෝ *Google Maps Link* එකක් මෙහි share කරන්න.`;
+  }
+  return `⚠️ Typing location names is not accepted.\n\nPlease share your delivery location using a live *WhatsApp Location Pin* or a valid *Google Maps Link*.`;
+}
+
+export function formatLocationLinkForCustomer(
+  text?: string,
+  coords?: { lat: number; lng: number } | null
+): string {
+  const clean = (text || "").trim();
+  const urlMatch = clean.match(/https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i);
+  
+  if (urlMatch) {
+    const namePart = clean
+      .replace(urlMatch[0], "")
+      .replace(/\s*\([-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+\)/g, "")
+      .trim();
+    if (namePart && !/^(location:?|gps:?|pin location)$/i.test(namePart)) {
+      return `${namePart}\n🔗 ${urlMatch[0]}`;
+    }
+    return urlMatch[0];
+  }
+
+  let lat = coords?.lat;
+  let lng = coords?.lng;
+  if ((!lat || !lng) && clean) {
+    const coordMatch = clean.match(/([-+]?\d{1,2}\.\d+)\s*,\s*([-+]?\d{1,3}\.\d+)/);
+    if (coordMatch) {
+      lat = parseFloat(coordMatch[1]);
+      lng = parseFloat(coordMatch[2]);
+    }
+  }
+
+  if (lat && lng) {
+    let namePart = clean
+      .replace(/\s*\([-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+\)/g, "")
+      .replace(/^GPS:\s*[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/i, "")
+      .trim();
+    if (!namePart || /^(pin location|gps location|location:?|gps:?)$/i.test(namePart)) {
+      namePart = "";
+    }
+    const mapUrl = `https://maps.google.com/?q=${lat},${lng}`;
+    return namePart ? `${namePart}\n🔗 ${mapUrl}` : mapUrl;
+  }
+
+  return clean || "Location";
 }
 
 export function getTripTypePoll(lang: SupportedLanguage = "si"): PollDefinition {
@@ -971,14 +1124,14 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         return "Please choose your vehicle type:";
 
       case "CAB_PICKUP":
-        if (lang === "ta") return "தயவுசெய்து உங்கள் தற்போதைய இடத்தை WhatsApp Location Pin (Live/Current Location) மூலம் பகிரவும்.\nஅல்லது உங்கள் அருகிலுள்ள நகரம் மற்றும் மாவட்டத்தைத் தட்டச்சு செய்யவும்:";
-        if (lang === "si") return "කරුණාකර ඔබගේ Live/Current location එක WhatsApp හරහා share කරන්න. ඔබට එය share කිරීමට අපහසු නම්, කරුණාකර ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-        return "Please share your current/pickup location via WhatsApp Location pin.\nOr type your nearest city & district:";
+        if (lang === "ta") return "📍 தயவுசெய்து உங்கள் புறப்படும் இடத்தை (Pickup Location) நேரடி WhatsApp Location Pin அல்லது Google Maps Link மூலம் இங்கே பகிரவும்:";
+        if (lang === "si") return "📍 කරුණාකර ඔබගේ ආරම්භක ස්ථානය (Pickup Location) සජීවී WhatsApp Location Pin එකක් හෝ Google Maps Link එකක් මඟින් මෙහි share කරන්න:";
+        return "📍 Please share your Pickup Location using a live WhatsApp Location Pin or send a valid Google Maps Link:";
 
       case "CAB_DROPOFF":
-        if (lang === "ta") return "தயவுசெய்து நீங்கள் இறங்க வேண்டிய இடத்தை (Drop-off Location) பகிரவும் அல்லது அருகிலுள்ள நகரம் மற்றும் மாவட்டத்தைத் தட்டச்சு செய்யவும்:";
-        if (lang === "si") return "කරුණාකර ඔබගේ Drop-off location එක WhatsApp හරහා share කරන්න හෝ ඔබගේ ළඟම ඇති නගරය සහ දිස්ත්‍රික්කය Type කරන්න:";
-        return "Please share your drop-off location or type the destination city & district:";
+        if (lang === "ta") return "🏁 *சேரும் இடம் (Drop-off Location):*\n\nநீங்கள் செல்ல வேண்டிய இடத்தின் Google Maps Link-ஐப் பகிர உங்களுக்குத் தெரியுமா? அல்லது வழிகாட்டல்/உதவி தேவையா? தயவுசெய்து கீழே தேர்ந்தெடுக்கவும் (அல்லது Google Maps Link-ஐ நேரடியாக அனுப்பவும்):";
+        if (lang === "si") return "🏁 *ගමනාන්තය (Drop-off Location):*\n\nඔබ යා යුතු ස්ථානයේ Google Maps Link එක share කිරීමට ඔබ දන්නවාද? නැතහොත් උපදෙස් අවශ්‍යද? කරුණාකර පහතින් තෝරන්න (හෝ Google Maps Link එක කෙලින්ම එවන්න):";
+        return "🏁 *Drop-off Location:*\n\nDo you know how to share your destination Google Maps Link, or do you need help/guide? Please choose below (or send the Google Maps Link directly):";
 
       case "CAB_TRIP_TYPE":
         if (lang === "ta") return "இது ஒரு வழிப் பயணமா அல்லது இரு வழிப் பயணமா (Round Trip Up & Down)?";
@@ -1022,12 +1175,12 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "DELIVERY_LOCATION":
         if (lang === "ta") {
-          return "📍 தயவுசெய்து பொருட்கள் டெலிவரி செய்யப்பட வேண்டிய உங்கள் தற்போதைய இடத்தை (Delivery / Current Location) WhatsApp Location Pin மூலம் பகிரவும் அல்லது முகவரி/நகரத்தைத் தட்டச்சு செய்யவும்:";
+          return "📍 தயவுசெய்து பொருட்கள் டெலிவரி செய்யப்பட வேண்டிய உங்கள் இடத்தை (Delivery Location) நேரடி WhatsApp Location Pin அல்லது Google Maps Link மூலம் இங்கே பகிரவும்:";
         }
         if (lang === "si") {
-          return "📍 කරුණාකර භාණ්ඩ භාරදිය යුතු ඔබගේ ස්ථානය (Delivery Location) WhatsApp Location Pin මඟින් share කරන්න හෝ ලිපිනය/නගරය Type කරන්න:";
+          return "📍 කරුණාකර භාණ්ඩ භාරදිය යුතු ඔබගේ ස්ථානය (Delivery Location) සජීවී WhatsApp Location Pin එකක් හෝ Google Maps Link එකක් මඟින් මෙහි share කරන්න:";
         }
-        return "📍 Please share your delivery location pin via WhatsApp or type the delivery address / city:";
+        return "📍 Please share your delivery location using a live WhatsApp Location Pin or send a valid Google Maps Link:";
 
       case "DELIVERY_CONFIRM":
         return getBookingConfirmManualPrompt(lang);
@@ -1125,15 +1278,15 @@ export function getRentBookingSummaryCard(data: any, lang: SupportedLanguage): s
 }
 
 export function getDeliveryOrderSummaryCard(data: any, lang: SupportedLanguage): string {
-  const loc = data.delivery_location || data.dropoff_address || data.pickup_address || "Delivery Location";
+  const loc = formatLocationLinkForCustomer(data.delivery_location || data.dropoff_address || data.pickup_address, data.dropoff_coords);
   const prompt = getBookingConfirmManualPrompt(lang);
   if (lang === "ta") {
-    return `📦 *டெலிவரி முன்பதிவு விபரம் (Delivery Order Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *பிரிவு (Category):* ${data.delivery_category || "General Items"}\n📝 *பொருட்கள் (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *டெலிவரி இடம்:* ${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📦 *டெலிவரி முன்பதிவு விபரம் (Delivery Order Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *பிரிவு (Category):* ${data.delivery_category || "General Items"}\n📝 *பொருட்கள் (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *டெலிவரி இடம் (Delivery Location):*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
   if (lang === "si") {
-    return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Location):* ${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
-  return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:* ${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
 
 export function getVehicleLocalizedName(vehicleKey: string = "", lang: SupportedLanguage = "en"): string {
@@ -1173,8 +1326,8 @@ export function getVehicleLocalizedName(vehicleKey: string = "", lang: Supported
 
 export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDelivery = false): string {
   const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
-  const pickup = data.pickup_address || data.pickup_text || (lang === "ta" ? "புறப்படும் இடம்" : (lang === "si" ? "ආරම්භක ස්ථානය" : "Pickup Point"));
-  const dropoff = data.dropoff_address || data.dropoff_text || (lang === "ta" ? "சேரும் இடம்" : (lang === "si" ? "ගමනාන්තය" : "Drop-off Point"));
+  const pickup = formatLocationLinkForCustomer(data.pickup_address || data.pickup_text, data.pickup_coords);
+  const dropoff = formatLocationLinkForCustomer(data.dropoff_address || data.dropoff_text, data.dropoff_coords);
   const prompt = getBookingConfirmManualPrompt(lang);
   
   const baseVehicleName = getVehicleLocalizedName(data.vehicle_key || data.vehicle_name || "car", lang);
@@ -1184,16 +1337,16 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
 
   if (lang === "ta") {
     const timingHeader = isScheduled ? `📅 *நீண்ட தூரப் பயணம் (Schedule):* ${data.scheduled_time}\n` : `⚡ *குறுகிய தூரப் பயணம் (Short Trip)*\n`;
-    return `📋 *முன்பதிவு விபரம் (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *பெயர்:* ${data.customer_name}\n📱 *தொடர்பு:* ${data.customer_phone}\n🚗 *வாகனம்:* ${vehicleText}\n📍 *புறப்படும் இடம்:* ${pickup}\n🏁 *சேரும் இடம்:* ${dropoff}\n${isDelivery ? `📦 *பொருட்கள்:* ${data.delivery_items}\n` : `🔄 *பயண வகை:* ${data.trip_type === "round_trip" ? "இரு வழி (Round Trip)" : "ஒரு வழி (One-Way)"}\n`}🛣️ *பயண தூரம்:* ${data.distance_text}\n💰 *கட்டணம்:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📋 *முன்பதிவு விபரம் (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *பெயர்:* ${data.customer_name}\n📱 *தொடர்பு:* ${data.customer_phone}\n🚗 *வாகனம்:* ${vehicleText}\n📍 *புறப்படும் இடம் (Pickup):*\n${pickup}\n🏁 *சேரும் இடம் (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *பொருட்கள்:* ${data.delivery_items}\n` : `🔄 *பயண வகை:* ${data.trip_type === "round_trip" ? "இரு வழி (Round Trip)" : "ஒரு வழி (One-Way)"}\n`}🛣️ *பயண தூரம்:* ${data.distance_text}\n💰 *கட்டணம்:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
   if (lang === "si") {
     const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
-    return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):* ${pickup}\n🏁 *ගමනාන්තය (Drop-off):* ${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
   }
 
   const timingHeader = isScheduled ? `📅 *Long Distance Trip (Schedule):* ${data.scheduled_time}\n` : `⚡ *Short Distance Trip (Short Trip)*\n`;
-  return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup:* ${pickup}\n🏁 *Drop-off:* ${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
 }
 
 

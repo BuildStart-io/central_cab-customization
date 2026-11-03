@@ -17,9 +17,10 @@ import {
   getDeliveryCategoryPoll,
   detectDeliveryCategory,
   getDeliveryOrderSummaryCard,
+  getLocationRejectMessage,
 } from "../i18n.ts";
 import { CabSystemSettings } from "../adminHandler.ts";
-import { PricingSettings, resolveLocationCoords } from "../pricingEngine.ts";
+import { PricingSettings, resolveLocationCoords, isValidLocationInput } from "../pricingEngine.ts";
 import { StepProcessResult } from "./types.ts";
 import {
   extractLocation,
@@ -122,10 +123,12 @@ export async function handleDeliveryFlowStep(
     // Step 4: Current / Delivery Drop-off Location
     // ------------------------------------------------------------------------
     case "DELIVERY_LOCATION": {
-      const loc = extractLocation(trimmed, rawPayload);
-      if (!loc.text && !loc.coords) {
-        return await invalidFallback(getStepPromptText("DELIVERY_FLOW", "DELIVERY_LOCATION", lang));
+      // Must be a valid WhatsApp Location Pin, Google Maps Link, or GPS Coordinates (NO plain text names)
+      if (!isValidLocationInput(trimmed, rawPayload)) {
+        return await invalidFallback(getLocationRejectMessage(lang, "delivery"));
       }
+
+      const loc = extractLocation(trimmed, rawPayload);
       if (!loc.coords && loc.text) {
         const resolved = await resolveLocationCoords(loc);
         if (resolved) loc.coords = resolved;

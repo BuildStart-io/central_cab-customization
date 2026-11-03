@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,6 +17,7 @@ import WelcomeMediaUpload from "@/components/settings/WelcomeMediaUpload";
 import StaffManager from "@/components/settings/StaffManager";
 import VehiclePricingSettings from "@/components/cab/VehiclePricingSettings";
 import CabSystemSettings from "@/components/cab/CabSystemSettings";
+import BroadcastManager from "@/components/cab/BroadcastManager";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { useStaffAccess } from "@/hooks/useStaffAccess";
 import { useEffectivePlan } from "@/hooks/useEffectivePlan";
@@ -41,6 +43,8 @@ interface WsenderSession {
 }
 
 export default function Settings() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "whatsapp";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false); // kept for potential future use
@@ -631,10 +635,15 @@ export default function Settings() {
           </p>
         </div>
 
-        <Tabs defaultValue="whatsapp" className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => setSearchParams({ tab: val })}
+          className="space-y-6"
+        >
           <TabsList className="w-full sm:w-auto flex flex-wrap">
             <TabsTrigger value="cab_pricing" className="flex-1 sm:flex-initial font-semibold text-primary">🚕 Vehicle Pricing</TabsTrigger>
             <TabsTrigger value="cab_system" className="flex-1 sm:flex-initial font-semibold text-primary">📢 Driver Groups & Admin</TabsTrigger>
+            <TabsTrigger value="broadcast" className="flex-1 sm:flex-initial font-bold text-purple-600 dark:text-purple-400">📡 Group Broadcast</TabsTrigger>
             <TabsTrigger value="whatsapp" className="flex-1 sm:flex-initial">WhatsApp</TabsTrigger>
             <TabsTrigger value="chatbot" className="flex-1 sm:flex-initial">Chatbot</TabsTrigger>
             <TabsTrigger value="payment" className="flex-1 sm:flex-initial">Payment</TabsTrigger>
@@ -1338,6 +1347,12 @@ export default function Settings() {
           <TabsContent value="cab_system" className="space-y-6">
             <ErrorBoundary>
               <CabSystemSettings />
+            </ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="broadcast" className="space-y-6">
+            <ErrorBoundary>
+              <BroadcastManager />
             </ErrorBoundary>
           </TabsContent>
 

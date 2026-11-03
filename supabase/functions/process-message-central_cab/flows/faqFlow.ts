@@ -11,6 +11,7 @@ import {
   getVehiclePoll,
   getVehicleModelPoll,
   getTripTypePoll,
+  getDropoffHelpPoll,
   getBookingConfirmPoll,
   getRentVehiclePoll,
   getDeliveryCategoryPoll,
@@ -33,14 +34,17 @@ export function getStepPollForCurrentStep(
 ): PollDefinition | undefined {
   if (flow === "CAB_FLOW") {
     if (step === "CAB_VEHICLE") {
-      return getVehiclePoll(lang, false, data.booking_type || "now");
+      return getVehiclePoll(lang, false, data.booking_type || "now", pricingSettings);
     }
     if (step === "CAB_MODEL") {
       const vehicleKey = data.vehicle_key || "car";
       const models = pricingSettings[vehicleKey]?.models || [];
       if (models.length > 0) {
-        return getVehicleModelPoll(vehicleKey, models, lang);
+        return getVehicleModelPoll(vehicleKey, models, lang, pricingSettings);
       }
+    }
+    if (step === "CAB_DROPOFF") {
+      return getDropoffHelpPoll(lang);
     }
     if (step === "CAB_TRIP_TYPE") {
       return getTripTypePoll(lang);

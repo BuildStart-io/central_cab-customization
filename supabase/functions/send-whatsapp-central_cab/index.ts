@@ -124,12 +124,14 @@ serve(async (req) => {
         },
       });
 
-      // Graceful fallback to text menu if sendPoll fails on WAHA
+      // Graceful fallback to text menu if sendPoll fails on WAHA (unless session is offline)
       if (!res.ok) {
         const pollErr = await res.text();
-        console.warn(`[send-whatsapp-central_cab] sendPoll failed [${res.status}]: ${pollErr}. Falling back to formatted text...`);
-        const fallbackText = `${poll.name}\n\n` + poll.options.map((opt: string, i: number) => opt.startsWith(`${i + 1}`) ? opt : `${i + 1}. ${opt}`).join("\n");
-        res = await wahaFetch("/api/sendText", { session: sessionName, chatId, text: fallbackText });
+        console.warn(`[send-whatsapp-central_cab] sendPoll failed [${res.status}]: ${pollErr}.`);
+        if (res.status !== 422) {
+          const fallbackText = `${poll.name}\n\n` + poll.options.map((opt: string, i: number) => opt.startsWith(`${i + 1}`) ? opt : `${i + 1}. ${opt}`).join("\n");
+          res = await wahaFetch("/api/sendText", { session: sessionName, chatId, text: fallbackText });
+        }
       }
     } else if (url) {
       const fileName = filenameFromUrl(url);

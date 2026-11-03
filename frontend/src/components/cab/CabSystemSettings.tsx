@@ -403,10 +403,25 @@ export default function CabSystemSettings() {
             Configure Admin voice dispatch credentials, anti-ban forwarding delays, and service-specific WhatsApp Driver Groups.
           </p>
         </div>
-        <Button onClick={handleSave} disabled={saving} className="gap-2 shadow-sm">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save System Settings
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const url = new URL(window.location.href);
+              url.searchParams.set("tab", "broadcast");
+              window.location.href = url.pathname + url.search;
+            }}
+            className="gap-2 border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/50 font-bold"
+          >
+            <Radio className="h-4 w-4 text-purple-600 animate-pulse" />
+            Group Broadcast Hub 📢
+          </Button>
+          <Button onClick={handleSave} disabled={saving} className="gap-2 shadow-sm">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save System Settings
+          </Button>
+        </div>
       </div>
 
       {/* Grid: Admin WhatsApp Number & Anti-Ban Delay */}
@@ -558,7 +573,21 @@ export default function CabSystemSettings() {
                 </CardDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("tab", "broadcast");
+                  window.location.href = url.pathname + url.search;
+                }}
+                className="gap-1.5 text-xs border-purple-400 text-purple-700 dark:text-purple-300 hover:bg-purple-50 font-semibold"
+              >
+                <Radio className="h-3.5 w-3.5 text-purple-600" />
+                Broadcast to Groups
+              </Button>
               <Button
                 onClick={() => fetchWhatsAppGroups(true)}
                 variant="outline"
