@@ -250,6 +250,21 @@ export async function handleCabFlowStep(
       if (!isRideNow) {
         const availableModels: VehicleModel[] = pricingSettings[vehicleKey]?.models || [];
         if (availableModels.length > 0) {
+          // If user specifically typed a model name directly (e.g. "sedan", "suv", "hatchback")
+          const directModelMatch = availableModels.find((m) =>
+            lower.includes(m.name.toLowerCase()) || m.name.toLowerCase().includes(lower)
+          );
+          if (directModelMatch && !lower.includes("car") && !/^\s*\d+\s*$/.test(trimmed)) {
+            data.vehicle_model = directModelMatch;
+            data.vehicle_name = `${getVehicleDisplayName(vehicleKey, pricingSettings)} (${directModelMatch.name}${directModelMatch.description ? ` - ${directModelMatch.description}` : ""})`;
+            return {
+              replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
+              nextFlow: "CAB_FLOW",
+              nextStep: "CAB_PICKUP",
+              sessionData: data,
+            };
+          }
+
           const modelPoll = getVehicleModelPoll(vehicleKey, availableModels, lang, pricingSettings);
           const promptText = lang === "ta"
             ? `தயவுசெய்து நீங்கள் விரும்பும் *${getVehicleDisplayName(vehicleKey, pricingSettings)}* மாடலைத் தேர்ந்தெடுக்கவும்:`

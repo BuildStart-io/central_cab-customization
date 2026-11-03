@@ -470,12 +470,41 @@ export default function VehiclePricingSettings() {
 
         // Merge loaded keys with defaults
         for (const k of Object.keys(loaded)) {
+          let models = loaded[k]?.models && Array.isArray(loaded[k].models)
+            ? loaded[k].models
+            : (DEFAULT_PRICING[k]?.models || []);
+
+          // Auto-migrate legacy car models (Alto, Wagon R, etc.) to modern variations: Sedan, Hatchback, SUV
+          if (k === "car") {
+            const hasLegacyModels = models.some((m: any) =>
+              /alto|wagon\s*r|shuttle/i.test(m?.name || "")
+            );
+            const hasStandardModels =
+              models.some((m: any) => /sedan/i.test(m?.name || "")) &&
+              models.some((m: any) => /suv/i.test(m?.name || "")) &&
+              models.some((m: any) => /hatchback/i.test(m?.name || ""));
+            if (hasLegacyModels || !hasStandardModels) {
+              models = DEFAULT_PRICING.car.models || [];
+            }
+          }
+
+          // Ensure every model has discount_slabs configured
+          models = models.map((m: any, mIdx: number) => ({
+            ...m,
+            discount_slabs: m.discount_slabs && m.discount_slabs.length > 0
+              ? m.discount_slabs
+              : (loaded[k]?.discount_slabs || DEFAULT_PRICING[k]?.discount_slabs || [
+                  { id: `m_slab_${mIdx}_1`, from_km: 0, to_km: 20, discount_percentage: 5 },
+                  { id: `m_slab_${mIdx}_2`, from_km: 20, to_km: 50, discount_percentage: 10 },
+                  { id: `m_slab_${mIdx}_3`, from_km: 50, to_km: 100, discount_percentage: 15 },
+                  { id: `m_slab_${mIdx}_4`, from_km: 100, to_km: null, discount_percentage: 20 },
+                ]),
+          }));
+
           merged[k] = {
             ...(DEFAULT_PRICING[k] || {}),
             ...loaded[k],
-            models: loaded[k]?.models && Array.isArray(loaded[k].models)
-              ? loaded[k].models
-              : (DEFAULT_PRICING[k]?.models || []),
+            models,
             discount_slabs: loaded[k]?.discount_slabs && Array.isArray(loaded[k].discount_slabs)
               ? loaded[k].discount_slabs
               : (DEFAULT_PRICING[k]?.discount_slabs || []),

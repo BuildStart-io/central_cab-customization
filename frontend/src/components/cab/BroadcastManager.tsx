@@ -140,6 +140,7 @@ export default function BroadcastManager() {
       if (showToast) setRefreshing(true);
       else setLoading(true);
 
+      // 1. Fetch saved groups from central_cab.settings
       const { data, error } = await supabase
         .schema("central_cab")
         .from("settings")
@@ -152,7 +153,7 @@ export default function BroadcastManager() {
         console.error("Failed to load cab system settings:", error);
       }
 
-      const combined: GroupItemWithCategory[] = [];
+      let combined: GroupItemWithCategory[] = [];
       if (data?.value) {
         const val = data.value;
         const parse = (raw: any[], cat: ServiceGroupType, label: string) => {
@@ -176,6 +177,105 @@ export default function BroadcastManager() {
         parse(val.delivery_rider_groups, "delivery_riders", "Delivery Rider");
       }
 
+      // 2. Query active WhatsApp session
+      let activeSessionId = sessionApiKey;
+      try {
+        const { data: userSessions } = await supabase
+          .schema("central_cab")
+          .from("user_wsender_sessions" as any)
+          .select("session_id, session_api_key")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (userSessions) {
+          activeSessionId = userSessions.session_api_key || userSessions.session_id || "";
+          setSessionApiKey(activeSessionId);
+        }
+      } catch (sessErr) {
+        console.warn("Could not query user_wsender_sessions:", sessErr);
+      }
+
+      // 3. Fetch live groups directly from the currently connected WhatsApp account via WAHA
+      try {
+        const { data: authSession } = await supabase.auth.getSession();
+        const token = authSession?.session?.access_token || "";
+        const sessionIdParam = activeSessionId ? `&sessionId=${encodeURIComponent(activeSessionId)}` : "";
+
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wsender-sessions-central_cab?action=list-groups${sessionIdParam}&_t=${Date.now()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (res.ok) {
+          const result = await res.json();
+          const rawList: any[] = Array.isArray(result?.data)
+            ? result.data
+            : (result?.data && typeof result.data === "object" ? Object.values(result.data) : []);
+          
+          const liveWahaGroups: { id: string; name: string }[] = rawList
+            .map((g: any) => ({
+              id: String(g.id || ""),
+              name: String(g.name || ""),
+            }))
+            .filter((g) => Boolean(g.id));
+
+          if (liveWahaGroups.length > 0) {
+            // Map live groups to categories, preserving any existing categorizations
+            const refreshedList: GroupItemWithCategory[] = liveWahaGroups.map((lg, i) => {
+              const existing = combined.find((c) => c.chat_id === lg.id);
+              const cat: ServiceGroupType = existing?.category || "hire";
+              const catLabel = existing?.categoryLabel || (
+                cat === "hire" ? "Hire Driver" :
+                cat === "rent_a_car" ? "Rent a Car" :
+                cat === "delivery_shop" ? "Delivery Shop" : "Delivery Rider"
+              );
+              return {
+                id: String(existing?.id || `live_${i}`),
+                name: lg.name || existing?.name || `Group ${i + 1}`,
+                chat_id: lg.id,
+                category: cat,
+                categoryLabel: catLabel,
+              };
+            });
+
+            combined = refreshedList;
+            setSelectedGroupIds(new Set(refreshedList.map((g) => g.id)));
+
+            // Save the updated live groups into cab_system_settings so they persist
+            const hireGroups = combined.filter((g) => g.category === "hire").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+            const rentGroups = combined.filter((g) => g.category === "rent_a_car").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+            const shopGroups = combined.filter((g) => g.category === "delivery_shop").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+            const riderGroups = combined.filter((g) => g.category === "delivery_riders").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
+
+            const updatedVal = {
+              ...(data?.value || {}),
+              hire_driver_groups: hireGroups,
+              rent_a_car_groups: rentGroups,
+              delivery_driver_groups: shopGroups,
+              delivery_rider_groups: riderGroups,
+              target_driver_groups: hireGroups,
+            };
+
+            await supabase
+              .schema("central_cab")
+              .from("settings")
+              .upsert({
+                user_id: user?.id,
+                key: "cab_system_settings",
+                value: updatedVal,
+              }, { onConflict: "user_id,key" });
+          }
+        }
+      } catch (wahaErr) {
+        console.warn("Live WAHA groups fetch warning:", wahaErr);
+      }
+
       setAllGroups(combined);
 
       // Select all groups by default if none selected yet
@@ -183,25 +283,10 @@ export default function BroadcastManager() {
         setSelectedGroupIds(new Set(combined.map((g) => g.id)));
       }
 
-      // Try load active WhatsApp session
-      try {
-        const { data: userSessions } = await supabase
-          .from("user_wsender_sessions" as any)
-          .select("session_id, session_api_key")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (userSessions) {
-          setSessionApiKey(userSessions.session_api_key || userSessions.session_id || "");
-        }
-      } catch (sessErr) {
-        console.warn("Could not query user_wsender_sessions:", sessErr);
-      }
-
       if (showToast) {
         toast({
-          title: "Groups Refreshed",
-          description: `Loaded ${combined.length} service groups across all 4 categories.`,
+          title: "Groups Refreshed from WhatsApp",
+          description: `Loaded ${combined.length} live service group(s) across all 4 categories from connected account.`,
         });
       }
     } catch (err: any) {
@@ -326,55 +411,6 @@ export default function BroadcastManager() {
     }
     const sample = formatFinalMessage(messageText, "Sample Group");
     setPreviewSpintaxText(sample);
-  };
-
-  const insertSpintaxChip = (chip: string) => {
-    setMessageText((prev) => (prev ? `${prev} ${chip}` : chip));
-  };
-
-  // ---------------------------------------------------------------------------
-  // Quick Templates
-  // ---------------------------------------------------------------------------
-  const applyTemplate = (type: string) => {
-    switch (type) {
-      case "urgent_ride":
-        setCampaignTitle("Urgent Ride Demand Alert");
-        setMessageText(
-          `{வணக்கம்|அன்புடையீர்}! 🚖\n\n{தற்போது அதிக முன்பதிவுகள் உள்ளன|இப்பகுதியில் அதிக சவாரி தேவைகள் உள்ளன}. அருகிலுள்ள ஓட்டுநர்கள் உடனடியாக ஆன்லைனில் வந்து சவாரிகளை ஏற்கவும்.\n\n📍 Central Cab Dispatch Team`
-        );
-        break;
-      case "weather_alert":
-        setCampaignTitle("Weather & Rain Advisory");
-        setMessageText(
-          `{வணக்கம்|அன்புடையீர் ஓட்டுநர்களே}! 🌧️\n\n{கனமழை பெய்து வருவதால்|வானிலை சீரற்றதாக உள்ளதால்} சாலையில் கவனமாக வாகனத்தை இயக்கவும். பயணிகளின் பாதுகாப்பை உறுதிசெய்யவும்.\n\n⚠️ Safe Driving Advisory`
-        );
-        break;
-      case "daily_shift":
-        setCampaignTitle("Duty / Shift Start Reminder");
-        setMessageText(
-          `{காலை வணக்கம்|வணக்கம் நண்பர்களே}! ☀️\n\nஇன்றைய பயணங்களை வெற்றிகரமாகத் தொடங்க தயாராக இருங்கள். Central Cab சேவையைத் தேர்ந்தெடுத்தமைக்கு நன்றி.\n\n👍 Have a great day!`
-        );
-        break;
-      case "delivery_shop":
-        setCampaignTitle("Delivery Shop Batch Notice");
-        setMessageText(
-          `{வணக்கம்|அன்புடையீர் வணிகர்களே}! 🏪\n\nபுதிய டெலிவரி ஆர்டர்கள் தயாராக இருந்தால் முன்கூட்டியே அறிவிக்கவும். எங்கள் ரைடர்கள் உடனடியாக வந்து பெற்றுக்கொள்வார்கள்.\n\n📦 Central Delivery Team`
-        );
-        break;
-      case "delivery_riders":
-        setCampaignTitle("Delivery Riders Orders Alert");
-        setMessageText(
-          `{வணக்கம்|ஹலோ ரைடர்களே}! 🛵\n\nபுதிய பார்சல் மற்றும் உணவு டெலிவரி ஆர்டர்கள் உள்ளன. அருகிலுள்ள ரைடர்கள் உடனே டெலிவரி எடுத்து முடிக்கவும்.\n\n🚀 Central Delivery Riders`
-        );
-        break;
-      case "general":
-        setCampaignTitle("Important Announcement");
-        setMessageText(
-          `{வணக்கம்|முக்கிய அறிவிப்பு}! 📢\n\nஅனைத்து ஓட்டுநர்கள் மற்றும் பங்காளர்களுக்கும் முக்கிய அறிவிப்பு. தயவுசெய்து உங்கள் WhatsApp அமைப்புகளைச் சரிபார்க்கவும்.\n\nCentral Cab Management`
-        );
-        break;
-    }
-    toast({ title: "Template Applied", description: `Loaded "${type.replace("_", " ")}" message.` });
   };
 
   // ---------------------------------------------------------------------------
@@ -1351,54 +1387,10 @@ export default function BroadcastManager() {
             <CardHeader className="pb-3">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <div>
-                  <CardTitle className="text-base font-semibold">Message Composer & Spintax</CardTitle>
+                  <CardTitle className="text-base font-semibold">Message Composer</CardTitle>
                   <CardDescription className="text-xs">
-                    Write your broadcast text. Use Spintax <code>{"{word1|word2}"}</code> for dynamic variations.
+                    Write your broadcast text to send across selected WhatsApp driver and partner groups.
                   </CardDescription>
-                </div>
-
-                {/* Quick Templates Dropdown / Buttons */}
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => applyTemplate("urgent_ride")}
-                    className="text-xs h-7 hover:border-amber-400"
-                  >
-                    🚖 Ride Demand
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => applyTemplate("weather_alert")}
-                    className="text-xs h-7 hover:border-blue-400"
-                  >
-                    🌧️ Rain Advisory
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => applyTemplate("daily_shift")}
-                    className="text-xs h-7 hover:border-purple-400"
-                  >
-                    ☀️ Daily Shift
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => applyTemplate("delivery_shop")}
-                    className="text-xs h-7 hover:border-emerald-400"
-                  >
-                    🏪 Shop Batch
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => applyTemplate("delivery_riders")}
-                    className="text-xs h-7 hover:border-purple-400"
-                  >
-                    🛵 Rider Alert
-                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -1411,7 +1403,7 @@ export default function BroadcastManager() {
                   <Input
                     value={campaignTitle}
                     onChange={(e) => setCampaignTitle(e.target.value)}
-                    placeholder="e.g. Friday Morning Driver Notice"
+                    placeholder="e.g. Driver Announcement"
                     className="mt-1"
                   />
                 </div>
@@ -1426,46 +1418,6 @@ export default function BroadcastManager() {
                 </div>
               </div>
 
-              {/* Spintax Quick Chips */}
-              <div className="flex flex-wrap items-center gap-1.5 text-xs bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border">
-                <span className="text-[11px] font-semibold text-muted-foreground mr-1">Insert Spintax:</span>
-                <button
-                  type="button"
-                  onClick={() => insertSpintaxChip("{வணக்கம்|அன்புடையீர்}")}
-                  className="px-2 py-0.5 bg-background border rounded text-[11px] hover:border-primary transition-colors"
-                >
-                  + {"{வணக்கம்|அன்புடையீர்}"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertSpintaxChip("{முக்கிய அறிவிப்பு|அவசர தகவல்}")}
-                  className="px-2 py-0.5 bg-background border rounded text-[11px] hover:border-primary transition-colors"
-                >
-                  + {"{முக்கிய அறிவிப்பு|அவசர தகவல்}"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertSpintaxChip("{நன்றி|வாழ்த்துகள்}")}
-                  className="px-2 py-0.5 bg-background border rounded text-[11px] hover:border-primary transition-colors"
-                >
-                  + {"{நன்றி|வாழ்த்துகள்}"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertSpintaxChip("{Hello|Hi|Dear Partners}")}
-                  className="px-2 py-0.5 bg-background border rounded text-[11px] hover:border-primary transition-colors"
-                >
-                  + {"{Hello|Hi|Dear Partners}"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => insertSpintaxChip("{group_name}")}
-                  className="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 rounded text-[11px] font-mono hover:border-purple-500 transition-colors"
-                >
-                  + {"{group_name}"}
-                </button>
-              </div>
-
               {/* Message Textarea */}
               <div>
                 <div className="flex justify-between items-center mb-1 text-xs">
@@ -1477,7 +1429,7 @@ export default function BroadcastManager() {
                 <Textarea
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Type your WhatsApp broadcast message here...&#10;&#10;Example:&#10;{வணக்கம்|அன்புடையீர்}! 🚖&#10;இப்பகுதியில் அதிக சவாரி தேவைகள் உள்ளன. ஓட்டுநர்கள் ஆன்லைனில் வரவும்."
+                  placeholder="Type your WhatsApp broadcast message here..."
                   rows={6}
                   className="font-sans text-sm leading-relaxed"
                 />

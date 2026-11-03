@@ -96,10 +96,33 @@ export function normalizeVehicleKey(
         return key;
       }
     }
+
+    // 1b. Dynamic check against any model / variation defined under any category
+    for (const key of Object.keys(pricingSettings)) {
+      const cfg = pricingSettings[key];
+      if (Array.isArray(cfg?.models)) {
+        for (const model of cfg.models) {
+          const mName = (model?.name || "").toLowerCase().trim();
+          const mNormalized = mName.replace(/[-_\s]/g, "");
+          if (mNormalized && (v.includes(mNormalized) || lowerRaw.includes(mName))) {
+            return key;
+          }
+        }
+      }
+    }
   }
 
   // 2. Explicit vehicle names first (so "1. Car 🚗" or "2. Van 🚐" match car/van and not digit 1/2)
-  if (v.includes("car") || v.includes("sedan") || v.includes("alto") || v.includes("wagonr") || v.includes("කාර්") || v.includes("கார்")) {
+  if (
+    v.includes("car") ||
+    v.includes("sedan") ||
+    v.includes("hatchback") ||
+    v.includes("suv") ||
+    v.includes("alto") ||
+    v.includes("wagonr") ||
+    v.includes("කාර්") ||
+    v.includes("கார்")
+  ) {
     return "car";
   }
 
