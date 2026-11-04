@@ -130,7 +130,7 @@ export async function handleDeliveryFlowStep(
 
       const loc = extractLocation(trimmed, rawPayload);
       if (!loc.coords && loc.text) {
-        const resolved = await resolveLocationCoords(loc);
+        const resolved = await resolveLocationCoords(loc, "dropoff");
         if (resolved) loc.coords = resolved;
       }
 

@@ -8,6 +8,11 @@ import {
   normalizeVehicleKey,
   DistanceDiscountSlab,
   VehicleModel,
+  expandShortUrl,
+  extractCoordinatesFromTextOrUrl,
+  resolveLocationCoords,
+  isSriLankaCoords,
+  getRoutingDistance,
 } from "./pricingEngine.ts";
 import {
   SupportedLanguage,
@@ -499,13 +504,258 @@ export async function runAllAutomatedTests(
 
     // 10.4 Legacy fallback without slabs (Round-trip discount percentage applies)
     const legacyFare = calculateFare(100, "100 km", "three_wheeler", "round_trip", defaultPricing);
-    // three_wheeler: base 300, per_km 100, coverage 2, discount 10%
-    // 100km round trip = 200 km
-    // chargeable = 198 km
-    // gross = 300 + 198 * 100 = 20100
-    // discount = 10% of 20100 = 2010
-    // total = 18090
     record("10.6 Legacy pricing without slabs retains 100% backward compatibility", legacyFare.totalFare === 18090, `Got: ${legacyFare.totalFare}`);
+
+    // ------------------------------------------------------------------------
+    // TEST 11: GOOGLE MAPS SHORT LINK EXPANSION & COORDINATE EXTRACTION
+    // ------------------------------------------------------------------------
+    const userShortUrl = "https://maps.app.goo.gl/XwQrJ1JUZA27Mq5p9?g_st=ic";
+    
+    // 11.1 Expand short URL
+    const { finalUrl, redirectChain } = await expandShortUrl(userShortUrl);
+    record("11.1 Short link expands into canonical Google Maps URL", redirectChain.length >= 2 && finalUrl.includes("google.com/maps"), `Hops: ${redirectChain.length}, Final: ${finalUrl.substring(0, 60)}`);
+
+    // 11.2 Extract dropoff coordinates (Maho Junction, Maho)
+    const resolvedDropoff = await resolveLocationCoords({ text: userShortUrl }, "dropoff");
+    const isDropoffValid = resolvedDropoff != null && isSriLankaCoords(resolvedDropoff.lat, resolvedDropoff.lng);
+    record("11.2 Resolves dropoff coordinates within Sri Lanka bounds", isDropoffValid, `Coords: ${JSON.stringify(resolvedDropoff)}`);
+    record("11.3 Dropoff matches Maho Junction (~7.82, ~80.27)", resolvedDropoff != null && Math.abs(resolvedDropoff.lat - 7.82) < 0.1 && Math.abs(resolvedDropoff.lng - 80.28) < 0.1, `Coords: ${JSON.stringify(resolvedDropoff)}`);
+    record("11.4 Rejects foreign/German server default coordinates", resolvedDropoff != null && resolvedDropoff.lat < 15, `Lat: ${resolvedDropoff?.lat}`);
+
+    // 11.3 Distance calculation from Batticaloa to Maho Junction
+    const pickupInput = { text: "Batticaloa", coords: { lat: 7.7305, lng: 81.6804 } };
+    const dropoffInput = { text: userShortUrl, coords: resolvedDropoff || undefined };
+    const routeDist = await getRoutingDistance(pickupInput, dropoffInput);
+    record("11.5 Route distance between Batticaloa and Maho Junction is realistic (~216 km)", routeDist.distanceKm >= 200 && routeDist.distanceKm <= 240, `Distance: ${routeDist.distanceKm} km`);
+
+    // ------------------------------------------------------------------------
+    // TEST 12: FARE CALCULATION ACROSS ALL VEHICLE CATEGORIES & VARIATIONS
+    // ------------------------------------------------------------------------
+    const allVehiclesSettings: PricingSettings = {
+      motorbike: {
+        base_price: 100,
+        per_km_rate: 65,
+        coverage_km: 1,
+        discount_slabs: [
+          { from_km: 10, to_km: 30, discount_percentage: 5 },
+          { from_km: 30, to_km: 55, discount_percentage: 10 },
+        ],
+      },
+      three_wheeler: {
+        base_price: 130,
+        per_km_rate: 70,
+        coverage_km: 1,
+        discount_slabs: [
+          { from_km: 0, to_km: 15, discount_percentage: 0 },
+          { from_km: 15, to_km: 35, discount_percentage: 5 },
+          { from_km: 35, to_km: null, discount_percentage: 10 },
+        ],
+      },
+      car: {
+        base_price: 600,
+        per_km_rate: 150,
+        coverage_km: 3,
+        discount_slabs: [
+          { from_km: 0, to_km: 20, discount_percentage: 5 },
+          { from_km: 20, to_km: 50, discount_percentage: 10 },
+          { from_km: 50, to_km: 100, discount_percentage: 15 },
+          { from_km: 100, to_km: null, discount_percentage: 20 },
+        ],
+      },
+      van: {
+        base_price: 900,
+        per_km_rate: 200,
+        coverage_km: 3,
+        discount_slabs: [
+          { from_km: 0, to_km: 30, discount_percentage: 5 },
+          { from_km: 30, to_km: 80, discount_percentage: 10 },
+          { from_km: 80, to_km: null, discount_percentage: 15 },
+        ],
+      },
+      lorry: {
+        base_price: 1500,
+        per_km_rate: 300,
+        coverage_km: 5,
+        discount_slabs: [
+          { from_km: 0, to_km: 40, discount_percentage: 0 },
+          { from_km: 40, to_km: 100, discount_percentage: 8 },
+          { from_km: 100, to_km: null, discount_percentage: 12 },
+        ],
+      },
+      bus: {
+        base_price: 3000,
+        per_km_rate: 200,
+        coverage_km: 10,
+        discount_slabs: [
+          { from_km: 0, to_km: 50, discount_percentage: 0 },
+          { from_km: 50, to_km: 120, discount_percentage: 10 },
+          { from_km: 120, to_km: null, discount_percentage: 15 },
+        ],
+      },
+    };
+
+    // 12.1 Motorbike fare test (10 km)
+    // Base 100 covers 1 km -> 9 km chargeable at 65 = 585 -> total = 685
+    const fareMotorbike = calculateFare(10, "10 km", "motorbike", "one_way", allVehiclesSettings);
+    record("12.1 Motorbike 10km fare is correct (685)", fareMotorbike.totalFare === 685, `Got: ${fareMotorbike.totalFare}`);
+
+    // 12.2 Three-wheeler fare test (20 km)
+    // Base 130 covers 1 km -> 19 km chargeable:
+    // 0-15km (1 to 15 = 14km) @ 0% (70) = 980
+    // 15-20km (5km) @ 5% (66.5) = 332.5
+    // Total = 130 + 980 + 332.5 = 1442.5
+    const fareTukTuk = calculateFare(20, "20 km", "three_wheeler", "one_way", allVehiclesSettings);
+    record("12.2 Three-wheeler 20km fare is correct (1442.5)", fareTukTuk.totalFare === 1442.5, `Got: ${fareTukTuk.totalFare}`);
+
+    // 12.3 Car -> Sedan model test (216 km)
+    const sedanModel: VehicleModel = {
+      name: "Sedan",
+      base_price: 700,
+      coverage_km: 3,
+      per_km_rate: 160,
+      discount_slabs: [
+        { from_km: 0, to_km: 20, discount_percentage: 5 },
+        { from_km: 20, to_km: 50, discount_percentage: 10 },
+        { from_km: 50, to_km: 100, discount_percentage: 15 },
+        { from_km: 100, to_km: null, discount_percentage: 20 },
+      ],
+    };
+    // Base 700 (3km) -> 213km chargeable:
+    // 3-20km (17km) @ 152 = 2584
+    // 20-50km (30km) @ 144 = 4320
+    // 50-100km (50km) @ 136 = 6800
+    // 100-216km (116km) @ 128 = 14848
+    // Total = 700 + 2584 + 4320 + 6800 + 14848 = 29252
+    const fareSedan = calculateFare(216, "216 km", "car", "one_way", allVehiclesSettings, sedanModel);
+    record("12.3 Car Sedan 216km fare is correct (29252)", fareSedan.totalFare === 29252, `Got: ${fareSedan.totalFare}`);
+
+    // 12.4 Car -> Hatchback model test (216 km)
+    const hatchbackModel: VehicleModel = {
+      name: "Hatchback",
+      base_price: 500,
+      coverage_km: 2,
+      per_km_rate: 125,
+      discount_slabs: [
+        { from_km: 0, to_km: 20, discount_percentage: 5 },
+        { from_km: 20, to_km: 50, discount_percentage: 10 },
+        { from_km: 50, to_km: 100, discount_percentage: 15 },
+        { from_km: 100, to_km: null, discount_percentage: 20 },
+      ],
+    };
+    // Base 500 (2km) -> 214km chargeable:
+    // 2-20km (18km) @ 118.75 = 2137.5
+    // 20-50km (30km) @ 112.5 = 3375
+    // 50-100km (50km) @ 106.25 = 5312.5
+    // 100-216km (116km) @ 100 = 11600
+    // Total = 500 + 2137.5 + 3375 + 5312.5 + 11600 = 22925
+    const fareHatchback = calculateFare(216, "216 km", "car", "one_way", allVehiclesSettings, hatchbackModel);
+    record("12.4 Car Hatchback 216km fare is correct (22925)", fareHatchback.totalFare === 22925, `Got: ${fareHatchback.totalFare}`);
+
+    // 12.5 Car -> SUV model test (216 km)
+    const suvModel: VehicleModel = {
+      name: "SUV",
+      base_price: 850,
+      coverage_km: 3,
+      per_km_rate: 185,
+      discount_slabs: [
+        { from_km: 0, to_km: 20, discount_percentage: 5 },
+        { from_km: 20, to_km: 50, discount_percentage: 10 },
+        { from_km: 50, to_km: 100, discount_percentage: 15 },
+        { from_km: 100, to_km: null, discount_percentage: 20 },
+      ],
+    };
+    // Base 850 (3km) -> 213km chargeable:
+    // 3-20km (17km) @ 175.75 = 2987.75
+    // 20-50km (30km) @ 166.5 = 4995
+    // 50-100km (50km) @ 157.25 = 7862.5
+    // 100-216km (116km) @ 148 = 17168
+    // Total = 850 + 2987.75 + 4995 + 7862.5 + 17168 = 33863.25
+    const fareSUV = calculateFare(216, "216 km", "car", "one_way", allVehiclesSettings, suvModel);
+    record("12.5 Car SUV 216km fare is correct (33863.25)", fareSUV.totalFare === 33863.25, `Got: ${fareSUV.totalFare}`);
+
+    // 12.6 Van -> KDH Flat Roof (100 km)
+    const vanFlatModel: VehicleModel = {
+      name: "KDH Flat Roof",
+      base_price: 900,
+      coverage_km: 3,
+      per_km_rate: 190,
+      discount_slabs: [
+        { from_km: 0, to_km: 30, discount_percentage: 5 },
+        { from_km: 30, to_km: 80, discount_percentage: 10 },
+        { from_km: 80, to_km: null, discount_percentage: 15 },
+      ],
+    };
+    // Base 900 (3km) -> 97km chargeable:
+    // 3-30km (27km) @ 180.5 = 4873.5
+    // 30-80km (50km) @ 171 = 8550
+    // 80-100km (20km) @ 161.5 = 3230
+    // Total = 900 + 4873.5 + 8550 + 3230 = 17553.5
+    const fareVanFlat = calculateFare(100, "100 km", "van", "one_way", allVehiclesSettings, vanFlatModel);
+    record("12.6 Van Flat Roof 100km fare is correct (17553.5)", fareVanFlat.totalFare === 17553.5, `Got: ${fareVanFlat.totalFare}`);
+
+    // 12.7 Van -> KDH High Roof (100 km)
+    const vanHighModel: VehicleModel = {
+      name: "KDH High Roof",
+      base_price: 1200,
+      coverage_km: 3,
+      per_km_rate: 240,
+      discount_slabs: [
+        { from_km: 0, to_km: 30, discount_percentage: 5 },
+        { from_km: 30, to_km: 80, discount_percentage: 10 },
+        { from_km: 80, to_km: null, discount_percentage: 15 },
+      ],
+    };
+    // Base 1200 (3km) -> 97km chargeable:
+    // 3-30km (27km) @ 228 = 6156
+    // 30-80km (50km) @ 216 = 10800
+    // 80-100km (20km) @ 204 = 4080
+    // Total = 1200 + 6156 + 10800 + 4080 = 22236
+    const fareVanHigh = calculateFare(100, "100 km", "van", "one_way", allVehiclesSettings, vanHighModel);
+    record("12.7 Van High Roof 100km fare is correct (22236)", fareVanHigh.totalFare === 22236, `Got: ${fareVanHigh.totalFare}`);
+
+    // 12.8 Lorry -> Dimo Batta (150 km)
+    const lorryModel: VehicleModel = {
+      name: "Dimo Batta",
+      base_price: 1200,
+      coverage_km: 3,
+      per_km_rate: 220,
+      discount_slabs: [
+        { from_km: 0, to_km: 40, discount_percentage: 0 },
+        { from_km: 40, to_km: 100, discount_percentage: 8 },
+        { from_km: 100, to_km: null, discount_percentage: 12 },
+      ],
+    };
+    // Base 1200 (3km) -> 147km chargeable:
+    // 3-40km (37km) @ 220 = 8140
+    // 40-100km (60km) @ 202.4 = 12144
+    // 100-150km (50km) @ 193.6 = 9680
+    // Total = 1200 + 8140 + 12144 + 9680 = 31164
+    const fareLorry = calculateFare(150, "150 km", "lorry", "one_way", allVehiclesSettings, lorryModel);
+    record("12.8 Lorry Dimo Batta 150km fare is correct (31164)", fareLorry.totalFare === 31164, `Got: ${fareLorry.totalFare}`);
+
+    // 12.9 Bus -> Rosa Mini Bus (216 km: Real user booking scenario!)
+    const busModel: VehicleModel = {
+      name: "Rosa Mini Bus",
+      base_price: 3000,
+      coverage_km: 10,
+      per_km_rate: 200,
+      discount_slabs: [
+        { from_km: 0, to_km: 50, discount_percentage: 0 },
+        { from_km: 50, to_km: 120, discount_percentage: 10 },
+        { from_km: 120, to_km: null, discount_percentage: 15 },
+      ],
+    };
+    // Base 3000 (10km) -> 206km chargeable:
+    // 10-50km (40km) @ 200 = 8000
+    // 50-120km (70km) @ 180 = 12600
+    // 120-216km (96km) @ 170 = 16320
+    // Total = 3000 + 8000 + 12600 + 16320 = 39920
+    // Gross = 3000 + (206 * 200) = 44200
+    // Discount = 4280
+    const fareBus = calculateFare(216, "216 km", "bus", "one_way", allVehiclesSettings, busModel);
+    record("12.9 Bus Rosa Mini Bus 216km fare is correct (39920)", fareBus.totalFare === 39920, `Got: ${fareBus.totalFare}`);
+    record("12.10 Bus Rosa Mini Bus gross fare is correct (44200)", fareBus.grossFare === 44200, `Got: ${fareBus.grossFare}`);
+    record("12.11 Bus Rosa Mini Bus discount amount is correct (4280)", fareBus.discountAmount === 4280, `Got: ${fareBus.discountAmount}`);
 
   } catch (err: any) {
     record("Fatal Test Exception", false, err.message + "\n" + err.stack);

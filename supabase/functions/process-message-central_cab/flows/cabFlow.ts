@@ -346,7 +346,7 @@ export async function handleCabFlowStep(
 
       const loc = extractLocation(trimmed, rawPayload);
       if (!loc.coords && loc.text) {
-        const resolved = await resolveLocationCoords(loc);
+        const resolved = await resolveLocationCoords(loc, "pickup");
         if (resolved) loc.coords = resolved;
       }
       data.pickup_text = loc.text;
@@ -367,7 +367,7 @@ export async function handleCabFlowStep(
       if (isValidLocationInput(trimmed, rawPayload)) {
         const loc = extractLocation(trimmed, rawPayload);
         if (!loc.coords && loc.text) {
-          const resolved = await resolveLocationCoords(loc);
+          const resolved = await resolveLocationCoords(loc, "dropoff");
           if (resolved) loc.coords = resolved;
         }
         data.dropoff_text = loc.text;
@@ -471,12 +471,18 @@ export async function handleCabFlowStep(
         const pickupLoc: LocationInput = { text: data.pickup_text, coords: data.pickup_coords };
         const dropoffLoc: LocationInput = { text: data.dropoff_text, coords: data.dropoff_coords };
         if (!data.pickup_coords) {
-          const resolvedPickup = await resolveLocationCoords(pickupLoc);
-          if (resolvedPickup) data.pickup_coords = resolvedPickup;
+          const resolvedPickup = await resolveLocationCoords(pickupLoc, "pickup");
+          if (resolvedPickup) {
+            data.pickup_coords = resolvedPickup;
+            pickupLoc.coords = resolvedPickup;
+          }
         }
         if (!data.dropoff_coords) {
-          const resolvedDropoff = await resolveLocationCoords(dropoffLoc);
-          if (resolvedDropoff) data.dropoff_coords = resolvedDropoff;
+          const resolvedDropoff = await resolveLocationCoords(dropoffLoc, "dropoff");
+          if (resolvedDropoff) {
+            data.dropoff_coords = resolvedDropoff;
+            dropoffLoc.coords = resolvedDropoff;
+          }
         }
         const distResult = await getGoogleMapsDistance(pickupLoc, dropoffLoc);
         distanceKm = distResult.distanceKm;

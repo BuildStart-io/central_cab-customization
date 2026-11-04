@@ -412,6 +412,10 @@ function isValidLatLng(lat: number, lng: number): boolean {
   return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
 
+export function isSriLankaCoords(lat: number, lng: number): boolean {
+  return !isNaN(lat) && !isNaN(lng) && lat >= 5.5 && lat <= 10.5 && lng >= 79.0 && lng <= 82.5;
+}
+
 export function isGoogleMapsUrl(str: string): boolean {
   if (!str) return false;
   return /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(str);
@@ -454,26 +458,133 @@ export function isValidLocationInput(text: string, rawPayload: any): boolean {
 }
 
 /**
+ * Unshorten / expand short URLs (maps.app.goo.gl, goo.gl/maps, bit.ly, etc.)
+ * Follows HTTP 301/302/303/307/308 redirects step-by-step up to 6 hops.
+ * Returns the final URL and the full redirect chain for deep parameter inspection.
+ */
+export async function expandShortUrl(url: string): Promise<{ finalUrl: string; redirectChain: string[] }> {
+  let currentUrl = (url || "").trim();
+  const redirectChain = [currentUrl];
+
+  for (let hop = 0; hop < 6; hop++) {
+    try {
+      const res = await fetch(currentUrl, {
+        method: "GET",
+        redirect: "manual",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      const loc = res.headers.get("location");
+      if (loc && [301, 302, 303, 307, 308].includes(res.status)) {
+        const nextUrl = new URL(loc, currentUrl).href;
+        redirectChain.push(nextUrl);
+        currentUrl = nextUrl;
+      } else {
+        break;
+      }
+    } catch (e) {
+      console.warn("[expandShortUrl] notice:", (e as Error).message);
+      break;
+    }
+  }
+
+  return { finalUrl: currentUrl, redirectChain };
+}
+
+/**
+ * Geocode a Sri Lanka town or place name using local registry and OpenStreetMap Nominatim.
+ */
+export async function geocodeSriLankaPlace(name: string): Promise<{ lat: number; lng: number } | null> {
+  if (!name) return null;
+  const clean = name.replace(/\+/g, " ").replace(/loc:/i, "").trim();
+  if (!clean || clean.length < 2) return null;
+
+  const textLower = clean.toLowerCase();
+  for (const [town, coords] of Object.entries(SRI_LANKA_TOWNS)) {
+    if (textLower.includes(town)) {
+      return coords;
+    }
+  }
+
+  // OpenStreetMap Nominatim with explicit Sri Lanka scope
+  try {
+    const q = textLower.includes("sri lanka") ? clean : `${clean}, Sri Lanka`;
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, {
+      headers: { "User-Agent": "CentralCabService/1.0" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
+          return { lat, lng };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Nominatim lookup notice:", (err as Error).message);
+  }
+
+  return null;
+}
+
+/**
  * Extract GPS coordinates from text, raw coordinates, or any Google Maps URL format
  * Supports:
- * - Direct params: ?q=lat,lng / ?query=lat,lng / ll=lat,lng
+ * - Direct params: ?q=lat,lng / ?query=lat,lng / ll=lat,lng / daddr=lat,lng / saddr=lat,lng
  * - Path params: /@lat,lng,... or !3dlat!4dlng
- * - Raw coordinate string: "6.7972, 79.9012"
- * - Short links: maps.app.goo.gl / goo.gl/maps via redirect resolution
+ * - Navigation links: extracts daddr (dropoff) or saddr (pickup) coordinates or place queries
+ * - Place names: resolves /maps/place/<name> or daddr/q place text via Sri Lanka geocoding
+ * - Short links: unshortens maps.app.goo.gl / goo.gl/maps via redirect resolution
+ * - Deep HTML inspection: extracts !3d<lat>!4d<lng> coordinates validated within Sri Lanka bounds
+ * - Excludes client/server default static map coordinates (e.g. European / German data centers)
  */
-export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ lat: number; lng: number } | null> {
+export async function extractCoordinatesFromTextOrUrl(
+  text: string,
+  role: "pickup" | "dropoff" = "dropoff"
+): Promise<{ lat: number; lng: number } | null> {
   if (!text) return null;
   const str = text.trim();
 
-  // 1. Direct query parameters: ?q=lat,lng or ?query=lat,lng
-  const qMatch = str.match(/[?&](?:q|query)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
+  // 1. Direct coordinate string: e.g. "6.7972, 79.9012" or "GPS: 6.7972, 79.9012"
+  const rawMatch = str.match(/([+-]?\d{1,2}\.\d+)[,\s]+([+-]?\d{1,3}\.\d+)/);
+  if (rawMatch && !str.includes("http://") && !str.includes("https://")) {
+    const lat = parseFloat(rawMatch[1]);
+    const lng = parseFloat(rawMatch[2]);
+    if (isValidLatLng(lat, lng)) return { lat, lng };
+  }
+
+  // 2. Direct query parameters on the input string (if already a long link):
+  if (role === "dropoff") {
+    const daddrMatch = str.match(/[?&]daddr=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
+    if (daddrMatch) {
+      const lat = parseFloat(daddrMatch[1]);
+      const lng = parseFloat(daddrMatch[2]);
+      if (isValidLatLng(lat, lng)) return { lat, lng };
+    }
+  } else {
+    const saddrMatch = str.match(/[?&]saddr=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
+    if (saddrMatch) {
+      const lat = parseFloat(saddrMatch[1]);
+      const lng = parseFloat(saddrMatch[2]);
+      if (isValidLatLng(lat, lng)) return { lat, lng };
+    }
+  }
+
+  const qMatch = str.match(/[?&](?:q|query|ll|loc)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
   if (qMatch) {
     const lat = parseFloat(qMatch[1]);
     const lng = parseFloat(qMatch[2]);
     if (isValidLatLng(lat, lng)) return { lat, lng };
   }
 
-  // 2. Path coordinates: /@lat,lng,
   const atMatch = str.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
   if (atMatch) {
     const lat = parseFloat(atMatch[1]);
@@ -481,7 +592,6 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
     if (isValidLatLng(lat, lng)) return { lat, lng };
   }
 
-  // 2b. Data params: !3dlat!4dlng
   const dMatch = str.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i);
   if (dMatch) {
     const lat = parseFloat(dMatch[1]);
@@ -489,59 +599,123 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
     if (isValidLatLng(lat, lng)) return { lat, lng };
   }
 
-  // 3. Query param: ll=lat,lng, center=lat,lng, destination=lat,lng
-  const llMatch = str.match(/[?&](?:ll|destination|origin|center)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i);
-  if (llMatch) {
-    const lat = parseFloat(llMatch[1]);
-    const lng = parseFloat(llMatch[2]);
-    if (isValidLatLng(lat, lng)) return { lat, lng };
-  }
-
-  // 4. Raw coordinate string: e.g. "6.7972274, 79.9012242"
-  const rawMatch = str.match(/([+-]?\d{1,2}\.\d+)[,\s]+([+-]?\d{1,3}\.\d+)/);
-  if (rawMatch) {
-    const lat = parseFloat(rawMatch[1]);
-    const lng = parseFloat(rawMatch[2]);
-    if (isValidLatLng(lat, lng)) return { lat, lng };
-  }
-
-  // 5. Shortened or full Google Maps links: maps.app.goo.gl, goo.gl/maps, or google.com/maps
-  if (str.includes("goo.gl") || str.includes("maps.app") || str.includes("google.com/maps")) {
+  // 3. Shortened or full Google Maps links: maps.app.goo.gl, goo.gl/maps, or google.com/maps
+  if (str.includes("goo.gl") || str.includes("maps.app") || str.includes("google.com/maps") || str.includes("http://") || str.includes("https://")) {
     try {
       const urlMatch = str.match(/https?:\/\/[^\s]+/i);
       if (urlMatch) {
-        const res = await fetch(urlMatch[0], {
-          redirect: "follow",
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
-          signal: AbortSignal.timeout(5000),
-        });
-        const finalUrl = res.url || "";
-        const finalMatch = finalUrl.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
-                           finalUrl.match(/[?&](?:q|query)=([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
-                           finalUrl.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i);
-        if (finalMatch) {
-          const lat = parseFloat(finalMatch[1]);
-          const lng = parseFloat(finalMatch[2]);
-          if (isValidLatLng(lat, lng)) return { lat, lng };
-        }
-        const html = await res.text();
-        const htmlMatch = html.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/i) ||
-                          html.match(/center=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i) ||
-                          html.match(/ll=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i) ||
-                          html.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/i) ||
-                          html.match(/staticmap\?center=([+-]?\d+\.?\d*)%2C([+-]?\d+\.?\d*)/i);
-        if (htmlMatch) {
-          const lat = parseFloat(htmlMatch[1]);
-          const lng = parseFloat(htmlMatch[2]);
-          if (isValidLatLng(lat, lng)) return { lat, lng };
+        const { finalUrl, redirectChain } = await expandShortUrl(urlMatch[0]);
+
+        // Inspect all URLs in the redirect chain from newest to oldest
+        for (const u of [...redirectChain].reverse()) {
+          try {
+            const parsed = new URL(u);
+
+            // Role-specific check: daddr (dropoff) or saddr (pickup)
+            if (role === "dropoff") {
+              const daddr = parsed.searchParams.get("daddr");
+              if (daddr) {
+                const coordM = daddr.match(/([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/);
+                if (coordM) {
+                  const lat = parseFloat(coordM[1]);
+                  const lng = parseFloat(coordM[2]);
+                  if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) return { lat, lng };
+                }
+                const placeCoords = await geocodeSriLankaPlace(daddr);
+                if (placeCoords) return placeCoords;
+              }
+            } else {
+              const saddr = parsed.searchParams.get("saddr");
+              if (saddr) {
+                const coordM = saddr.match(/([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/);
+                if (coordM) {
+                  const lat = parseFloat(coordM[1]);
+                  const lng = parseFloat(coordM[2]);
+                  if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) return { lat, lng };
+                }
+                const placeCoords = await geocodeSriLankaPlace(saddr);
+                if (placeCoords) return placeCoords;
+              }
+            }
+
+            // Check coordinates in path (@lat,lng)
+            const atM = u.match(/@([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/);
+            if (atM) {
+              const lat = parseFloat(atM[1]);
+              const lng = parseFloat(atM[2]);
+              if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) return { lat, lng };
+            }
+
+            // Check data param coordinates (!3dlat!4dlng)
+            const dataM = u.match(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/);
+            if (dataM) {
+              const lat = parseFloat(dataM[1]);
+              const lng = parseFloat(dataM[2]);
+              if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) return { lat, lng };
+            }
+
+            // Check q / query / ll / loc
+            const qParam = parsed.searchParams.get("q") || parsed.searchParams.get("query") || parsed.searchParams.get("ll") || parsed.searchParams.get("loc");
+            if (qParam) {
+              const qM = qParam.match(/([+-]?\d+\.?\d*)[,%2C\s]+([+-]?\d+\.?\d*)/);
+              if (qM) {
+                const lat = parseFloat(qM[1]);
+                const lng = parseFloat(qM[2]);
+                if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) return { lat, lng };
+              }
+              const placeCoords = await geocodeSriLankaPlace(qParam);
+              if (placeCoords) return placeCoords;
+            }
+
+            // Check /maps/place/<name>
+            const placeMatch = u.match(/\/maps\/place\/([^/@?]+)/i);
+            if (placeMatch) {
+              const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
+              const placeCoords = await geocodeSriLankaPlace(placeName);
+              if (placeCoords) return placeCoords;
+            }
+          } catch (_) {
+            // continue checking other hops
+          }
         }
 
-        // Fallback: Check if redirected to a place name in the URL (e.g. /maps/place/Galle+Fort/...)
-        const placeMatch = finalUrl.match(/\/maps\/place\/([^/@?]+)/i);
-        if (placeMatch) {
-          const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
-          const placeCoords = await resolveLocationCoords({ text: placeName });
-          if (placeCoords) return placeCoords;
+        // If URL parsing didn't find coordinates, fetch HTML of finalUrl and inspect !3d!4d coordinates
+        try {
+          const res = await fetch(finalUrl, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept-Language": "en-US,en;q=0.9",
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          const html = await res.text();
+
+          // Extract all !3d<lat>!4d<lng> coordinates
+          const dMatches = [...html.matchAll(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/g)];
+          const validCoords: { lat: number; lng: number }[] = [];
+          for (const m of dMatches) {
+            const lat = parseFloat(m[1]);
+            const lng = parseFloat(m[2]);
+            if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
+              validCoords.push({ lat, lng });
+            }
+          }
+
+          if (validCoords.length > 0) {
+            // If multiple points found (e.g. directions), pickup is first, dropoff is last
+            const selected = role === "dropoff" ? validCoords[validCoords.length - 1] : validCoords[0];
+            return selected;
+          }
+
+          // Check if there is a meta or title with place name
+          const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+          if (titleMatch && !titleMatch[1].trim().toLowerCase().startsWith("google maps")) {
+            const cleanTitle = titleMatch[1].replace(/- Google Maps/i, "").trim();
+            const placeCoords = await geocodeSriLankaPlace(cleanTitle);
+            if (placeCoords) return placeCoords;
+          }
+        } catch (err) {
+          console.warn("[Google Maps HTML Parser] notice:", (err as Error).message);
         }
       }
     } catch (e) {
@@ -552,43 +726,23 @@ export async function extractCoordinatesFromTextOrUrl(text: string): Promise<{ l
   return null;
 }
 
-export async function resolveLocationCoords(input: LocationInput): Promise<{ lat: number; lng: number } | null> {
-  if (input.coords?.lat && input.coords?.lng) {
+export async function resolveLocationCoords(
+  input: LocationInput,
+  role: "pickup" | "dropoff" = "dropoff"
+): Promise<{ lat: number; lng: number } | null> {
+  if (input.coords?.lat && input.coords?.lng && isSriLankaCoords(input.coords.lat, input.coords.lng)) {
     return input.coords;
   }
   if (!input.text) return null;
 
-  // 1. Check if the text contains a Google Maps URL or GPS coordinates
-  const parsedCoords = await extractCoordinatesFromTextOrUrl(input.text);
+  // 1. Check if the text contains a Google Maps URL, raw coordinates, or directions link
+  const parsedCoords = await extractCoordinatesFromTextOrUrl(input.text, role);
   if (parsedCoords) {
     return parsedCoords;
   }
 
-  // 2. Check built-in Sri Lanka towns
-  const textLower = input.text.toLowerCase().trim();
-  for (const [town, coords] of Object.entries(SRI_LANKA_TOWNS)) {
-    if (textLower.includes(town)) {
-      return coords;
-    }
-  }
-
-  // Fallback to OpenStreetMap Nominatim
-  try {
-    const q = textLower.includes("sri lanka") ? input.text : `${input.text}, Sri Lanka`;
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, {
-      headers: { "User-Agent": "CentralCabService/1.0" },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
-        return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
-      }
-    }
-  } catch (err) {
-    console.warn("Nominatim lookup notice:", (err as Error).message);
-  }
-  return null;
+  // 2. Geocode as place or town name
+  return await geocodeSriLankaPlace(input.text);
 }
 
 function calculateHaversineDistance(
@@ -656,8 +810,8 @@ export async function getRoutingDistance(
 ): Promise<{ distanceKm: number; distanceText: string }> {
   try {
     // 1. Resolve coordinates for Pickup and Dropoff
-    const originCoords = await resolveLocationCoords(pickup);
-    const destCoords = await resolveLocationCoords(dropoff);
+    const originCoords = await resolveLocationCoords(pickup, "pickup");
+    const destCoords = await resolveLocationCoords(dropoff, "dropoff");
 
     if (originCoords && destCoords) {
       // 2. Primary Engine: OSRM Route API
