@@ -25,6 +25,13 @@ import {
   getDeliveryOrderSummaryCard,
   getTripTypePoll,
 } from "./i18n.ts";
+import {
+  handleAdminMessage,
+  isAdminUser,
+  extractOrderCode,
+  extractShopPickupLocation,
+  CabSystemSettings,
+} from "./adminHandler.ts";
 
 export interface TestResultItem {
   name: string;
@@ -756,6 +763,260 @@ export async function runAllAutomatedTests(
     record("12.9 Bus Rosa Mini Bus 216km fare is correct (39920)", fareBus.totalFare === 39920, `Got: ${fareBus.totalFare}`);
     record("12.10 Bus Rosa Mini Bus gross fare is correct (44200)", fareBus.grossFare === 44200, `Got: ${fareBus.grossFare}`);
     record("12.11 Bus Rosa Mini Bus discount amount is correct (4280)", fareBus.discountAmount === 4280, `Got: ${fareBus.discountAmount}`);
+
+    // ------------------------------------------------------------------------
+    // TEST 13: ADMIN HANDLING & SERVICE APPROVAL WORKFLOWS (ALL SERVICES)
+    // ------------------------------------------------------------------------
+    const adminSystemSettings: CabSystemSettings = {
+      admin_whatsapp_number: "94770001122",
+      hire_admin_number: "94770003344",
+      rent_admin_number: "94770005566",
+      delivery_admin_number: "94770007788",
+      hire_driver_groups: [],
+      rent_a_car_groups: [],
+      delivery_driver_groups: [],
+      delivery_rider_groups: [],
+      broadcast_delay_seconds: 0,
+    };
+
+    // 13.1 - 13.6: Admin Authorization
+    record("13.1 Master Admin phone authentication", isAdminUser("94770001122", adminSystemSettings) === true);
+    record("13.2 Local Sri Lankan 07X formatting matches admin", isAdminUser("0770001122", adminSystemSettings) === true);
+    record("13.3 Hire Admin phone authentication", isAdminUser("94770003344", adminSystemSettings) === true);
+    record("13.4 Rent a Car Admin phone authentication", isAdminUser("94770005566", adminSystemSettings) === true);
+    record("13.5 Delivery Admin phone authentication", isAdminUser("94770007788", adminSystemSettings) === true);
+    record("13.6 Rejects non-admin phone", isAdminUser("94719998877", adminSystemSettings) === false);
+
+    // 13.7 - 13.9: Order Code Extraction
+    record("13.7 Extract HIR order code", extractOrderCode("CONFIRM HIR 015") === "HIR 015");
+    record("13.8 Extract RNT order code", extractOrderCode("RNT 003") === "RNT 003");
+    record("13.9 Extract DEL order code", extractOrderCode("DEL 008") === "DEL 008");
+
+    // 13.10: Shop Location Extraction
+    const extractedShop = extractShopPickupLocation("CONFIRM DEL 008 Perera Bakers, Main Street", "DEL 008");
+    record("13.10 Extract shop pickup location from delivery text", extractedShop === "Perera Bakers, Main Street", `Got: ${extractedShop}`);
+
+    const testAdminPhone = "94770001122";
+    const dummyApiKey = "test_key";
+
+    // 13.11 - 13.12: Service 1 (Hire Cab) Admin Approval Workflow
+    // Clean up any existing test records first
+    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "RNT 991", "DEL 991", "DEL 992"]);
+
+    // Insert test Hire order
+    await supabase.schema("central_cab").from("orders").insert({
+      user_id: userId,
+      order_code: "HIR 991",
+      service_type: "transport",
+      customer_name: "Test Customer",
+      customer_phone: "0771234567",
+      whatsapp_phone: "94771234567",
+      vehicle_type: "Car (Sedan)",
+      pickup_address: "Batticaloa Town",
+      dropoff_address: "Kallady Beach",
+      status: "pending",
+      total_fare: 1500,
+      total_amount: 1500,
+      order_items: [],
+    });
+
+    // Step 1: Admin sends order code
+    const hireRes1 = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "HIR 991",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.11 Hire Cab Order step 1 prompts for Driver Voice Note",
+      hireRes1.handled && (hireRes1.replyText?.includes("Driver Voice Note") ?? false),
+      hireRes1.replyText
+    );
+
+    // Step 2: Admin sends voice note
+    const hireRes2 = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "Voice Note Audio",
+      "ptt",
+      { directMediaUrl: "https://example.com/test-voice.ogg" },
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.12 Hire Cab Order step 2 voice note confirms order",
+      hireRes2.handled && (hireRes2.replyText?.includes("Voice update for Order *HIR 991*") ?? false),
+      hireRes2.replyText
+    );
+
+    const { data: verifiedHire } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status, assigned_voice_url")
+      .eq("order_code", "HIR 991")
+      .maybeSingle();
+    record("13.13 Hire Cab status in DB is confirmed with voice URL", verifiedHire?.status === "confirmed" && verifiedHire?.assigned_voice_url === "https://example.com/test-voice.ogg");
+
+    // 13.14: Service 2 (Rent a Car) Admin Approval Workflow
+    await supabase.schema("central_cab").from("orders").insert({
+      user_id: userId,
+      order_code: "RNT 991",
+      service_type: "rent_a_car",
+      customer_name: "Test Renter",
+      customer_phone: "0771234567",
+      whatsapp_phone: "94771234567",
+      vehicle_type: "Toyota Axio",
+      pickup_address: "Jaffna Town",
+      dropoff_address: "Jaffna Town",
+      status: "pending",
+      total_fare: 45000,
+      total_amount: 45000,
+      order_items: [],
+    });
+
+    const rentRes = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "CONFIRM RNT 991",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.14 Rent a Car immediate approval confirms order",
+      rentRes.handled && (rentRes.replyText?.includes("Rent a Car Order *RNT 991* confirmed") ?? false),
+      rentRes.replyText
+    );
+
+    const { data: verifiedRent } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status")
+      .eq("order_code", "RNT 991")
+      .maybeSingle();
+    record("13.15 Rent a Car status in DB is confirmed", verifiedRent?.status === "confirmed");
+
+    // 13.16 - 13.17: Service 3 (Delivery) Two-Step Approval Workflow
+    await supabase.schema("central_cab").from("orders").insert({
+      user_id: userId,
+      order_code: "DEL 991",
+      service_type: "delivery",
+      customer_name: "Test Delivery Buyer",
+      customer_phone: "0771234567",
+      whatsapp_phone: "94771234567",
+      vehicle_type: "Motorbike",
+      pickup_address: "Pending Shop Pickup Assignment",
+      dropoff_address: "No 12, Main Street, Batticaloa",
+      delivery_items: "Chocolate Cake, Pastries",
+      status: "pending",
+      total_fare: 450,
+      total_amount: 450,
+      order_items: [],
+    });
+
+    const delRes1 = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "DEL 991",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.16 Delivery Order step 1 prompts for Shop Pickup Location",
+      delRes1.handled && (delRes1.replyText?.includes("Please send the Shop Pickup Location") ?? false),
+      delRes1.replyText
+    );
+
+    const delRes2 = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "Cargills Food City, Batticaloa",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.17 Delivery Order step 2 assigning shop location confirms order",
+      delRes2.handled && (delRes2.replyText?.includes("Shop Pickup Location assigned for Delivery Order DEL 991") ?? false),
+      delRes2.replyText
+    );
+
+    const { data: verifiedDel1 } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status, pickup_address")
+      .eq("order_code", "DEL 991")
+      .maybeSingle();
+    record("13.18 Delivery Order status in DB is confirmed with shop pickup", verifiedDel1?.status === "confirmed" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
+
+    // 13.19: Service 3 (Delivery) One-Step Approval Workflow
+    await supabase.schema("central_cab").from("orders").insert({
+      user_id: userId,
+      order_code: "DEL 992",
+      service_type: "delivery",
+      customer_name: "Test Fast Buyer",
+      customer_phone: "0771234567",
+      whatsapp_phone: "94771234567",
+      vehicle_type: "Motorbike",
+      pickup_address: "Pending Shop Pickup Assignment",
+      dropoff_address: "No 5, Lake Road, Batticaloa",
+      delivery_items: "Fried Rice x2",
+      status: "pending",
+      total_fare: 500,
+      total_amount: 500,
+      order_items: [],
+    });
+
+    const delFastRes = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "CONFIRM DEL 992 Royal Restaurant, Lake Road",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.19 Delivery Order single-step approval with inline shop location",
+      delFastRes.handled && (delFastRes.replyText?.includes("Shop Pickup Location assigned for Delivery Order DEL 992") ?? false),
+      delFastRes.replyText
+    );
+
+    const { data: verifiedDel2 } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status, pickup_address")
+      .eq("order_code", "DEL 992")
+      .maybeSingle();
+    record("13.20 Delivery Order single-step status in DB is confirmed", verifiedDel2?.status === "confirmed" && verifiedDel2?.pickup_address?.includes("Royal Restaurant"));
+
+    // Clean up test orders
+    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "RNT 991", "DEL 991", "DEL 992"]);
 
   } catch (err: any) {
     record("Fatal Test Exception", false, err.message + "\n" + err.stack);

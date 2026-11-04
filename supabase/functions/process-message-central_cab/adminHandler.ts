@@ -54,7 +54,7 @@ export function extractShopPickupLocation(messageText: string, orderCode: string
  */
 export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettings): boolean {
   const senderPhone = normalizePhone(phoneNumber);
-  if (!senderPhone) return false;
+  if (!senderPhone || senderPhone.length < 7) return false;
 
   const adminList = [
     normalizePhone(systemSettings?.admin_whatsapp_number),
@@ -63,7 +63,13 @@ export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettin
     normalizePhone(systemSettings?.delivery_admin_number),
   ].filter(Boolean);
 
-  return adminList.some((a) => senderPhone === a || senderPhone.endsWith(a) || a.endsWith(senderPhone));
+  const senderLast9 = senderPhone.slice(-9);
+
+  return adminList.some((a) => {
+    if (senderPhone === a) return true;
+    if (a.length >= 9 && senderLast9 === a.slice(-9)) return true;
+    return senderPhone.endsWith(a) || a.endsWith(senderPhone);
+  });
 }
 
 /**
