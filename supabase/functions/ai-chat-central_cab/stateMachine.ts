@@ -49,12 +49,20 @@ function isExpectedStepAnswer(
 
   if (flow === "CAB_FLOW") {
     if (step === "CAB_VEHICLE") {
-      const vKey = normalizeVehicleKey(trimmed, data.booking_type);
+      const vKey = normalizeVehicleKey(trimmed, data.booking_type, pricingSettings);
       if (vKey) return true;
     } else if (step === "CAB_MODEL") {
       const vKey = data.vehicle_key || "car";
       const models = pricingSettings[vKey]?.models || [];
       if (models.some((m) => lower.includes(m.name.toLowerCase()))) return true;
+    } else if (step === "CAB_DROPOFF") {
+      if (
+        lower === "1" || lower.startsWith("1.") || lower.includes("දන්නවා") || lower.includes("direct link") || lower.includes("i know") ||
+        lower === "2" || lower.startsWith("2.") || lower.includes("දන්නේ නෑ") || lower.includes("help") || lower.includes("guide") ||
+        /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(trimmed)
+      ) {
+        return true;
+      }
     } else if (step === "CAB_TRIP_TYPE") {
       if (lower.includes("one-way") || lower.includes("one way") || lower.includes("round") || lower.includes("single")) return true;
     } else if (step === "CAB_CONFIRM") {
@@ -123,19 +131,14 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
     "mudiyuma", "mudiyatha", "ealuma", "theriyuma", "iruka", "irukka", "irukkuma", "vilai", "katnam", "ethana", "evvalavu", "thavarana", "maathu",
     "help", "doubt", "santhegam", "kelvi", "inquiry", "support", "faq", "advance", "payment", "luggage",
     "seating", "seats", "passenger", "passengers", "safe", "hours",
-    "epadi", "eppadi", "enna", "enga", "eppo", "varuma", "tharuveengala", "wahanayak"
+    "epadi", "eppadi", "enna", "enga", "eppo", "varuma", "tharuveengala", "wahanayak",
+    "panam", "kaasu", "munpanam", "kattanuma", "petrol", "diesel", "toll", "highway", "expressway",
+    "driver", "vanthutara", "call pannuvaara", "call seivaara", "solla mudiyuma", "sollunga"
   ];
   
   const sinWords = [
     "මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය",
     "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "ඒසී", "ගාස්තු", "ගාස්තුව", "කොමිස්"
-  ];
-
-  const tamWords = [
-    "கேள்வி", "சந்தேகம்", "உதவி", "விலை", "கட்டணம்", "முடியுமா", "முடியாதா",
-    "இருக்கா", "இருக்குமா", "எப்படி", "எப்போது", "எங்கே", "என்ன", "எத்தனை",
-    "ஏசி", "தள்ளுபடி", "ரத்து", "லக்கேஜ்", "முன்பணம்", "விபரம்", "பாதுகாப்பு",
-    "முறை", "நேரம்", "எப்போ", "என்னென்ன", "யார்"
   ];
 
   if (text.length > 80 && !lower.startsWith("location:")) return true;
@@ -148,10 +151,6 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
   for (const w of sinWords) {
     if (lower.includes(w)) return true;
   }
-
-  for (const w of tamWords) {
-    if (lower.includes(w)) return true;
-  }
   
   return false;
 }
@@ -160,7 +159,7 @@ function getWelcomeMessage(welcomeSetting?: any): string {
   if (welcomeSetting?.text?.trim()) {
     return welcomeSetting.text.trim();
   }
-  return "Welcome to Central Cabs & Delivery / Central Cabs වෙත සාදරයෙන් පිළිගනිමු / Central Cabs-க்கு தங்களை அன்புடன் வரவேற்கிறோம்!";
+  return "Welcome to Central Cabs & Delivery / Central Cabs වෙත සාදරයෙන් පිළිගනිමු!";
 }
 
 export async function processCustomerChatStep(
@@ -182,15 +181,13 @@ export async function processCustomerChatStep(
   const lower = trimmed.toLowerCase();
   const data = session.session_data || {};
 
-  // Retrieve session language or allow explicit keyword switches (tamil, sinhala, english)
-  if (lower === "tamil" || lower === "தமிழ்" || lower === "tamizh" || lower === "thamizh") {
-    data.language = "ta";
-  } else if (lower === "sinhala" || lower === "සිංහල" || lower === "singlish") {
+  // Retrieve session language or allow explicit keyword switches (sinhala, english)
+  if (lower === "sinhala" || lower === "සිංහල" || lower === "singlish") {
     data.language = "si";
   } else if (lower === "english" || lower === "en") {
     data.language = "en";
   }
-  let lang: SupportedLanguage = data.language || "si";
+  let lang: SupportedLanguage = data.language === "en" ? "en" : "si";
 
   // =========================================================================
   // 1. GLOBAL RESET INTERCEPTION (Poll vote or text command)
@@ -213,12 +210,11 @@ export async function processCustomerChatStep(
     lower === "language" ||
     lower === "change language" ||
     lower === "භාෂාව" ||
-    lower === "மொழி" ||
     lower === "lang";
   if (isChangeLangCmd) {
     console.log(`[stateMachine] Language change requested by ${phoneNumber}`);
     return {
-      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න / தயவுசெய்து உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
       poll: getLanguagePoll(),
       sendTextWithPoll: true,
       nextFlow: "IDLE",
@@ -230,7 +226,7 @@ export async function processCustomerChatStep(
   // =========================================================================
   // 2. GLOBAL CANCEL ORDER INTERCEPTION
   // =========================================================================
-  const isDirectCancelCommand = lower === "cancel" || lower === "cancel order" || lower === "අවලංගු" || lower === "ரத்து";
+  const isDirectCancelCommand = lower === "cancel" || lower === "cancel order" || lower === "අවලංගු";
   const isConfirmationStep =
     (session.current_step || "WELCOME") === "CANCEL_CONFIRM" ||
     (session.current_step || "WELCOME") === "CAB_CONFIRM" ||
@@ -245,23 +241,19 @@ export async function processCustomerChatStep(
   // GLOBAL HELP / FAQ INTERCEPTION
   // =========================================================================
   const isHelpCmd = isHelpChoice(trimmed);
-  if (isHelpCmd && !isConfirmationStep) {
+  if (isHelpCmd && !isConfirmationStep && (session.current_step || "WELCOME") !== "CAB_DROPOFF") {
     const isPausedFromBooking = (session.flow_type === "CAB_FLOW" || session.flow_type === "DELIVERY_FLOW" || session.flow_type === "RENT_A_CAR_FLOW");
     if (isPausedFromBooking) {
       data.paused_flow = session.flow_type;
       data.paused_step = session.current_step;
     }
-    const helpPrompt = lang === "ta"
+    const helpPrompt = lang === "en"
       ? (isPausedFromBooking
-        ? "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். பதில் அளித்தவுடன் நீங்கள் விட்ட இடத்தில் இருந்து முன்பதிவைத் தொடரலாம்.\n\n(முன்பதிவைத் தொடர *Continue* அல்லது மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)"
-        : "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். எங்கள் FAQ மற்றும் சேவை விபரங்களின் அடிப்படையில் உங்களுக்கு உடனடியாகப் பதிலளிக்கப்படும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)")
-      : (lang === "si"
-        ? (isPausedFromBooking
-          ? "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. පිළිතුර ලබා දුන් පසු ඔබ නැවතුණු තැනින්ම Booking එක ඉදිරියට ගෙන යා හැක.\n\n(Booking එක ඉදිරියට ගෙන යාමට *Continue* හෝ මෙනුවට යාමට *Menu* Type කරන්න)"
-          : "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)")
-        : (isPausedFromBooking
-          ? "❓ *How can we help you?*\n\nPlease type your question or doubt here. Once answered, you can continue your booking right from where you left off.\n\n(Type *Continue* to resume booking, or *Menu* to return to main menu)"
-          : "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)"));
+        ? "❓ *How can we help you?*\n\nPlease type your question or doubt here. Once answered, you can continue your booking right from where you left off.\n\n(Type *Continue* to resume booking, or *Menu* to return to main menu)"
+        : "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)")
+      : (isPausedFromBooking
+        ? "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. පිළිතුර ලබා දුන් පසු ඔබ නැවතුණු තැනින්ම Booking එක ඉදිරියට ගෙන යා හැක.\n\n(Booking එක ඉදිරියට ගෙන යාමට *Continue* හෝ මෙනුවට යාමට *Menu* Type කරන්න)"
+        : "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)");
 
     return {
       replyText: helpPrompt,
@@ -295,7 +287,16 @@ export async function processCustomerChatStep(
 
   // Invalid fallback helper
   const invalidFallback = async (fallbackStr: string, stepPoll?: PollPayload): Promise<StepProcessResult> => {
-    const aiReply = await handleAiFallback(supabase, userId, trimmed, fallbackStr, pricingSettings, lang);
+    const aiReply = await handleAiFallback(
+      supabase,
+      userId,
+      trimmed,
+      fallbackStr,
+      pricingSettings,
+      lang,
+      session,
+      phoneNumber
+    );
     
     if (aiReply.includes("INTENT_CANCEL_ORDER")) {
       return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
@@ -307,7 +308,9 @@ export async function processCustomerChatStep(
       delete data.dropoff_coords;
       const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
       return {
-        replyText: "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+        replyText: lang === "en"
+          ? "We noticed your location or distance seems incorrect. Please enter your pickup location again:"
+          : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
         nextFlow: flow,
         nextStep,
         sessionData: data,
@@ -328,18 +331,14 @@ export async function processCustomerChatStep(
     // AI answered the question or returned unknown info: format clean resumption
     let finalAnswer = aiReply.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
     if (finalAnswer.includes("UNKNOWN_INFO") || finalAnswer.includes("Sorry, I don't have that information")) {
-      finalAnswer = lang === "ta"
-        ? "💡 எமது FAQ விபரங்களின்படி உங்கள் கேள்விக்கான நேரடித் தகவல் தற்போது கிடைக்கவில்லை. எமது முகவர் அல்லது சாரதி விரைவில் உங்களைத் தொடர்புகொண்டு தேவையான விபரங்களைத் தெரிவிப்பார்."
-        : (lang === "si"
-          ? "💡 අපගේ FAQ විස්තර වල ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු දැනට ඇතුළත් කර නොමැත. අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත."
-          : "💡 We do not currently have specific information for this query in our FAQs. Our customer agent will assist you shortly with the details.");
+      finalAnswer = lang === "en"
+        ? "💡 We do not currently have specific information for this query in our FAQs. Our customer agent will assist you shortly with the details."
+        : "💡 අපගේ FAQ විස්තර වල ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු දැනට ඇතුළත් කර නොමැත. අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත.";
     }
 
-    const resumeHeader = lang === "ta"
-      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *உங்கள் முன்பதிவைத் தொடரலாம்:*\n"
-      : (lang === "si"
-        ? "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n"
-        : "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n");
+    const resumeHeader = lang === "en"
+      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n"
+      : "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
 
     const effectivePoll = stepPoll || getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
 
@@ -358,6 +357,7 @@ export async function processCustomerChatStep(
     || lower.startsWith("location:")
     || lower.includes("whatsapp location pin")
     || Boolean(rawPayload?.locationDetails)
+    || /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(trimmed)
     || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
 
   const isLocationStep = step === "DELIVERY_LOCATION" || step === "CAB_PICKUP" || step === "CAB_DROPOFF" || step === "RENT_LOCATION";
@@ -366,7 +366,16 @@ export async function processCustomerChatStep(
 
   // Question interception for active booking flows (Answers question and resumes flow!)
   if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldInterceptQuestion && isPossibleQuestion(trimmed, messageType)) {
-    const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
+    const answer = await queryFaqsAndAi(
+      supabase,
+      userId,
+      trimmed,
+      pricingSettings,
+      lang,
+      handleAiFallback,
+      session,
+      phoneNumber
+    );
     
     if (answer.includes("INTENT_CANCEL_ORDER")) {
       return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
@@ -378,8 +387,8 @@ export async function processCustomerChatStep(
       delete data.dropoff_coords;
       const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
       return {
-        replyText: lang === "ta"
-          ? "உங்கள் Location அல்லது தூரம் தவறாக உள்ளதை உணர்ந்தோம். தயவுசெய்து உங்கள் Pickup இடத்தை மீண்டும் உள்ளிடவும்:"
+        replyText: lang === "en"
+          ? "We noticed your location or distance seems incorrect. Please enter your pickup location again:"
           : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
         nextFlow: flow,
         nextStep,
@@ -389,11 +398,9 @@ export async function processCustomerChatStep(
 
     const stepPrompt = getStepPromptText(flow, step, lang);
     const stepPoll = getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
-    const resumeHeader = lang === "ta"
-      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *உங்கள் முன்பதிவைத் தொடரலாம்:*\n"
-      : (lang === "si"
-        ? "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n"
-        : "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n");
+    const resumeHeader = lang === "en"
+      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n"
+      : "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
 
     return {
       replyText: `${answer}\n\n${resumeHeader}${stepPrompt}`,
@@ -439,7 +446,7 @@ export async function processCustomerChatStep(
 
     // Invalid language selection: re-prompt language poll
     return {
-      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න / தயவுசெய்து உங்கள் மொழியைத் தேர்ந்தெடுக்கவும்:",
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
       poll: getLanguagePoll(),
       sendTextWithPoll: true,
       nextFlow: "IDLE",
@@ -454,11 +461,9 @@ export async function processCustomerChatStep(
   if (step === "BOOKING_COMPLETED") {
     if (isHelpChoice(trimmed)) {
       return {
-        replyText: lang === "ta"
-          ? "❓ *உங்களுக்கு என்ன சந்தேகம் அல்லது விபரம் தேவை?*\n\nஉங்கள் கேள்வியை இங்கே தட்டச்சு செய்யவும். எங்கள் FAQ மற்றும் சேவை விபரங்களின் அடிப்படையில் உங்களுக்கு உடனடியாகப் பதிலளிக்கப்படும்.\n\n(பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்)"
-          : (lang === "si"
-            ? "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)"
-            : "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)"),
+        replyText: lang === "en"
+          ? "❓ *How can we help you?*\n\nPlease type your question or inquiry here. We will answer you right away based on our FAQs.\n\n(Type *Menu* anytime to return to main options)"
+          : "❓ *ඔබට දැනගැනීමට අවශ්‍ය කුමක්ද?*\n\nඔබගේ ප්‍රශ්නය මෙහි Type කරන්න. අපගේ FAQ සහ සේවා විස්තර අනුව ඔබට වහාම පිළිතුරු ලබා දෙනු ඇත.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)",
         nextFlow: "FAQ_FLOW",
         nextStep: "FAQ_ASK",
         sessionData: data,
@@ -470,12 +475,19 @@ export async function processCustomerChatStep(
     }
 
     if (isPossibleQuestion(trimmed)) {
-      const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
-      const followUpNote = lang === "ta"
-        ? "\n\n💡 மேலதிக கேள்வி கேட்கலாம் அல்லது பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்."
-        : (lang === "si"
-          ? "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න."
-          : "\n\n💡 Feel free to ask another question or type *Menu* to return to main options.");
+      const answer = await queryFaqsAndAi(
+        supabase,
+        userId,
+        trimmed,
+        pricingSettings,
+        lang,
+        handleAiFallback,
+        session,
+        phoneNumber
+      );
+      const followUpNote = lang === "en"
+        ? "\n\n💡 Feel free to ask another question or type *Menu* to return to main options."
+        : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න.";
       return {
         replyText: `${answer}${followUpNote}`,
         nextFlow: "FAQ_FLOW",
@@ -560,12 +572,19 @@ export async function processCustomerChatStep(
 
     // If user asked a question at the Main Menu, answer it and re-display Category Poll
     if (isPossibleQuestion(trimmed)) {
-      const answer = await queryFaqsAndAi(supabase, userId, trimmed, pricingSettings, lang, handleAiFallback);
-      const followUpNote = lang === "ta"
-        ? "\n\n💡 மேலதிக கேள்வி கேட்கலாம் அல்லது கீழேயுள்ள தெரிவுகளில் இருந்து சேவையைத் தேர்ந்தெடுக்கவும்:"
-        : (lang === "si"
-          ? "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ පහත මෙනුවෙන් සේවාවක් තෝරන්න:"
-          : "\n\n💡 Feel free to ask another question or select a service from the menu below:");
+      const answer = await queryFaqsAndAi(
+        supabase,
+        userId,
+        trimmed,
+        pricingSettings,
+        lang,
+        handleAiFallback,
+        session,
+        phoneNumber
+      );
+      const followUpNote = lang === "en"
+        ? "\n\n💡 Feel free to ask another question or select a service from the menu below:"
+        : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ පහත මෙනුවෙන් සේවාවක් තෝරන්න:";
       return {
         replyText: `${answer}${followUpNote}`,
         poll: getCategoryPoll(lang),
@@ -654,7 +673,9 @@ export async function processCustomerChatStep(
       data,
       lang,
       pricingSettings,
-      handleAiFallback
+      handleAiFallback,
+      session,
+      phoneNumber
     );
   }
 
@@ -691,7 +712,10 @@ async function handleAiFallback(
   userMessage: string,
   fallbackErrorPrompt: string,
   pricingSettings: PricingSettings,
-  lang: SupportedLanguage = "si"
+  lang: SupportedLanguage = "si",
+  session?: BotSessionState,
+  phoneNumber?: string,
+  matchedFaqHint?: { question: string; answer: string } | null
 ): Promise<string> {
   const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
   const aiGenerateUrl = Deno.env.get("AI_GENERATE_URL");
@@ -718,7 +742,98 @@ async function handleAiFallback(
     console.warn("[handleAiFallback] Error fetching faqs:", err);
   }
 
-  // 2. Build Models and Pricing Context
+  // 2. Fetch Recent Conversation History (Last 10 messages)
+  let recentChat: Array<{ role: string; content: string }> = [];
+  if (phoneNumber) {
+    try {
+      const { data: convs } = await supabase
+        .schema("central_cab")
+        .from("conversations")
+        .select("direction, message, created_at")
+        .eq("user_id", userId)
+        .eq("phone_number", phoneNumber)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (convs && convs.length > 0) {
+        const chronological = convs.reverse();
+        for (const c of chronological) {
+          const raw = (c.message || "").trim();
+          if (!raw) continue;
+          if (raw.startsWith("[locationDetails") || (raw.startsWith("{") && raw.endsWith("}"))) continue;
+
+          let text = raw;
+          if (text.startsWith("[Poll]")) {
+            text = text.replace(/^\[Poll\]\s*/i, "Options: ");
+          }
+
+          const role = c.direction === "inbound" ? "user" : "assistant";
+          recentChat.push({ role, content: text });
+        }
+
+        // Avoid duplicating the user message if it's already the last element
+        if (recentChat.length > 0) {
+          const last = recentChat[recentChat.length - 1];
+          if (last.role === "user" && last.content.toLowerCase() === userMessage.trim().toLowerCase()) {
+            recentChat.pop();
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[handleAiFallback] Error fetching conversations:", err);
+    }
+  }
+
+  // 3. Build User Live Progress & Context
+  let userLiveContext = "";
+  if (session) {
+    const d = session.session_data || {};
+    const flowName = session.flow_type || "IDLE";
+    const stepName = session.current_step || "WELCOME";
+
+    let stepDescription = stepName;
+    if (stepName === "CAB_TIMING_CHOICE") stepDescription = "Choosing between Ride Now (immediate) or Schedule Ride (advance reservation)";
+    else if (stepName === "CAB_SCHEDULE_DATE") stepDescription = "Entering date for scheduled trip";
+    else if (stepName === "CAB_SCHEDULE_TIME") stepDescription = "Entering time for scheduled trip";
+    else if (stepName === "CAB_NAME") stepDescription = "Providing customer name";
+    else if (stepName === "CAB_PHONE") stepDescription = "Confirming customer phone number";
+    else if (stepName === "CAB_VEHICLE") stepDescription = "Selecting vehicle type (Motorbike, Three-wheeler, Car, Van, Lorry, Bus)";
+    else if (stepName === "CAB_MODEL") stepDescription = "Selecting specific car/van model";
+    else if (stepName === "CAB_PICKUP") stepDescription = "Sharing pickup location (GPS Pin / Google Maps link)";
+    else if (stepName === "CAB_DROPOFF") stepDescription = "Sharing drop-off destination location";
+    else if (stepName === "CAB_TRIP_TYPE") stepDescription = "Choosing One-Way or Round Trip";
+    else if (stepName === "CAB_CONFIRM") stepDescription = "Reviewing calculated fare and confirming ride";
+    else if (stepName === "BOOKING_COMPLETED") stepDescription = "Ride or order completed and dispatched to drivers";
+    else if (stepName === "RENT_VEHICLE_CHOICE") stepDescription = "Selecting rental vehicle";
+    else if (stepName === "RENT_DURATION") stepDescription = "Specifying rental duration (days/weeks)";
+    else if (stepName === "DELIVERY_CATEGORY") stepDescription = "Selecting delivery category (Food/Grocery/Medicine/Parcel)";
+    else if (stepName === "DELIVERY_ITEMS") stepDescription = "Listing items to purchase or deliver";
+    else if (stepName === "DELIVERY_LOCATION") stepDescription = "Providing delivery drop-off location";
+
+    userLiveContext = `
+=== CURRENT CUSTOMER LIVE BOOKING STATE ===
+- Active Service Flow: ${flowName}
+- Current Stage / Step: ${stepDescription}
+- Booking Timing: ${d.booking_type === "schedule" ? "Scheduled / Advance Ride" : (d.booking_type === "now" ? "Immediate Ride Now" : "Not yet selected")}
+- Customer Name: ${d.customer_name || "Not entered yet"}
+- Customer Contact: ${d.customer_phone || phoneNumber || "Not entered yet"}
+- Selected Vehicle: ${d.vehicle_key ? `${d.vehicle_key.toUpperCase()}${d.selected_model ? ` (${d.selected_model})` : ""}` : "Not selected yet"}
+- Pickup Location: ${d.pickup_text || "Not set yet"}
+- Dropoff Location: ${d.dropoff_text || "Not set yet"}
+- Scheduled Time: ${d.scheduled_time || "None"}
+- Trip Type: ${d.trip_type ? (d.trip_type === "round_trip" ? "Round Trip (Return journey)" : "One-Way") : "Not selected yet"}
+`;
+  }
+
+  // 4. Matched FAQ candidate section
+  const matchedFaqSection = matchedFaqHint ? `
+=== HIGH RELEVANCE DATABASE FAQ MATCH ===
+Question: ${matchedFaqHint.question}
+Answer: ${matchedFaqHint.answer}
+(Instruction: Use this verified answer as your primary source of truth. Translate and adapt it smoothly into the customer's selected language, taking into account their current vehicle and booking status).
+` : "";
+
+  // 5. Build Models and Pricing Context
   const carModels = (pricingSettings.car?.models || []).map((m: any) => m.name).join(", ") || "Alto, WagonR, Prius, Axio, Aqua";
   const vanModels = (pricingSettings.van?.models || []).map((m: any) => m.name).join(", ") || "KDH (High Roof / Flat Roof), Caravan, Dolphin";
   const lorryModels = (pricingSettings.lorry?.models || []).map((m: any) => m.name).join(", ") || "Dimo Batta, Canter, Light Trucks";
@@ -734,7 +849,7 @@ async function handleAiFallback(
 (Note: Live trip total fare is computed live via Google Maps once pickup and dropoff points are provided).
 `;
 
-  // 3. Service Architecture and Specifications Context
+  // 6. Service Architecture and Specifications Context
   const serviceKnowledge = `
 === CENTRAL CABS & DELIVERY SERVICE SPECIFICATIONS ===
 1. Transport / Hire Cabs:
@@ -744,7 +859,7 @@ async function handleAiFallback(
 - Trip Types: One-Way (එක් පැත්තක්) or Round Trip (දෙපැත්තම - Up & Down return journey).
 - Booking Process in WhatsApp: Select Ride Now/Schedule -> Name -> Phone -> Vehicle & Model -> Pickup Location pin/address -> Drop-off Location pin/address -> Live fare calculated via Google Maps -> Order Confirmed -> Broadcasted to verified driver groups -> Driver assigned.
 - Commission: 10% commission applies.
-- Cancellation: Free cancellation anytime before the driver arrives by typing "cancel" or "අවලංගු" or "ரத்து".
+- Cancellation: Free cancellation anytime before the driver arrives by typing "cancel" or "අවලංගු".
 
 2. Rent a Car (Self-drive / With Driver Rentals):
 - Customer chooses vehicle category (Car, Van, etc.) and model preference.
@@ -767,14 +882,16 @@ async function handleAiFallback(
 - Bus: 20 to 54 passengers, AC and non-AC options, ideal for pilgrimages, staff transport, school trips, and large tour groups.
 `;
 
-  const langRule = lang === "ta"
-    ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Tamil using Tamil script (தமிழ்)."
-    : (lang === "en"
-      ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
-      : "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Sinhala using Sinhala script (සිංහල).");
+  const langRule = lang === "en"
+    ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
+    : "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Sinhala using Sinhala script (සිංහල).";
 
-  const systemPrompt = `You are the strict, hallucination-free virtual assistant for Ceylon Central Cabs & Delivery.
-The customer sent: "${userMessage}"
+  const systemPrompt = `You are the helpful, hallucination-free virtual assistant for Ceylon Central Cabs & Delivery.
+The customer's current message: "${userMessage}"
+
+${userLiveContext}
+
+${matchedFaqSection}
 
 ${serviceKnowledge}
 
@@ -783,21 +900,30 @@ ${pricingContext}
 === VERIFIED DATABASE FAQS ===
 ${faqText}
 
-=== STRICT ZERO-HALLUCINATION RULES ===
-1. Answer the customer's question ONLY using the factual details provided above in SERVICE SPECIFICATIONS, VEHICLE PRICING, VEHICLE CAPACITIES, and FAQS.
-2. ZERO HALLUCINATION: DO NOT fabricate, guess, extrapolate, or invent any facts, numbers, phone numbers, vehicle models, or policies not explicitly written above.
-3. If the user's question CANNOT be answered from the provided knowledge, DO NOT guess or make up an answer. You MUST reply EXACTLY with: "UNKNOWN_INFO".
-4. If the message is NOT a question or inquiry (e.g. it is simply answering a booking step like giving a name, a phone number, an address, a date, or saying 'ok', 'yes', 'no'), you MUST reply EXACTLY with: "NOT_A_QUESTION".
-5. INTENT TO CANCEL: If the customer explicitly demands or insists to cancel their active booking/order right now (e.g., "cancel my booking", "cancel it", "danma cancel karanna", "cancel pannunga"), you MUST reply EXACTLY with: "INTENT_CANCEL_ORDER".
-6. INTENT WRONG LOCATION / DISTANCE: If the customer states or complains that their pickup location, dropoff location, distance, or price is wrong or calculated incorrectly (e.g., "wrong location", "location thavarana", "dura weradi", "location pila"), you MUST reply EXACTLY with: "INTENT_WRONG_LOCATION".
-7. ${langRule}
-8. Keep the answer concise (1 to 3 sentences maximum), friendly, and professional.
-9. OUTPUT ONLY the direct answer. DO NOT output internal thinking, notes, thoughts, or explanations.`;
+=== STRICT INSTRUCTIONS & CONTEXT-AWARE RULES ===
+1. MULTILINGUAL & SINGLISH/ENGLISH TOLERANCE: Customers frequently write in Singlish (Sinhala words in English script, e.g. "Car eke AC thiyeda?", "Kiyada yanne?") or English. Semantically interpret their intent accurately.
+2. CONTEXTUAL RESOLUTION: Use the "CURRENT CUSTOMER LIVE BOOKING STATE" and chat history to resolve pronouns ("it", "this car", "my ride"). For example, if they ask "Does it have AC?" and they have selected a Car/Van, confirm that their chosen vehicle is air-conditioned. If they ask about cost or time, refer specifically to their selected vehicle and route status.
+3. FACTUAL BOUNDARY: Answer the customer's question using the factual details provided above in SERVICE SPECIFICATIONS, VEHICLE PRICING, VEHICLE CAPACITIES, LIVE BOOKING STATE, and FAQS. Do NOT fabricate facts, phone numbers, or unlisted policies.
+4. If the user's question CANNOT be answered from the provided knowledge, DO NOT guess or make up an answer. Reply EXACTLY with: "UNKNOWN_INFO".
+5. If the message is NOT a question or inquiry (e.g. it is simply answering a booking step like giving a name, a phone number, an address, a date, or saying 'ok', 'yes', 'no'), reply EXACTLY with: "NOT_A_QUESTION".
+6. INTENT TO CANCEL: If the customer explicitly demands or insists to cancel their active booking/order right now (e.g., "cancel my booking", "cancel it", "danma cancel karanna"), reply EXACTLY with: "INTENT_CANCEL_ORDER".
+7. INTENT WRONG LOCATION / DISTANCE: If the customer states or complains that their pickup location, dropoff location, distance, or price is wrong or calculated incorrectly (e.g., "wrong location", "dura weradi"), reply EXACTLY with: "INTENT_WRONG_LOCATION".
+8. ${langRule}
+9. Keep the answer concise (1 to 3 sentences maximum), friendly, and professional.
+10. OUTPUT ONLY the direct answer. DO NOT output internal thinking, notes, thoughts, or explanations.`;
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userMessage }
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "system", content: systemPrompt }
   ];
+
+  for (const m of recentChat) {
+    messages.push({
+      role: m.role,
+      content: m.content
+    });
+  }
+
+  messages.push({ role: "user", content: userMessage });
 
   try {
     let rawText = "";

@@ -105,11 +105,9 @@ export async function handleCabFlowStep(
         data.schedule_time_only = timeParsed.formatted;
         data.scheduled_time = `${dateParsed.formatted} at ${timeParsed.formatted}`;
         data.raw_scheduled_time = trimmed;
-        const confirmPrefix = lang === "ta"
-          ? `✅ உங்கள் பயணம் *${data.scheduled_time}* நேரத்திற்கு முன்பதிவு செய்யப்பட்டது.\n\n`
-          : (lang === "si"
-            ? `✅ ඔබගේ Ride එක *${data.scheduled_time}* වේලාවට Schedule කරන ලදී.\n\n`
-            : `✅ Your ride is scheduled for *${data.scheduled_time}*.\n\n`);
+        const confirmPrefix = lang === "en"
+          ? `✅ Your ride is scheduled for *${data.scheduled_time}*.\n\n`
+          : `✅ ඔබගේ Ride එක *${data.scheduled_time}* වේලාවට Schedule කරන ලදී.\n\n`;
 
         return {
           replyText: confirmPrefix + getStepPromptText("CAB_FLOW", "CAB_NAME", lang),
@@ -123,11 +121,9 @@ export async function handleCabFlowStep(
       data.schedule_date = dateParsed.formatted;
       data.raw_schedule_date = trimmed;
 
-      const datePrefix = lang === "ta"
-        ? `✅ திகதி: *${dateParsed.formatted}*\n\n`
-        : (lang === "si"
-          ? `✅ දිනය: *${dateParsed.formatted}*\n\n`
-          : `✅ Date: *${dateParsed.formatted}*\n\n`);
+      const datePrefix = lang === "en"
+        ? `✅ Date: *${dateParsed.formatted}*\n\n`
+        : `✅ දිනය: *${dateParsed.formatted}*\n\n`;
 
       return {
         replyText: datePrefix + getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_TIME", lang),
@@ -150,11 +146,9 @@ export async function handleCabFlowStep(
         : `${datePart} at ${trimmed}`;
       data.raw_scheduled_time = trimmed;
 
-      const confirmPrefix = lang === "ta"
-        ? `✅ உங்கள் பயணம் *${data.scheduled_time}* நேரத்திற்கு முன்பதிவு செய்யப்பட்டது.\n\n`
-        : (lang === "si"
-          ? `✅ ඔබගේ Ride එක *${data.scheduled_time}* වේලාවට Schedule කරන ලදී.\n\n`
-          : `✅ Your ride is scheduled for *${data.scheduled_time}*.\n\n`);
+      const confirmPrefix = lang === "en"
+        ? `✅ Your ride is scheduled for *${data.scheduled_time}*.\n\n`
+        : `✅ ඔබගේ Ride එක *${data.scheduled_time}* වේලාවට Schedule කරන ලදී.\n\n`;
 
       return {
         replyText: confirmPrefix + getStepPromptText("CAB_FLOW", "CAB_NAME", lang),
@@ -180,11 +174,9 @@ export async function handleCabFlowStep(
     case "CAB_PHONE": {
       let digits = trimmed.replace(/\D/g, "");
       if (digits.length < 9) {
-        const phoneErr = lang === "ta"
-          ? "⚠️ தயவுசெய்து சரியான தொடர்பு இலக்கத்தை உள்ளிடவும் (உதாரணம்: 0771234567):"
-          : (lang === "si"
-            ? "⚠️ කරුණාකර නිවැරදි Contact Number එකක් ඇතුළත් කරන්න (උදා: 0771234567):"
-            : "⚠️ Please enter a valid contact phone number (e.g. 0771234567):");
+        const phoneErr = lang === "en"
+          ? "⚠️ Please enter a valid contact phone number (e.g. 0771234567):"
+          : "⚠️ කරුණාකර නිවැරදි Contact Number එකක් ඇතුළත් කරන්න (උදා: 0771234567):";
         return await invalidFallback(phoneErr);
       }
       if (digits.startsWith("0") && digits.length === 10) {
@@ -220,11 +212,9 @@ export async function handleCabFlowStep(
 
       // 1. Short Trip (Ride Now): Only allow ride-now vehicles
       if (isRideNow && !isRideNowVehicle) {
-        const rideNowErr = lang === "ta"
-          ? "⚠️ குறுகிய தூரப் பயணத்திற்கு (Short Trip) Motorbike அல்லது Three-wheeler மட்டுமே தெரிவு செய்ய முடியும். Car அல்லது Van முன்பதிவு செய்ய நீண்ட தூரப் பயணத்தைத் (Long Trip) தேர்ந்தெடுக்கவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
-          : (lang === "si"
-            ? "⚠️ ලග ගමනක් සඳහා Motorbike හෝ Three-wheeler පමණක් තෝරාගත හැක. Car හෝ Van සඳහා දුර ගමනක් තෝරන්න.\n\nකරුණාකර වාහනය තෝරන්න:"
-            : "⚠️ For Short Distance Trip, only Motorbike or Three-wheeler can be selected. For Car or Van, please choose Long Distance Trip.\n\nPlease select your vehicle:");
+        const rideNowErr = lang === "en"
+          ? "⚠️ For Short Distance Trip, only Motorbike or Three-wheeler can be selected. For Car or Van, please choose Long Distance Trip.\n\nPlease select your vehicle:"
+          : "⚠️ ලග ගමනක් සඳහා Motorbike හෝ Three-wheeler පමණක් තෝරාගත හැක. Car හෝ Van සඳහා දුර ගමනක් තෝරන්න.\n\nකරුණාකර වාහනය තෝරන්න:";
         return await invalidFallback(
           rideNowErr,
           getVehiclePoll(lang, false, bookingType, pricingSettings)
@@ -233,11 +223,9 @@ export async function handleCabFlowStep(
 
       // 2. Long Trip (Schedule Ride): Only allow schedule vehicles (Car, Van, Lorry, Bus, SUV, etc.)
       if (!isRideNow && isRideNowVehicle) {
-        const scheduleErr = lang === "ta"
-          ? "⚠️ நீண்ட தூரப் பயணத்திற்கு (Long Trip) Car, Van, Lorry அல்லது Bus போன்ற வாகனங்களைத் தேர்ந்தெடுக்கவும்.\n\nதயவுசெய்து வாகனத்தைத் தேர்ந்தெடுக்கவும்:"
-          : (lang === "si"
-            ? "⚠️ දුර ගමනක් සඳහා Car, Van, Lorry හෝ Bus වැනි වාහනයක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:"
-            : "⚠️ For Long Distance Trip, please select Car, Van, Lorry, Bus or available vehicles.\n\nPlease choose your vehicle:");
+        const scheduleErr = lang === "en"
+          ? "⚠️ For Long Distance Trip, please select Car, Van, Lorry, Bus or available vehicles.\n\nPlease choose your vehicle:"
+          : "⚠️ දුර ගමනක් සඳහා Car, Van, Lorry හෝ Bus වැනි වාහනයක් තෝරාගත හැක.\n\nකරුණාකර වාහනය තෝරන්න:";
         return await invalidFallback(
           scheduleErr,
           getVehiclePoll(lang, false, bookingType, pricingSettings)
@@ -266,11 +254,9 @@ export async function handleCabFlowStep(
           }
 
           const modelPoll = getVehicleModelPoll(vehicleKey, availableModels, lang, pricingSettings);
-          const promptText = lang === "ta"
-            ? `தயவுசெய்து நீங்கள் விரும்பும் *${getVehicleDisplayName(vehicleKey, pricingSettings)}* மாடலைத் தேர்ந்தெடுக்கவும்:`
-            : (lang === "si"
-              ? `කරුණාකර ඔබ කැමති *${getVehicleDisplayName(vehicleKey, pricingSettings)}* මාදිලිය තෝරන්න:`
-              : `Please choose your preferred *${getVehicleDisplayName(vehicleKey, pricingSettings)}* model:`);
+          const promptText = lang === "en"
+            ? `Please choose your preferred *${getVehicleDisplayName(vehicleKey, pricingSettings)}* model:`
+            : `කරුණාකර ඔබ කැමති *${getVehicleDisplayName(vehicleKey, pricingSettings)}* මාදිලිය තෝරන්න:`;
 
           return {
             replyText: promptText,
@@ -318,11 +304,9 @@ export async function handleCabFlowStep(
 
       if (!matchedModel) {
         return await invalidFallback(
-          lang === "ta"
-            ? "⚠️ தயவுசெய்து கீழே உள்ள மாடல்களில் ஒன்றைத் தேர்ந்தெடுக்கவும்:"
-            : (lang === "si"
-              ? "⚠️ කරුණාකර පහත දැක්වෙන මාදිලි වලින් එකක් තෝරන්න:"
-              : "⚠️ Please choose one of the models listed below:"),
+          lang === "en"
+            ? "⚠️ Please choose one of the models listed below:"
+            : "⚠️ කරුණාකර පහත දැක්වෙන මාදිලි වලින් එකක් තෝරන්න:",
           getVehicleModelPoll(vehicleKey, availableModels, lang, pricingSettings)
         );
       }
@@ -388,13 +372,11 @@ export async function handleCabFlowStep(
         trimmed === "2" ||
         lower.startsWith("2.") ||
         lower.startsWith("2 ") ||
-        lower.includes("தெரியாது") ||
         lower.includes("දන්නේ නෑ") ||
         lower.includes("don't know") ||
         lower.includes("dont know") ||
         lower.includes("help") ||
         lower.includes("guide") ||
-        lower.includes("உதவி") ||
         lower.includes("උපදෙස්");
 
       if (isHelpChoice) {
@@ -411,7 +393,6 @@ export async function handleCabFlowStep(
         trimmed === "1" ||
         lower.startsWith("1.") ||
         lower.startsWith("1 ") ||
-        lower.includes("தெரியும்") ||
         lower.includes("දන්නවා") ||
         lower.includes("i know") ||
         lower.includes("direct link");
@@ -576,9 +557,7 @@ export async function handleCabFlowStep(
           sessionData: { language: lang, last_order_code: orderCode },
         };
       } else if (isNegativeInput(trimmed)) {
-        const cancelMsg = lang === "ta"
-          ? "❌ முன்பதிவு ரத்து செய்யப்பட்டது.\n\n"
-          : (lang === "si" ? "❌ Booking එක Cancel කරන ලදී.\n\n" : "❌ Booking cancelled.\n\n");
+        const cancelMsg = lang === "en" ? "❌ Booking cancelled.\n\n" : "❌ Booking එක Cancel කරන ලදී.\n\n";
         return {
           replyText: cancelMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),
@@ -587,9 +566,7 @@ export async function handleCabFlowStep(
           sessionData: { language: lang },
         };
       } else if (isHomeOrResetInput(trimmed)) {
-        const homeMsg = lang === "ta"
-          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
-          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        const homeMsg = lang === "en" ? "🏠 Returned to Main Menu.\n\n" : "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n";
         return {
           replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),

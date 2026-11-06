@@ -192,12 +192,10 @@ export async function dispatchConfirmedDeliveryOrder(
   // 5. Send Confirmation Update to Customer WhatsApp
   const targetCustomerNumber = targetOrder.whatsapp_phone || targetOrder.customer_whatsapp || targetOrder.customer_phone;
   if (targetCustomerNumber) {
-    const orderLang = targetOrder.custom_fields?.language || "ta";
-    const customerConfirmText = orderLang === "ta"
-      ? `✅ *உங்கள் டெலிவரி முன்பதிவு உறுதி செய்யப்பட்டது! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *கடை இடம் (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *பொருட்கள்:* ${productList}\n📍 *டெலிவரி இடம்:* ${dropoffLocationDisplay}\n\n🛵 டெலிவரி ரைடர் கடைக்குச் சென்று பொருட்களைப் பெற்றுக்கொண்டு உங்கள் இடத்திற்கு விரைந்து வருகிறார்!\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 📦`
-      : (orderLang === "si"
-        ? `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`
-        : `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`);
+    const orderLang = targetOrder.custom_fields?.language || "si";
+    const customerConfirmText = orderLang === "en"
+      ? `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`
+      : `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`;
 
     await sendWhatsAppMessage(
       supabaseUrl,
@@ -605,20 +603,16 @@ export async function handleAdminMessage(
     const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
     if (targetCustomerNumber) {
       console.log(`[AdminHandler] Sending confirmation alert to customer WhatsApp: ${targetCustomerNumber}`);
-      const orderLang = order.custom_fields?.language || "en";
+      const orderLang = order.custom_fields?.language || "si";
       let customerConfirmText = "";
       if (sType.includes("rent")) {
-        customerConfirmText = orderLang === "ta"
-          ? `✅ *உங்கள் வாடகை வாகன முன்பதிவு உறுதி செய்யப்பட்டது!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *வாகனம்:* ${order.vehicle_type || "Vehicle"}\n📍 *இடம்:* ${order.pickup_address || "N/A"}\n\nஎமது முகவர் விரைவில் உங்களைத் தொடர்புகொள்வார்.`
-          : (orderLang === "si"
-            ? `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු ඉක්මනින් ඔබව සම්බන්ධ කරගනු ඇත.`
-            : `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur rental provider has been assigned and will contact you shortly.`);
+        customerConfirmText = orderLang === "en"
+          ? `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur rental provider has been assigned and will contact you shortly.`
+          : `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු ඉක්මනින් ඔබව සම්බන්ධ කරගනු ඇත.`;
       } else {
-        customerConfirmText = orderLang === "ta"
-          ? `✅ *உங்கள் முன்பதிவு உறுதி செய்யப்பட்டது!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *வாகனம்:* ${order.vehicle_type || "Cab"}\n📍 *புறப்படும் இடம்:*\n${order.pickup_address || "N/A"}\n🏁 *சேரும் இடம்:*\n${order.dropoff_address || "N/A"}\n\n🚕 சாரதி நியமிக்கப்பட்டுள்ளார். அவர் விரைவில் உங்களைத் தொடர்புகொள்வார்.`
-          : (orderLang === "si"
-            ? `✅ *ඔබගේ Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *වාහනය:* ${order.vehicle_type || "Cab"}\n📍 *ආරම්භක ස්ථානය:*\n${order.pickup_address || "N/A"}\n🏁 *ගමනාන්තය:*\n${order.dropoff_address || "N/A"}\n\n🚕 රියදුරු මහතා ඔබව ඉක්මනින් සම්බන්ධ කරගනු ඇත.`
-            : `✅ *Your order is confirmed.*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *Vehicle:* ${order.vehicle_type || "Cab"}\n📍 *Pickup:*\n${order.pickup_address || "N/A"}\n🏁 *Drop-off:*\n${order.dropoff_address || "N/A"}\n\n🚕 A driver has been assigned and will contact you shortly.`);
+        customerConfirmText = orderLang === "en"
+          ? `✅ *Your order is confirmed.*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *Vehicle:* ${order.vehicle_type || "Cab"}\n📍 *Pickup:*\n${order.pickup_address || "N/A"}\n🏁 *Drop-off:*\n${order.dropoff_address || "N/A"}\n\n🚕 A driver has been assigned and will contact you shortly.`
+          : `✅ *ඔබගේ Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *වාහනය:* ${order.vehicle_type || "Cab"}\n📍 *ආරම්භක ස්ථානය:*\n${order.pickup_address || "N/A"}\n🏁 *ගමනාන්තය:*\n${order.dropoff_address || "N/A"}\n\n🚕 රියදුරු මහතා ඔබව ඉක්මනින් සම්බන්ධ කරගනු ඇත.`;
       }
 
       await sendWhatsAppMessage(
@@ -759,12 +753,10 @@ export async function handleAdminMessage(
       // 3. Send confirmation to Customer WhatsApp
       const targetCustomerNumber = order.whatsapp_phone || order.customer_whatsapp || order.customer_phone;
       if (targetCustomerNumber) {
-        const orderLang = order.custom_fields?.language || "ta";
-        const customerConfirmText = orderLang === "ta"
-          ? `✅ *உங்கள் வாடகை வாகன முன்பதிவு உறுதி செய்யப்பட்டது!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *வாகனம்:* ${order.vehicle_type || "Vehicle"}\n📍 *இடம்:* ${order.pickup_address || "N/A"}\n\nஎமது முகவர் (Agent) விரைவில் உங்களைத் தொடர்புகொண்டு, வாகனத்தின் புகைப்படங்கள் மற்றும் விலை சம்பந்தப்பட்ட விபரங்களைத் தெரிவிப்பார்.\n\nநன்றி! எமது சேவையைத் தெரிவு செய்தமைக்கு மிக்க மகிழ்ச்சி. 🚗`
-          : (orderLang === "si"
-            ? `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු (Agent) ඉක්මනින් ඔබව සම්බන්ධ කරගෙන වාහනයේ ඡායාරූප සහ මිල ගණන් ලබා දෙනු ඇත.\n\nස්තූතියි! 🚗`
-            : `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur agent will contact you shortly with the vehicle photos and pricing details.\n\nThank you! We are very glad you chose our service. 🚗`);
+        const orderLang = order.custom_fields?.language || "si";
+        const customerConfirmText = orderLang === "en"
+          ? `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur agent will contact you shortly with the vehicle photos and pricing details.\n\nThank you! We are very glad you chose our service. 🚗`
+          : `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order Code:* *${order.order_code}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු (Agent) ඉක්මනින් ඔබව සම්බන්ධ කරගෙන වාහනයේ ඡායාරූප සහ මිල ගණන් ලබා දෙනු ඇත.\n\nස්තූතියි! 🚗`;
         await sendWhatsAppMessage(
           supabaseUrl,
           supabaseServiceKey,

@@ -96,11 +96,9 @@ export async function handleDeliveryFlowStep(
     case "DELIVERY_PHONE": {
       let digits = trimmed.replace(/\D/g, "");
       if (digits.length < 9) {
-        const phoneErr = lang === "ta"
-          ? "⚠️ தயவுசெய்து சரியான தொடர்பு WhatsApp அல்லது தொலைபேசி இலக்கத்தை உள்ளிடவும் (உதாரணம்: 0771234567):"
-          : (lang === "si"
-            ? "⚠️ කරුණාකර නිවැරදි Contact WhatsApp හෝ දුරකථන අංකයක් ඇතුළත් කරන්න (උදා: 0771234567):"
-            : "⚠️ Please enter a valid contact WhatsApp or phone number (e.g. 0771234567):");
+        const phoneErr = lang === "en"
+          ? "⚠️ Please enter a valid contact WhatsApp or phone number (e.g. 0771234567):"
+          : "⚠️ කරුණාකර නිවැරදි Contact WhatsApp හෝ දුරකථන අංකයක් ඇතුළත් කරන්න (උදා: 0771234567):";
         return await invalidFallback(phoneErr);
       }
       if (digits.startsWith("0") && digits.length === 10) {
@@ -213,9 +211,7 @@ export async function handleDeliveryFlowStep(
           sessionData: { language: lang, last_order_code: orderCode },
         };
       } else if (isNegativeInput(trimmed)) {
-        const cancelMsg = lang === "ta"
-          ? "❌ டெலிவரி முன்பதிவு ரத்து செய்யப்பட்டது.\n\n"
-          : (lang === "si" ? "❌ Delivery booking එක Cancel කරන ලදී.\n\n" : "❌ Delivery booking cancelled.\n\n");
+        const cancelMsg = lang === "en" ? "❌ Delivery booking cancelled.\n\n" : "❌ Delivery booking එක Cancel කරන ලදී.\n\n";
         return {
           replyText: cancelMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),
@@ -224,9 +220,7 @@ export async function handleDeliveryFlowStep(
           sessionData: { language: lang },
         };
       } else if (isHomeOrResetInput(trimmed)) {
-        const homeMsg = lang === "ta"
-          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
-          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        const homeMsg = lang === "en" ? "🏠 Returned to Main Menu.\n\n" : "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n";
         return {
           replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),

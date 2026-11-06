@@ -72,7 +72,7 @@ export interface FareCalculationResult {
  * 4 -> Van
  * 5 -> Lorry
  * 6 -> Bus
- * As well as Sinhala/Tamil/English vehicle names and colloquial variations.
+ * As well as Sinhala/English vehicle names and colloquial variations.
  */
 export function normalizeVehicleKey(
   vehicle: string,
@@ -120,21 +120,20 @@ export function normalizeVehicleKey(
     v.includes("suv") ||
     v.includes("alto") ||
     v.includes("wagonr") ||
-    v.includes("කාර්") ||
-    v.includes("கார்")
+    v.includes("කාර්")
   ) {
     return "car";
   }
 
-  if (v.includes("van") || v.includes("kdh") || v.includes("hiace") || v.includes("වෑන්") || v.includes("வேன்")) {
+  if (v.includes("van") || v.includes("kdh") || v.includes("hiace") || v.includes("වෑන්")) {
     return "van";
   }
 
-  if (v.includes("lorry") || v.includes("truck") || v.includes("dimo") || v.includes("bata") || v.includes("ලොරි") || v.includes("லொறி")) {
+  if (v.includes("lorry") || v.includes("truck") || v.includes("dimo") || v.includes("bata") || v.includes("ලොරි")) {
     return "lorry";
   }
 
-  if (v.includes("bus") || v.includes("coach") || v.includes("බස්") || v.includes("பஸ்")) {
+  if (v.includes("bus") || v.includes("coach") || v.includes("බස්")) {
     return "bus";
   }
 
@@ -148,14 +147,13 @@ export function normalizeVehicleKey(
     v.includes("trishaw") ||
     v.includes("bajaj") ||
     v.includes("auto") ||
-    v.includes("ත්‍රිරෝද") ||
-    v.includes("ஆட்டோ")
+    v.includes("ත්‍රිරෝද")
   ) {
     return "three_wheeler";
   }
 
   // 4. Motorbike
-  if (v.includes("bike") || v.includes("motor") || v.includes("මෝටර්") || v.includes("பைக்")) {
+  if (v.includes("bike") || v.includes("motor") || v.includes("මෝටර්")) {
     return "motorbike";
   }
 

@@ -60,9 +60,7 @@ export async function handleCancelFlowStep(
         sessionData: { language: lang },
       };
     } else if (isNegativeInput(trimmed)) {
-      const cancelMsg = lang === "ta"
-        ? "முன்பதிவு ரத்து செய்வது தவிர்க்கப்பட்டது.\n\n"
-        : (lang === "si" ? "Order එක Cancel කිරීම අත්හැර දමන ලදී.\n\n" : "Order cancellation discarded.\n\n");
+      const cancelMsg = lang === "en" ? "Order cancellation discarded.\n\n" : "Order එක Cancel කිරීම අත්හැර දමන ලදී.\n\n";
       return {
         replyText: cancelMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
         poll: getCategoryPoll(lang),
@@ -71,11 +69,9 @@ export async function handleCancelFlowStep(
         sessionData: { language: lang },
       };
     } else {
-      const confirmErr = lang === "ta"
-        ? "⚠️ முன்பதிவை ரத்து செய்ய *Yes* எனவும், தவிர்க்க *No* எனவும் பதிலளிக்கவும்."
-        : (lang === "si"
-          ? "⚠️ කරුණාකර Order එක Cancel කිරීමට *Yes* ලෙස හෝ අත්හැරීමට *No* ලෙස Reply කරන්න."
-          : "⚠️ Please reply *Yes* to cancel order or *No* to keep order.");
+      const confirmErr = lang === "en"
+        ? "⚠️ Please reply *Yes* to cancel order or *No* to keep order."
+        : "⚠️ කරුණාකර Order එක Cancel කිරීමට *Yes* ලෙස හෝ අත්හැරීමට *No* ලෙස Reply කරන්න.";
       return await invalidFallback(confirmErr, getCancelConfirmPoll(lang));
     }
   }
@@ -148,11 +144,9 @@ export async function startCancelFlow(
   }
 
   if (activeOrder) {
-    const askMsg = lang === "ta"
-      ? `உங்களுக்கு ஏற்கனவே செயலில் உள்ள முன்பதிவு உள்ளது (Order ID: *${activeOrder.order_code}*).\nஅதை ரத்து செய்ய விரும்புகிறீர்களா?`
-      : (lang === "si"
-        ? `ඔබට දැනටමත් Active Order එකක් ඇත (Order ID: *${activeOrder.order_code}*).\nඔබට එය Cancel කිරීමට අවශ්‍යද?`
-        : `You have an active booking (Order ID: *${activeOrder.order_code}*).\nWould you like to cancel it?`);
+    const askMsg = lang === "en"
+      ? `You have an active booking (Order ID: *${activeOrder.order_code}*).\nWould you like to cancel it?`
+      : `ඔබට දැනටමත් Active Order එකක් ඇත (Order ID: *${activeOrder.order_code}*).\nඔබට එය Cancel කිරීමට අවශ්‍යද?`;
 
     return {
       replyText: askMsg,
@@ -163,11 +157,9 @@ export async function startCancelFlow(
     };
   }
 
-  const noOrderMsg = lang === "ta"
-    ? "உங்களிடம் தற்போது செயலில் உள்ள முன்பதிவு எதுவும் இல்லை.\n\n"
-    : (lang === "si"
-      ? "ඔබට දැනට Active Booking එකක් නොමැත.\n\n"
-      : "You do not have any active booking right now.\n\n");
+  const noOrderMsg = lang === "en"
+    ? "You do not have any active booking right now.\n\n"
+    : "ඔබට දැනට Active Booking එකක් නොමැත.\n\n";
 
   return {
     replyText: noOrderMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),

@@ -11,6 +11,7 @@ import {
   getVehiclePoll,
   getVehicleModelPoll,
   getTripTypePoll,
+  getDropoffHelpPoll,
   getBookingConfirmPoll,
   getRentVehiclePoll,
   getDeliveryCategoryPoll,
@@ -33,14 +34,17 @@ export function getStepPollForCurrentStep(
 ): PollDefinition | undefined {
   if (flow === "CAB_FLOW") {
     if (step === "CAB_VEHICLE") {
-      return getVehiclePoll(lang, false, data.booking_type || "now");
+      return getVehiclePoll(lang, false, data.booking_type || "now", pricingSettings);
     }
     if (step === "CAB_MODEL") {
       const vehicleKey = data.vehicle_key || "car";
       const models = pricingSettings[vehicleKey]?.models || [];
       if (models.length > 0) {
-        return getVehicleModelPoll(vehicleKey, models, lang);
+        return getVehicleModelPoll(vehicleKey, models, lang, pricingSettings);
       }
+    }
+    if (step === "CAB_DROPOFF") {
+      return getDropoffHelpPoll(lang);
     }
     if (step === "CAB_TRIP_TYPE") {
       return getTripTypePoll(lang);
@@ -80,7 +84,7 @@ export function getStepPollForCurrentStep(
 /**
  * Smart FAQ & AI Query Engine:
  * 1. Matches against central_cab.faqs from database
- * 2. Falls back to Gemini AI with FAQ & Pricing context
+ * 2. Falls back to Gemini AI with FAQ, Live User State & Conversation Context
  * 3. Provides graceful multilingual fallback
  */
 export async function queryFaqsAndAi(
@@ -95,8 +99,13 @@ export async function queryFaqsAndAi(
     message: string,
     fallbackPrompt: string,
     pricing: PricingSettings,
-    lang: SupportedLanguage
-  ) => Promise<string>
+    lang: SupportedLanguage,
+    session?: any,
+    phoneNumber?: string,
+    matchedFaqHint?: { question: string; answer: string } | null
+  ) => Promise<string>,
+  session?: any,
+  phoneNumber?: string
 ): Promise<string> {
   const trimmed = userMessage.trim();
   const lowerMsg = trimmed.toLowerCase();
@@ -118,6 +127,7 @@ export async function queryFaqsAndAi(
   }
 
   // 2. Direct Keyword / Token Matching against database FAQs
+  let matchedFaqHint: { question: string; answer: string } | null = null;
   if (faqs.length > 0) {
     const cleanTokens = lowerMsg
       .replace(/[?!,.:;()_]/g, " ")
@@ -145,24 +155,28 @@ export async function queryFaqsAndAi(
         else if (aLower.includes(token)) score += 1;
       }
 
-      if (score > highestScore && score >= 3) {
+      if (score > highestScore && score >= 2) {
         highestScore = score;
         bestFaq = f;
       }
     }
 
-    // Only return direct database FAQ answer if it matches the customer's selected language and has high confidence
+    // High confidence direct database match in matching script
     if (bestFaq && highestScore >= 10) {
       const hasSinhalaChars = /[\u0D80-\u0DFF]/.test(bestFaq.answer);
-      const hasTamilChars = /[\u0B80-\u0BFF]/.test(bestFaq.answer);
-      const langMatches = (lang === "si" && hasSinhalaChars) || (lang === "ta" && hasTamilChars) || (lang === "en" && !hasSinhalaChars && !hasTamilChars);
+      const langMatches = (lang === "si" && hasSinhalaChars) || (lang === "en" && !hasSinhalaChars);
       if (langMatches) {
         return bestFaq.answer;
       }
     }
+
+    // If candidate found (even across different language/script), pass as matched hint to AI
+    if (bestFaq && highestScore >= 2) {
+      matchedFaqHint = bestFaq;
+    }
   }
 
-  // 3. Fallback to Gemini AI with all FAQs, Service Flow & Pricing details
+  // 3. Fallback to Gemini AI with all FAQs, Live User State & Chat History
   try {
     const aiAnswer = await handleAiFallback(
       supabase,
@@ -170,7 +184,10 @@ export async function queryFaqsAndAi(
       trimmed,
       "",
       pricingSettings,
-      lang
+      lang,
+      session,
+      phoneNumber,
+      matchedFaqHint
     );
 
     if (
@@ -192,13 +209,10 @@ export async function queryFaqsAndAi(
   }
 
   // 4. Courteous fallback if no direct match or AI response
-  if (lang === "ta") {
-    return "💡 எமது FAQ விபரங்களின்படி உங்கள் கேள்விக்கான நேரடித் தகவல் தற்போது கிடைக்கவில்லை. எமது முகவர் அல்லது சாரதி விரைவில் உங்களைத் தொடர்புகொண்டு தேவையான விபரங்களைத் தெரிவிப்பார்.";
+  if (lang === "en") {
+    return "💡 We do not currently have specific information for this query in our FAQs. Our customer agent will assist you shortly with the details.";
   }
-  if (lang === "si") {
-    return "💡 අපගේ FAQ විස්තර වල ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු දැනට ඇතුළත් කර නොමැත. අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත.";
-  }
-  return "💡 We do not currently have specific information for this query in our FAQs. Our customer agent will assist you shortly with the details.";
+  return "💡 අපගේ FAQ විස්තර වල ඔබගේ ප්‍රශ්නයට අදාළ තොරතුරු දැනට ඇතුළත් කර නොමැත. අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත.";
 }
 
 export async function handleFaqFlowStep(
@@ -214,8 +228,13 @@ export async function handleFaqFlowStep(
     message: string,
     fallbackPrompt: string,
     pricing: PricingSettings,
-    lang: SupportedLanguage
-  ) => Promise<string>
+    lang: SupportedLanguage,
+    session?: any,
+    phoneNumber?: string,
+    matchedFaqHint?: { question: string; answer: string } | null
+  ) => Promise<string>,
+  session?: any,
+  phoneNumber?: string
 ): Promise<StepProcessResult> {
   const lower = trimmed.toLowerCase();
 
@@ -260,7 +279,9 @@ export async function handleFaqFlowStep(
       trimmed,
       pricingSettings,
       lang,
-      handleAiFallback
+      handleAiFallback,
+      session,
+      phoneNumber
     );
 
     const resumedPrompt = getStepPromptText(pausedFlow, pausedStep, lang);
@@ -269,11 +290,9 @@ export async function handleFaqFlowStep(
     delete data.paused_flow;
     delete data.paused_step;
 
-    const resumeHeader = lang === "ta"
-      ? "━━━━━━━━━━━━━━━━━━━━\n🔄 *உங்கள் முன்பதிவைத் தொடர்வோம்:*\n"
-      : (lang === "si"
-        ? "━━━━━━━━━━━━━━━━━━━━\n🔄 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n"
-        : "━━━━━━━━━━━━━━━━━━━━\n🔄 *Let's continue your booking:*\n");
+    const resumeHeader = lang === "en"
+      ? "━━━━━━━━━━━━━━━━━━━━\n🔄 *Let's continue your booking:*\n"
+      : "━━━━━━━━━━━━━━━━━━━━\n🔄 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
 
     return {
       replyText: `${answer}\n\n${resumeHeader}${resumedPrompt}`,
@@ -292,14 +311,14 @@ export async function handleFaqFlowStep(
     trimmed,
     pricingSettings,
     lang,
-    handleAiFallback
+    handleAiFallback,
+    session,
+    phoneNumber
   );
 
-  const followUpNote = lang === "ta"
-    ? "\n\n💡 மேலதிக கேள்வி கேட்கலாம் அல்லது பிரதான மெனுவிற்குச் செல்ல *Menu* என தட்டச்சு செய்யவும்."
-    : (lang === "si"
-      ? "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න."
-      : "\n\n💡 Feel free to ask another question or type *Menu* to return to main options.");
+  const followUpNote = lang === "en"
+    ? "\n\n💡 Feel free to ask another question or type *Menu* to return to main options."
+    : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න.";
 
   return {
     replyText: `${answer}${followUpNote}`,

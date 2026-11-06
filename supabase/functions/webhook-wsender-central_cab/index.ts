@@ -54,6 +54,11 @@ serve(async (req) => {
 
     const userId = sessionMapping?.user_id || null;
 
+    if (!userId) {
+      console.log(`[${correlationId}] Session ${sessionName} not mapped to central_cab user, skipping`);
+      return new Response(JSON.stringify({ ok: true, skipped: "not_central_cab_session" }), { headers: jsonHeaders });
+    }
+
     if (event === "session.status") {
       console.log(`[${correlationId}] session.status for ${sessionName}: ${wp?.status}`);
       return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });

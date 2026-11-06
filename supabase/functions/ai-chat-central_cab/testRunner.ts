@@ -100,17 +100,17 @@ export async function runAllAutomatedTests(
     // ------------------------------------------------------------------------
     // TEST 3: Drop-off Poll & Guide definitions
     // ------------------------------------------------------------------------
-    const taPoll = getDropoffHelpPoll("ta");
-    record("3.1 Tamil Dropoff Poll has 3 options", taPoll.options.length === 3);
-    record("3.2 Tamil Poll Option 1 is Direct Link", taPoll.options[0].includes("தெரியும்"));
-    record("3.3 Tamil Poll Option 2 is Help", taPoll.options[1].includes("தெரியாது"));
+    const enPoll = getDropoffHelpPoll("en");
+    record("3.1 English Dropoff Poll has 3 options", enPoll.options.length === 3);
+    record("3.2 English Poll Option 1 is Direct Link", enPoll.options[0].includes("I know"));
+    record("3.3 English Poll Option 2 is Help", enPoll.options[1].includes("Don't know"));
 
     const siPoll = getDropoffHelpPoll("si");
     record("3.4 Sinhala Poll Option 1 is Direct Link", siPoll.options[0].includes("දන්නවා"));
     record("3.5 Sinhala Poll Option 2 is Help", siPoll.options[1].includes("දන්නේ නෑ"));
 
-    const taGuide = getDropoffHelpGuide("ta");
-    record("3.6 Tamil Help Guide has 5-step tutorial", taGuide.includes("1️⃣") && taGuide.includes("Copy") && taGuide.includes("Paste"));
+    const enGuide = getDropoffHelpGuide("en");
+    record("3.6 English Help Guide has 5-step tutorial", enGuide.includes("1️⃣") && enGuide.includes("Copy") && enGuide.includes("Paste"));
 
     const siGuide = getDropoffHelpGuide("si");
     record("3.7 Sinhala Help Guide has 5-step tutorial", siGuide.includes("1️⃣") && siGuide.includes("Copy") && siGuide.includes("Paste"));
@@ -124,7 +124,7 @@ export async function runAllAutomatedTests(
       flow_type: "CAB_FLOW",
       current_step: "CAB_PICKUP",
       session_data: {
-        language: "ta",
+        language: "en",
         booking_type: "now",
         customer_name: "Test User",
         customer_phone: "0771234567",
@@ -147,7 +147,7 @@ export async function runAllAutomatedTests(
       defaultPricing,
       defaultSystemSettings
     );
-    record("4.1 Reject plain text at CAB_PICKUP", pickupPlainRes.nextStep === "CAB_PICKUP" && pickupPlainRes.replyText.includes("எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது"), pickupPlainRes.replyText);
+    record("4.1 Reject plain text at CAB_PICKUP", pickupPlainRes.nextStep === "CAB_PICKUP" && pickupPlainRes.replyText.includes("Typing location names is not accepted"), pickupPlainRes.replyText);
 
     // 4.2 Valid WhatsApp Pin sent to CAB_PICKUP -> ACCEPTED, moves to CAB_DROPOFF with poll
     const pinPayload = {
@@ -167,7 +167,7 @@ export async function runAllAutomatedTests(
       defaultSystemSettings
     );
     record("4.2 Accept Pin at CAB_PICKUP -> CAB_DROPOFF", pickupPinRes.nextStep === "CAB_DROPOFF");
-    record("4.3 Returns Dropoff Help Poll on reaching CAB_DROPOFF", pickupPinRes.poll?.name.includes("Drop") || pickupPinRes.poll?.name.includes("சேரும் இடம்"));
+    record("4.3 Returns Dropoff Help Poll on reaching CAB_DROPOFF", pickupPinRes.poll?.name.includes("drop-off") || pickupPinRes.poll?.name.includes("Drop"));
 
     // ------------------------------------------------------------------------
     // TEST 5: CAB_DROPOFF State Machine Validation
@@ -189,7 +189,7 @@ export async function runAllAutomatedTests(
       supabaseServiceKey,
       userId,
       testPhone,
-      "2. எனக்கு தெரியாது (Help / வழிகாட்டல்) ❓",
+      "2. Don't know (Need Help Guide) ❓",
       "poll_response",
       {},
       dropoffSession,
@@ -205,7 +205,7 @@ export async function runAllAutomatedTests(
       supabaseServiceKey,
       userId,
       testPhone,
-      "1. எனக்கு தெரியும் (Direct Link அனுப்ப) 🔗",
+      "1. I know (Share Link Directly) 🔗",
       "poll_response",
       {},
       dropoffSession,
@@ -228,8 +228,8 @@ export async function runAllAutomatedTests(
       defaultPricing,
       defaultSystemSettings
     );
-    record("5.3 Reject plain text at CAB_DROPOFF", dropoffPlainRes.nextStep === "CAB_DROPOFF" && dropoffPlainRes.replyText.includes("எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது"));
-    record("5.4 Rejection re-renders dropoff poll", dropoffPlainRes.poll?.name.includes("Drop") || dropoffPlainRes.poll?.name.includes("சேரும் இடம்"));
+    record("5.3 Reject plain text at CAB_DROPOFF", dropoffPlainRes.nextStep === "CAB_DROPOFF" && dropoffPlainRes.replyText.includes("Typing location names is not accepted"));
+    record("5.4 Rejection re-renders dropoff poll", dropoffPlainRes.poll?.name.includes("drop-off") || dropoffPlainRes.poll?.name.includes("Drop"));
 
     // 5.4 User sends valid Google Maps link -> ACCEPTED, moves to CAB_TRIP_TYPE with poll
     const dropoffLinkRes = await processCustomerChatStep(
@@ -246,7 +246,7 @@ export async function runAllAutomatedTests(
       defaultSystemSettings
     );
     record("5.5 Accept Google Maps link at CAB_DROPOFF -> CAB_TRIP_TYPE", dropoffLinkRes.nextStep === "CAB_TRIP_TYPE");
-    record("5.6 Returns Trip Type poll on reaching CAB_TRIP_TYPE", dropoffLinkRes.poll?.name.includes("Trip Type") || dropoffLinkRes.poll?.name.includes("பயண வகை"));
+    record("5.6 Returns Trip Type poll on reaching CAB_TRIP_TYPE", dropoffLinkRes.poll?.name.includes("Trip Type"));
 
     // ------------------------------------------------------------------------
     // TEST 6: CAB_TRIP_TYPE & Order Summary with Clickable Links
@@ -267,7 +267,7 @@ export async function runAllAutomatedTests(
       supabaseServiceKey,
       userId,
       testPhone,
-      "1. One-Way (ஒரு வழி) ➡️",
+      "1. One-Way ➡️",
       "text",
       {},
       tripTypeSession,
@@ -280,7 +280,7 @@ export async function runAllAutomatedTests(
     record("6.2 Summary Card contains Pickup Google Maps URL", summaryCard.includes("https://maps.google.com/?q=6.9271,79.8612"), summaryCard);
     record("6.3 Summary Card contains Dropoff Google Maps URL", summaryCard.includes("https://maps.google.com/?q=6.0535,80.2210"), summaryCard);
     record("6.4 Summary Card does not contain raw 'Pin Location'", !summaryCard.includes("Pin Location (6.9271"), summaryCard);
-    record("6.5 Summary Card contains fare calculation", summaryCard.includes("LKR") && summaryCard.includes("கட்டணம்:"), summaryCard);
+    record("6.5 Summary Card contains fare calculation", summaryCard.includes("LKR") && summaryCard.includes("Total Fare:"), summaryCard);
 
     // ------------------------------------------------------------------------
     // TEST 7: Order Confirmation & Database Persistence
@@ -335,7 +335,7 @@ export async function runAllAutomatedTests(
       flow_type: "DELIVERY_FLOW",
       current_step: "DELIVERY_LOCATION",
       session_data: {
-        language: "ta",
+        language: "en",
         delivery_category: "Food & Drinks",
         delivery_items: "2 Burgers",
         customer_phone: "0771234567",
@@ -356,7 +356,7 @@ export async function runAllAutomatedTests(
       defaultPricing,
       defaultSystemSettings
     );
-    record("8.1 Reject plain text in DELIVERY_LOCATION", deliveryPlainRes.nextStep === "DELIVERY_LOCATION" && deliveryPlainRes.replyText.includes("எழுத்தில் தட்டச்சு செய்வதை ஏற்க முடியாது"));
+    record("8.1 Reject plain text in DELIVERY_LOCATION", deliveryPlainRes.nextStep === "DELIVERY_LOCATION" && deliveryPlainRes.replyText.includes("Typing location names is not accepted"));
 
     // Google Maps link in delivery
     const deliveryLinkRes = await processCustomerChatStep(
@@ -411,7 +411,7 @@ export async function runAllAutomatedTests(
       flow_type: "CAB_FLOW",
       current_step: "CAB_VEHICLE",
       session_data: {
-        language: "ta",
+        language: "en",
         customer_name: "Test Customer",
         customer_phone: "0771234567",
         booking_type: "schedule",

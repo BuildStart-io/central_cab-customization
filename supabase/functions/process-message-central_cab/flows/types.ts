@@ -2,7 +2,7 @@
 // Central Cabs & Delivery - Shared Flow Types & Interfaces
 // ============================================================================
 
-export type SupportedLanguage = "ta" | "si" | "en";
+export type SupportedLanguage = "si" | "en";
 
 export interface PollPayload {
   name: string;

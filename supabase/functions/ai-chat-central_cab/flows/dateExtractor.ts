@@ -1,6 +1,6 @@
 // ============================================================================
 // Intelligent Multi-lingual Code-based Date & Time Extractor (0% AI Dependency)
-// Parses Tamil, Sinhala, English calendar & relative dates and formats with "/"
+// Parses Sinhala, English calendar & relative dates and formats with "/"
 // ============================================================================
 
 export interface ParsedDate {
@@ -76,12 +76,11 @@ export function extractNaturalDate(input: string, now = new Date()): ParsedDate 
     }
   }
 
-  // 2. Relative Day Keywords across Tamil, Sinhala, and English
+  // 2. Relative Day Keywords across Sinhala and English
   if (!isRecognized) {
     // Tomorrow
     if (
-      lower.includes("nalaiku") || lower.includes("naalaiku") || lower.includes("nalai") ||
-      lower.includes("naalai") || lower.includes("நாளை") || lower.includes("heta") ||
+      lower.includes("heta") ||
       lower.includes("හෙට") || lower.includes("tomorrow") || lower.includes("tmrw") ||
       lower.includes("tomo")
     ) {
@@ -91,9 +90,8 @@ export function extractNaturalDate(input: string, now = new Date()): ParsedDate 
     }
     // Day after tomorrow
     else if (
-      lower.includes("anikaal") || lower.includes("anekal") || lower.includes("anidda") ||
-      lower.includes("අනිද්දා") || lower.includes("day after tomorrow") ||
-      lower.includes("mathanaal") || lower.includes("மறுநாள்")
+      lower.includes("anidda") ||
+      lower.includes("අනිද්දා") || lower.includes("day after tomorrow")
     ) {
       targetDate.setDate(targetDate.getDate() + 2);
       isRecognized = true;
@@ -101,8 +99,7 @@ export function extractNaturalDate(input: string, now = new Date()): ParsedDate 
     }
     // Today
     else if (
-      lower.includes("indaiku") || lower.includes("innaiku") || lower.includes("inraiku") ||
-      lower.includes("indru") || lower.includes("இன்று") || lower.includes("ada") ||
+      lower.includes("ada") ||
       lower.includes("අද") || lower.includes("today") || lower.includes("tonight")
     ) {
       isRecognized = true;
@@ -180,19 +177,17 @@ export function extractNaturalTime(input: string): ParsedTime {
     };
   }
 
-  // 4. Tamil / Sinhala Contextual Time
+  // 4. Sinhala / English Contextual Time
   const isMorning =
-    lower.includes("kaalai") || lower.includes("kalai") || lower.includes("காலை") ||
     lower.includes("udeta") || lower.includes("udey") || lower.includes("උදේ") ||
     lower.includes("morning");
 
   const isAfternoon =
-    lower.includes("madhyahana") || lower.includes("pinpakal") || lower.includes("மதியம்") ||
+    lower.includes("madhyahana") || lower.includes("pinpakal") ||
     lower.includes("dawal") || lower.includes("දවල්") || lower.includes("afternoon");
 
   const isEveningNight =
-    lower.includes("maala") || lower.includes("saayantharam") || lower.includes("iravu") ||
-    lower.includes("night") || lower.includes("இரவு") || lower.includes("hawasata") ||
+    lower.includes("night") || lower.includes("hawasata") ||
     lower.includes("හවස") || lower.includes("reeta") || lower.includes("රෑ");
 
   const hourNumberMatch = text.match(/\b(0?[1-9]|1[0-2])\b/);

@@ -196,9 +196,7 @@ export async function handleRentFlowStep(
           sessionData: { language: lang, last_order_code: orderCode },
         };
       } else if (isNegativeInput(trimmed)) {
-        const cancelMsg = lang === "ta"
-          ? "❌ வாடகை வாகன முன்பதிவு ரத்து செய்யப்பட்டது.\n\n"
-          : (lang === "si" ? "❌ Rent a Car ඉල්ලීම අවලංගු කරන ලදී.\n\n" : "❌ Rent a Car request cancelled.\n\n");
+        const cancelMsg = lang === "en" ? "❌ Rent a Car request cancelled.\n\n" : "❌ Rent a Car ඉල්ලීම අවලංගු කරන ලදී.\n\n";
         return {
           replyText: cancelMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),
@@ -207,9 +205,7 @@ export async function handleRentFlowStep(
           sessionData: { language: lang },
         };
       } else if (isHomeOrResetInput(trimmed)) {
-        const homeMsg = lang === "ta"
-          ? "🏠 முதன்மைப் பக்கத்திற்குத் திரும்பியது.\n\n"
-          : (lang === "si" ? "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n" : "🏠 Returned to Main Menu.\n\n");
+        const homeMsg = lang === "en" ? "🏠 Returned to Main Menu.\n\n" : "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n";
         return {
           replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
           poll: getCategoryPoll(lang),
