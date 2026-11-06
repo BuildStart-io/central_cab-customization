@@ -371,26 +371,34 @@ export async function processCustomerChatStep(
     || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
 
   const isExpectedAnswer = isExpectedStepAnswer(flow, step, trimmed, data, pricingSettings);
-  const shouldInterceptQuestion = !isLocationMsg && !isExpectedAnswer;
+  const shouldEvaluateWithAi = !isLocationMsg && !isExpectedAnswer;
 
-  // Question interception for active booking flows (Answers question and resumes flow!)
-  if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldInterceptQuestion && isPossibleQuestion(trimmed, messageType)) {
-    const answer = await queryFaqsAndAi(
+  // AI-first tool calling decision for active booking flows
+  if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldEvaluateWithAi) {
+    const aiResult = await classifyAndAnswerWithAi(
       supabase,
       userId,
       trimmed,
       pricingSettings,
       lang,
-      handleAiFallback,
       session,
       phoneNumber
     );
-    
-    if (answer && answer !== "NOT_A_QUESTION") {
-      if (answer.includes("INTENT_CANCEL_ORDER")) {
-        return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
-      }
-      if (answer.includes("INTENT_WRONG_LOCATION")) {
+
+    if (aiResult.action === "cancel") {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
+    if (aiResult.action === "main_menu") {
+      return {
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
+      };
+    }
+    if (aiResult.action === "answer_question" && aiResult.reply) {
+      if (aiResult.reply.includes("INTENT_WRONG_LOCATION")) {
         delete data.pickup_text;
         delete data.pickup_coords;
         delete data.dropoff_text;
@@ -413,7 +421,7 @@ export async function processCustomerChatStep(
         : "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
 
       return {
-        replyText: `${answer}\n\n${resumeHeader}${stepPrompt}`,
+        replyText: `${aiResult.reply}\n\n${resumeHeader}${stepPrompt}`,
         poll: stepPoll,
         sendTextWithPoll: !!stepPoll,
         nextFlow: flow,
@@ -485,34 +493,59 @@ export async function processCustomerChatStep(
       return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
     }
 
-    if (isPossibleQuestion(trimmed)) {
-      const answer = await queryFaqsAndAi(
-        supabase,
-        userId,
-        trimmed,
-        pricingSettings,
-        lang,
-        handleAiFallback,
-        session,
-        phoneNumber
-      );
-      const followUpNote = lang === "en"
-        ? "\n\n💡 Feel free to ask another question or type *Menu* to return to main options."
-        : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න.";
+    // Explicit request to return to Main Menu
+    if (isHomeOrResetInput(trimmed) || lower === "3" || lower.startsWith("3.") || lower.includes("menu") || lower.includes("main menu")) {
       return {
-        replyText: `${answer}${followUpNote}`,
-        nextFlow: "FAQ_FLOW",
-        nextStep: "FAQ_ASK",
-        sessionData: data,
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
       };
     }
 
+    // AI Intent Classifier & Answer Engine for all other typed messages
+    const aiResult = await classifyAndAnswerWithAi(
+      supabase,
+      userId,
+      trimmed,
+      pricingSettings,
+      lang,
+      session,
+      phoneNumber
+    );
+
+    if (aiResult.action === "cancel") {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
+    if (aiResult.action === "main_menu") {
+      return {
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
+      };
+    }
+
+    const followUpNote = lang === "en"
+      ? "\n\n💡 Feel free to ask another question or type *Menu* to return to main options."
+      : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න.";
+
+    let reply = aiResult.reply;
+    if (!reply || aiResult.action === "continue_flow") {
+      reply = lang === "en"
+        ? `✅ Your booking (*${data.last_order_code || "Confirmed"}*) has been dispatched to nearby drivers. Our driver will contact you shortly.`
+        : `✅ ඔබගේ Booking එක (*${data.last_order_code || "තහවුරු කරන ලදී"}*) ළඟම සිටින රියදුරු වෙත යොමු කර ඇත. රියදුරු මහතා ඔබව ඉක්මනින් සම්බන්ධ කර ගනු ඇත.`;
+    }
+
     return {
-      replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-      poll: getCategoryPoll(lang),
+      replyText: `${reply}${followUpNote}`,
+      poll: getPostBookingPoll(lang),
+      sendTextWithPoll: true,
       nextFlow: "IDLE",
-      nextStep: "CATEGORY_CHOICE",
-      sessionData: { language: lang },
+      nextStep: "BOOKING_COMPLETED",
+      sessionData: data,
     };
   }
 
@@ -717,40 +750,95 @@ export async function processCustomerChatStep(
   };
 }
 
-async function handleAiFallback(
+export interface AiIntentResult {
+  action: "answer_question" | "continue_flow" | "cancel" | "main_menu";
+  reply: string;
+}
+
+export async function classifyAndAnswerWithAi(
   supabase: any,
   userId: string,
   userMessage: string,
-  fallbackErrorPrompt: string,
   pricingSettings: PricingSettings,
   lang: SupportedLanguage = "si",
   session?: BotSessionState,
-  phoneNumber?: string,
-  matchedFaqHint?: { question: string; answer: string } | null
-): Promise<string> {
-  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-  const aiGenerateUrl = Deno.env.get("AI_GENERATE_URL");
-  const botApiKey = Deno.env.get("BOT_API_KEY");
+  phoneNumber?: string
+): Promise<AiIntentResult> {
+  const trimmed = (userMessage || "").trim();
+  const lower = trimmed.toLowerCase();
 
-  if (!lovableApiKey && !(aiGenerateUrl && botApiKey)) {
-    return "NOT_A_QUESTION";
+  // Fast bypass for explicit reset or cancel commands
+  if (isHomeOrResetInput(trimmed) || lower === "menu" || lower === "main menu") {
+    return { action: "main_menu", reply: "" };
+  }
+  if (lower === "cancel" || lower === "cancel order" || lower === "cancel booking") {
+    return { action: "cancel", reply: "" };
   }
 
   // 1. Fetch FAQs from database
-  let faqText = "No custom FAQs available in database.";
+  let faqs: Array<{ question: string; answer: string; category?: string }> = [];
   try {
-    const { data: faqs, error } = await supabase
+    const { data: dbFaqs, error } = await supabase
       .schema("central_cab")
       .from("faqs")
       .select("question, answer, category")
       .eq("is_active", true)
       .eq("user_id", userId);
-
-    if (!error && Array.isArray(faqs) && faqs.length > 0) {
-      faqText = faqs.map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join("\n\n");
+    if (!error && Array.isArray(dbFaqs)) {
+      faqs = dbFaqs;
     }
   } catch (err) {
-    console.warn("[handleAiFallback] Error fetching faqs:", err);
+    console.warn("[classifyAndAnswerWithAi] Error fetching faqs:", err);
+  }
+
+  let faqText = "No custom FAQs available in database.";
+  if (faqs.length > 0) {
+    faqText = faqs.map((f: any) => `Q: ${f.question}\nA: ${f.answer}`).join("\n\n");
+  }
+
+  let matchedFaqHint: { question: string; answer: string } | null = null;
+  if (faqs.length > 0) {
+    const cleanTokens = lower
+      .replace(/[?!,.:;()_]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 2);
+
+    let bestFaq: { question: string; answer: string } | null = null;
+    let highestScore = 0;
+
+    for (const f of faqs) {
+      const qLower = (f.question || "").toLowerCase();
+      const aLower = (f.answer || "").toLowerCase();
+
+      if (qLower.includes(lower) || lower.includes(qLower)) {
+        highestScore = 100;
+        bestFaq = f;
+        break;
+      }
+
+      let score = 0;
+      for (const token of cleanTokens) {
+        if (qLower.includes(token)) score += 3;
+        else if (aLower.includes(token)) score += 1;
+      }
+
+      if (score > highestScore && score >= 2) {
+        highestScore = score;
+        bestFaq = f;
+      }
+    }
+
+    if (bestFaq && highestScore >= 10) {
+      const hasSinhalaChars = /[\u0D80-\u0DFF]/.test(bestFaq.answer);
+      const langMatches = (lang === "si" && hasSinhalaChars) || (lang === "en" && !hasSinhalaChars);
+      if (langMatches) {
+        return { action: "answer_question", reply: bestFaq.answer };
+      }
+    }
+
+    if (bestFaq && highestScore >= 2) {
+      matchedFaqHint = bestFaq;
+    }
   }
 
   // 2. Fetch Recent Conversation History (Last 10 messages)
@@ -782,16 +870,15 @@ async function handleAiFallback(
           recentChat.push({ role, content: text });
         }
 
-        // Avoid duplicating the user message if it's already the last element
         if (recentChat.length > 0) {
           const last = recentChat[recentChat.length - 1];
-          if (last.role === "user" && last.content.toLowerCase() === userMessage.trim().toLowerCase()) {
+          if (last.role === "user" && last.content.toLowerCase() === trimmed.toLowerCase()) {
             recentChat.pop();
           }
         }
       }
     } catch (err) {
-      console.warn("[handleAiFallback] Error fetching conversations:", err);
+      console.warn("[classifyAndAnswerWithAi] Error fetching conversations:", err);
     }
   }
 
@@ -806,7 +893,7 @@ async function handleAiFallback(
     if (stepName === "CAB_TIMING_CHOICE") stepDescription = "Choosing between Ride Now (immediate) or Schedule Ride (advance reservation)";
     else if (stepName === "CAB_SCHEDULE_DATE") stepDescription = "Entering date for scheduled trip";
     else if (stepName === "CAB_SCHEDULE_TIME") stepDescription = "Entering time for scheduled trip";
-    else if (stepName === "CAB_NAME") stepDescription = "Providing customer name";
+    else if (stepName === "CAB_NAME") stepDescription = "Providing customer personal name";
     else if (stepName === "CAB_PHONE") stepDescription = "Confirming customer phone number";
     else if (stepName === "CAB_VEHICLE") stepDescription = "Selecting vehicle type (Motorbike, Three-wheeler, Car, Van, Lorry, Bus)";
     else if (stepName === "CAB_MODEL") stepDescription = "Selecting specific car/van model";
@@ -814,7 +901,7 @@ async function handleAiFallback(
     else if (stepName === "CAB_DROPOFF") stepDescription = "Sharing drop-off destination location";
     else if (stepName === "CAB_TRIP_TYPE") stepDescription = "Choosing One-Way or Round Trip";
     else if (stepName === "CAB_CONFIRM") stepDescription = "Reviewing calculated fare and confirming ride";
-    else if (stepName === "BOOKING_COMPLETED") stepDescription = "Ride or order completed and dispatched to drivers";
+    else if (stepName === "BOOKING_COMPLETED") stepDescription = `Ride/order confirmed and dispatched to driver group! Order Code: ${d.last_order_code || "Confirmed"}`;
     else if (stepName === "RENT_VEHICLE_CHOICE") stepDescription = "Selecting rental vehicle";
     else if (stepName === "RENT_DURATION") stepDescription = "Specifying rental duration (days/weeks)";
     else if (stepName === "DELIVERY_CATEGORY") stepDescription = "Selecting delivery category (Food/Grocery/Medicine/Parcel)";
@@ -831,8 +918,11 @@ async function handleAiFallback(
 - Selected Vehicle: ${d.vehicle_key ? `${d.vehicle_key.toUpperCase()}${d.selected_model ? ` (${d.selected_model})` : ""}` : "Not selected yet"}
 - Pickup Location: ${d.pickup_text || "Not set yet"}
 - Dropoff Location: ${d.dropoff_text || "Not set yet"}
+- Distance: ${d.distance_km ? `${d.distance_km} km` : "Pending dropoff calculation"}
+- Total Fare: ${d.total_fare ? `LKR ${d.total_fare}` : "Pending calculation"}
 - Scheduled Time: ${d.scheduled_time || "None"}
 - Trip Type: ${d.trip_type ? (d.trip_type === "round_trip" ? "Round Trip (Return journey)" : "One-Way") : "Not selected yet"}
+- Confirmed Order Code: ${d.last_order_code || "None"}
 `;
   }
 
@@ -841,10 +931,9 @@ async function handleAiFallback(
 === HIGH RELEVANCE DATABASE FAQ MATCH ===
 Question: ${matchedFaqHint.question}
 Answer: ${matchedFaqHint.answer}
-(Instruction: Use this verified answer as your primary source of truth. Translate and adapt it smoothly into the customer's selected language, taking into account their current vehicle and booking status).
 ` : "";
 
-  // 5. Build Models and Pricing Context
+  // 5. Vehicle & Pricing Context
   const carModels = (pricingSettings.car?.models || []).map((m: any) => m.name).join(", ") || "Alto, WagonR, Prius, Axio, Aqua";
   const vanModels = (pricingSettings.van?.models || []).map((m: any) => m.name).join(", ") || "KDH (High Roof / Flat Roof), Caravan, Dolphin";
   const lorryModels = (pricingSettings.lorry?.models || []).map((m: any) => m.name).join(", ") || "Dimo Batta, Canter, Light Trucks";
@@ -857,48 +946,33 @@ Answer: ${matchedFaqHint.answer}
 - Van: Base LKR ${pricingSettings.van?.base_price || 900} (covers first ${pricingSettings.van?.coverage_km || 3} km), then LKR ${pricingSettings.van?.per_km_rate || 200}/km | Models: ${vanModels}
 - Lorry: Base LKR ${pricingSettings.lorry?.base_price || 1500} (covers first ${pricingSettings.lorry?.coverage_km || 5} km), then LKR ${pricingSettings.lorry?.per_km_rate || 300}/km | Models: ${lorryModels}
 - Bus: Base LKR ${pricingSettings.bus?.base_price || 3000} (covers first ${pricingSettings.bus?.coverage_km || 10} km), then LKR ${pricingSettings.bus?.per_km_rate || 500}/km
-(Note: Live trip total fare is computed live via Google Maps once pickup and dropoff points are provided).
 `;
 
-  // 6. Service Architecture and Specifications Context
   const serviceKnowledge = `
 === CENTRAL CABS & DELIVERY SERVICE SPECIFICATIONS ===
 1. Transport / Hire Cabs:
 - Two Distinct Booking Options:
-  a) 'ළඟ ගමනක් යන්න' (Ride Now / Local Trips): Immediate instant travel. Allowed vehicles are strictly Motorbike (1 passenger) and Three-wheeler (up to 3 passengers).
-  b) 'දුර ගමනක් යන්න' (Ride Later / Scheduled Trips): Advance booking with date and time. Allowed vehicles: Car (Sedan/Hatchback, 4 passengers, AC), Van (KDH/Caravan, 6-14 passengers, AC), Lorry (Goods/House shifting), Bus (20-54 passengers, pilgrimages/tours).
-- Trip Types: One-Way (එක් පැත්තක්) or Round Trip (දෙපැත්තම - Up & Down return journey).
-- Booking Process in WhatsApp: Select Ride Now/Schedule -> Name -> Phone -> Vehicle & Model -> Pickup Location pin/address -> Drop-off Location pin/address -> Live fare calculated via Google Maps -> Order Confirmed -> Broadcasted to verified driver groups -> Driver assigned.
-- Commission: 10% commission applies.
+  a) 'ළඟ ගමනක් යන්න' (Ride Now / Local Trips): Immediate instant travel. Allowed vehicles: Motorbike (1 passenger), Three-wheeler (up to 3 passengers).
+  b) 'දුර ගමනක් යන්න' (Ride Later / Scheduled Trips): Advance booking with date and time. Allowed vehicles: Car (4 passengers, AC), Van (6-14 passengers, AC), Lorry (Goods/House shifting), Bus (20-54 passengers).
+- Trip Types: One-Way or Round Trip (Up & Down return journey).
+- Booking Confirmation & Driver Dispatch: Once confirmed, order is dispatched to verified driver groups. A nearby driver will call or arrive within 5 to 10 minutes.
+- Travel Time / Duration: In Sri Lanka, road travel speed averages approximately 40-50 km/h. For instance, 100-120 km takes roughly 2.5 to 3.5 hours.
 - Cancellation: Free cancellation anytime before the driver arrives by typing "cancel" or "අවලංගු".
+- Payment: Cash to driver or Bank Transfer.
 
-2. Rent a Car (Self-drive / With Driver Rentals):
-- Customer chooses vehicle category (Car, Van, etc.) and model preference.
-- Customer specifies rental duration (days/weeks) and pickup location.
-- Order is broadcasted to verified rent a car providers. A dedicated rental agent will contact the customer directly on WhatsApp/Phone with photos, vehicle options, pricing, and deposit details.
-- 10% commission applies.
+2. Rent a Car:
+- Self-drive or with driver rentals. Customer selects vehicle and rental duration. Dedicated rental agent contacts customer directly with photos, pricing, and deposit details.
 
 3. Delivery Service:
-- Delivery of food, groceries, medicine/pharmacy, parcels, documents, and retail items.
-- Products can be browsed on www.centralonline.lk or customer can specify custom items list & drop-off location.
-- Admin verifies and sets the shop pickup location, and dispatches the order to verified Delivery Riders.
-- Delivery rider picks up items from the shop and delivers directly to the customer.
-
-4. Vehicle Capacities & Features:
-- Motorbike: 1 passenger, budget/quick local rides or small parcel delivery.
-- Three-wheeler (Tuk Tuk): Up to 3 passengers, local rides, moderate luggage.
-- Car (Sedan / Hatchback): Up to 4 passengers, 2-3 bags/suitcases, fully air-conditioned (AC). Models: Alto, WagonR, Prius, Axio, Aqua. Available for Scheduled trips and Rent.
-- Van: 6 to 14 passengers, spacious luggage room, fully air-conditioned (AC). Models: KDH (High Roof / Flat Roof), Caravan, Dolphin. Ideal for tours, family trips, airport drops/pickups.
-- Lorry: Goods, furniture, house shifting, heavy parcels. Models: Dimo Batta, Canter, etc.
-- Bus: 20 to 54 passengers, AC and non-AC options, ideal for pilgrimages, staff transport, school trips, and large tour groups.
+- Food, groceries, pharmacy/medicine, parcels. Verified Delivery Rider assigned after shop pickup confirmation.
 `;
 
   const langRule = lang === "en"
-    ? "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in clear, polite English."
-    : "CRITICAL LANGUAGE RULE: If you provide an answer, you MUST write your AI answer in natural, polite Sinhala using Sinhala script (සිංහල).";
+    ? "CRITICAL LANGUAGE RULE: If action is 'answer_question', write your reply in clear, polite English."
+    : "CRITICAL LANGUAGE RULE: If action is 'answer_question', write your reply in natural, polite Sinhala using Sinhala script (සිංහල).";
 
-  const systemPrompt = `You are the helpful, hallucination-free virtual assistant for Ceylon Central Cabs & Delivery.
-The customer's current message: "${userMessage}"
+  const systemPrompt = `You are the intelligent intent classifier and virtual assistant for Ceylon Central Cabs & Delivery.
+The customer's message: "${trimmed}"
 
 ${userLiveContext}
 
@@ -911,30 +985,44 @@ ${pricingContext}
 === VERIFIED DATABASE FAQS ===
 ${faqText}
 
-=== STRICT INSTRUCTIONS & CONTEXT-AWARE RULES ===
-1. MULTILINGUAL & SINGLISH/ENGLISH TOLERANCE: Customers frequently write in Singlish (Sinhala words in English script, e.g. "Car eke AC thiyeda?", "Kiyada yanne?") or English. Semantically interpret their intent accurately.
-2. CONTEXTUAL RESOLUTION: Use the "CURRENT CUSTOMER LIVE BOOKING STATE" and chat history to resolve pronouns ("it", "this car", "my ride"). For example, if they ask "Does it have AC?" and they have selected a Car/Van, confirm that their chosen vehicle is air-conditioned. If they ask about cost or time, refer specifically to their selected vehicle and route status.
-3. FACTUAL BOUNDARY: Answer the customer's question using the factual details provided above in SERVICE SPECIFICATIONS, VEHICLE PRICING, VEHICLE CAPACITIES, LIVE BOOKING STATE, and FAQS. Do NOT fabricate facts, phone numbers, or unlisted policies.
-4. If the user's question CANNOT be answered from the provided knowledge, DO NOT guess or make up an answer. Reply EXACTLY with: "UNKNOWN_INFO".
-5. If the message is NOT a question or inquiry (e.g. it is simply answering a booking step like giving a name, a phone number, an address, a date, or saying 'ok', 'yes', 'no'), reply EXACTLY with: "NOT_A_QUESTION".
-6. INTENT TO CANCEL: If the customer explicitly demands or insists to cancel their active booking/order right now (e.g., "cancel my booking", "cancel it", "danma cancel karanna"), reply EXACTLY with: "INTENT_CANCEL_ORDER".
-7. INTENT WRONG LOCATION / DISTANCE: If the customer states or complains that their pickup location, dropoff location, distance, or price is wrong or calculated incorrectly (e.g., "wrong location", "dura weradi"), reply EXACTLY with: "INTENT_WRONG_LOCATION".
-8. ${langRule}
-9. Keep the answer concise (1 to 3 sentences maximum), friendly, and professional.
-10. OUTPUT ONLY the direct answer. DO NOT output internal thinking, notes, thoughts, or explanations.`;
+=== TOOL CALLING & INTENT CLASSIFICATION INSTRUCTIONS ===
+Evaluate the customer's message in the context of their CURRENT LIVE BOOKING STATE and chat history.
+Customers frequently write in Singlish (Sinhala in English script, e.g. "Kochchara welawak yaida", "Car eke AC thiyeda?", "Kiyada yanne?"), English, or Sinhala.
+
+You MUST return a JSON object with this exact schema:
+{
+  "action": "answer_question" | "continue_flow" | "cancel" | "main_menu",
+  "reply": "string"
+}
+
+Actions:
+1. "answer_question":
+   The customer is asking a doubt, question, travel duration inquiry (e.g. "Kochchara welawak yaida", "how long will it take?"), driver arrival inquiry (e.g. "driver kawadda enne?"), pricing question, vehicle feature question, payment question, or asking why an input is needed (e.g. "Thanagannadha avashava Enna").
+   - If asking about travel time/duration, use their route distance and Sri Lankan conditions (approx 40-50 km/h) to provide a helpful, realistic estimate, and reassure them that the driver will call in 5-10 minutes.
+   - If asking when driver will arrive or call, explain that their order has been dispatched and a nearby driver will call within 5-10 minutes.
+   - Answer directly and helpfully in "reply" in 1-3 sentences following ${langRule}.
+   - Do NOT say "information is unavailable" if you can give a realistic travel or driver estimate based on the service specs above.
+
+2. "continue_flow":
+   The customer is NOT asking a question. They are attempting to answer the current booking step (e.g. typing an address name like "Galle Face Green" at drop-off step, or typing their personal name like "Kapi" at name step, or typing a date/time). Set "reply" to "".
+
+3. "cancel":
+   The customer explicitly demands or insists to cancel their active booking or order (e.g. "cancel my booking", "cancel it", "danma cancel karanna"). Set "reply" to "".
+
+4. "main_menu":
+   The customer explicitly requests to go back to the main menu or home (e.g. "menu", "home", "main menu"). Set "reply" to "".
+
+OUTPUT ONLY THE JSON OBJECT. No markdown code blocks, no backticks, no extra explanations.`;
 
   const messages: Array<{ role: string; content: string }> = [
-    { role: "system", content: systemPrompt }
+    { role: "system", content: systemPrompt },
+    ...recentChat,
+    { role: "user", content: trimmed }
   ];
 
-  for (const m of recentChat) {
-    messages.push({
-      role: m.role,
-      content: m.content
-    });
-  }
-
-  messages.push({ role: "user", content: userMessage });
+  const aiGenerateUrl = Deno.env.get("AI_GENERATE_URL");
+  const botApiKey = Deno.env.get("BOT_API_KEY");
+  const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
   try {
     let rawText = "";
@@ -949,21 +1037,19 @@ ${faqText}
         body: JSON.stringify({
           messages,
           model: "google/gemini-2.5-flash",
-          temperature: 0.1,
-          maxTokens: 1200
+          temperature: 0.4,
+          maxTokens: 800
         }),
       });
       if (res.ok) {
         const j = await res.json();
         rawText = j.text || j.choices?.[0]?.message?.content || "";
-      } else {
-        console.warn("AI Generate gateway error:", res.status, await res.text());
       }
     } else if (lovableApiKey) {
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.1, max_tokens: 1200 }),
+        body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.4, max_tokens: 800 }),
       });
       if (res.ok) {
         const j = await res.json();
@@ -973,15 +1059,57 @@ ${faqText}
 
     let cleaned = rawText.trim();
     if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+      cleaned = cleaned.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
     }
 
-    if (cleaned) {
-      return cleaned;
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed.action === "string") {
+      return {
+        action: parsed.action as any,
+        reply: parsed.reply || ""
+      };
     }
   } catch (err) {
-    console.warn("AI Fallback failed:", err);
+    console.warn("[classifyAndAnswerWithAi] AI call or JSON parse error:", err);
   }
 
-  return "NOT_A_QUESTION";
+  // Graceful Offline / Unit Test Fallback
+  if (matchedFaqHint) {
+    return { action: "answer_question", reply: matchedFaqHint.answer };
+  }
+
+  if (isPossibleQuestion(trimmed)) {
+    const fallbackAnswer = lang === "en"
+      ? "💡 Our customer agent or driver will contact you shortly to provide the necessary details."
+      : "💡 අපගේ නියෝජිතයෙකු හෝ රියදුරු මහතා ඔබව ඉක්මනින් සම්බන්ධ කරගෙන අවශ්‍ය විස්තර ලබා දෙනු ඇත.";
+    return { action: "answer_question", reply: fallbackAnswer };
+  }
+
+  return { action: "continue_flow", reply: "" };
+}
+
+async function handleAiFallback(
+  supabase: any,
+  userId: string,
+  userMessage: string,
+  fallbackErrorPrompt: string,
+  pricingSettings: PricingSettings,
+  lang: SupportedLanguage = "si",
+  session?: BotSessionState,
+  phoneNumber?: string,
+  matchedFaqHint?: { question: string; answer: string } | null
+): Promise<string> {
+  const result = await classifyAndAnswerWithAi(
+    supabase,
+    userId,
+    userMessage,
+    pricingSettings,
+    lang,
+    session,
+    phoneNumber
+  );
+  if (result.action === "cancel") return "INTENT_CANCEL_ORDER";
+  if (result.action === "continue_flow") return "NOT_A_QUESTION";
+  if (result.action === "main_menu") return "INTENT_MAIN_MENU";
+  return result.reply || "NOT_A_QUESTION";
 }

@@ -340,6 +340,56 @@ export async function runAllAutomatedTests(
       record("7.3 Order stored in orders table", !dbErr && !!dbOrder);
       record("7.4 Database pickup_address has Google Maps link", dbOrder?.pickup_address?.includes("maps.google.com"), dbOrder?.pickup_address);
       record("7.5 Database dropoff_address has Google Maps link", dbOrder?.dropoff_address?.includes("maps.google.com"), dbOrder?.dropoff_address);
+
+      // 7.6 Test inquiry at BOOKING_COMPLETED: User asks "Kochchara welawak yaida" without "?"
+      // MUST NOT dump the user to Main Menu Category Poll!
+      const postBookingSession: BotSessionState = {
+        phone_number: testPhone,
+        user_id: userId,
+        flow_type: "IDLE",
+        current_step: "BOOKING_COMPLETED",
+        session_data: {
+          language: "si",
+          last_order_code: confirmedOrderCode,
+          vehicle_key: "car",
+          pickup_text: "Colombo Fort",
+          dropoff_text: "Kandy",
+          distance_km: 122.7,
+        },
+      };
+
+      const postBookingQuestionRes = await processCustomerChatStep(
+        supabase,
+        supabaseUrl,
+        supabaseServiceKey,
+        userId,
+        testPhone,
+        "Kochchara welawak yaida",
+        "text",
+        {},
+        postBookingSession,
+        defaultPricing,
+        defaultSystemSettings
+      );
+
+      record("7.6 Question at BOOKING_COMPLETED stays in BOOKING_COMPLETED without dumping to Main Menu", postBookingQuestionRes.nextStep === "BOOKING_COMPLETED" && postBookingQuestionRes.poll?.name.includes("සහායක්"), postBookingQuestionRes.replyText);
+
+      // 7.7 Explicit "Menu" at BOOKING_COMPLETED transitions to CATEGORY_CHOICE
+      const postBookingMenuRes = await processCustomerChatStep(
+        supabase,
+        supabaseUrl,
+        supabaseServiceKey,
+        userId,
+        testPhone,
+        "Menu",
+        "text",
+        {},
+        postBookingSession,
+        defaultPricing,
+        defaultSystemSettings
+      );
+
+      record("7.7 Explicit 'Menu' returns to Main Menu CATEGORY_CHOICE", postBookingMenuRes.nextStep === "CATEGORY_CHOICE" && postBookingMenuRes.poll?.name.includes("සේවාව තෝරන්න"));
     }
 
     // ------------------------------------------------------------------------
