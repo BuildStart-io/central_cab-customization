@@ -231,6 +231,22 @@ export async function runAllAutomatedTests(
     record("5.3 Reject plain text at CAB_DROPOFF", dropoffPlainRes.nextStep === "CAB_DROPOFF" && dropoffPlainRes.replyText.includes("Typing location names is not accepted"));
     record("5.4 Rejection re-renders dropoff poll", dropoffPlainRes.poll?.name.includes("drop-off") || dropoffPlainRes.poll?.name.includes("Drop"));
 
+    // 5.4 Hybrid Test: User asks a question/doubt at CAB_DROPOFF without question mark -> Intercepted as question, answered and flow resumed!
+    const dropoffQuestionRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "Thanagannadha avashava Enna",
+      "text",
+      {},
+      dropoffSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record("5.4b Hybrid: Intercept inquiry without '?' at CAB_DROPOFF", dropoffQuestionRes.nextStep === "CAB_DROPOFF" && !dropoffQuestionRes.replyText.includes("Typing location names is not accepted"), dropoffQuestionRes.replyText);
+
     // 5.4 User sends valid Google Maps link -> ACCEPTED, moves to CAB_TRIP_TYPE with poll
     const dropoffLinkRes = await processCustomerChatStep(
       supabase,

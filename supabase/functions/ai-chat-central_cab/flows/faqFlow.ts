@@ -190,18 +190,27 @@ export async function queryFaqsAndAi(
       matchedFaqHint
     );
 
-    if (
-      aiAnswer &&
-      !aiAnswer.includes("NOT_A_QUESTION") &&
-      !aiAnswer.includes("UNKNOWN_INFO") &&
-      !aiAnswer.includes("Sorry, I don't have that information")
-    ) {
-      let cleaned = aiAnswer.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+    if (aiAnswer) {
+      if (aiAnswer.includes("NOT_A_QUESTION")) {
+        return "NOT_A_QUESTION";
       }
-      if (cleaned) {
-        return cleaned;
+      if (aiAnswer.includes("INTENT_CANCEL_ORDER")) {
+        return "INTENT_CANCEL_ORDER";
+      }
+      if (aiAnswer.includes("INTENT_WRONG_LOCATION")) {
+        return "INTENT_WRONG_LOCATION";
+      }
+      if (
+        !aiAnswer.includes("UNKNOWN_INFO") &&
+        !aiAnswer.includes("Sorry, I don't have that information")
+      ) {
+        let cleaned = aiAnswer.split("\n\nSYSTEM PROMPT TO APPEND:")[0].trim();
+        if (cleaned.startsWith("```")) {
+          cleaned = cleaned.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").trim();
+        }
+        if (cleaned) {
+          return cleaned;
+        }
       }
     }
   } catch (err) {

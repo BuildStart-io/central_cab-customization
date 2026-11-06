@@ -29,6 +29,7 @@ import { handleDeliveryFlowStep } from "./flows/deliveryFlow.ts";
 import { handleRentFlowStep } from "./flows/rentFlow.ts";
 import { handleFaqFlowStep, queryFaqsAndAi, getStepPollForCurrentStep } from "./flows/faqFlow.ts";
 import { handleCancelFlowStep, startCancelFlow } from "./flows/cancelFlow.ts";
+import { extractNaturalDate, extractNaturalTime } from "./flows/dateExtractor.ts";
 
 export type { BotSessionState, StepProcessResult, PollPayload };
 
@@ -55,7 +56,11 @@ function isExpectedStepAnswer(
       const vKey = data.vehicle_key || "car";
       const models = pricingSettings[vKey]?.models || [];
       if (models.some((m) => lower.includes(m.name.toLowerCase()))) return true;
-    } else if (step === "CAB_DROPOFF") {
+    } else if (step === "CAB_SCHEDULE_DATE") {
+      if (extractNaturalDate(trimmed).isRecognized) return true;
+    } else if (step === "CAB_SCHEDULE_TIME") {
+      if (extractNaturalTime(trimmed).isRecognized) return true;
+    } else if (step === "CAB_PICKUP" || step === "CAB_DROPOFF") {
       if (
         lower === "1" || lower.startsWith("1.") || lower.includes("දන්නවා") || lower.includes("direct link") || lower.includes("i know") ||
         lower === "2" || lower.startsWith("2.") || lower.includes("දන්නේ නෑ") || lower.includes("help") || lower.includes("guide") ||
@@ -124,7 +129,11 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
   const engWords = [
     "price", "how much", "rate", "rates", "cost", "charge", "charges", "fare", "estimate", "calculation",
     "km", "kilometer", "distance", "keeyada", "kiyada", "gaana", "gani", "mudal",
-    "thiyenawada", "puluwanda", "puluwandha", "puluwan", "koheda", "kohomada", "mokakda", "monawada", "wisthara", "visthara", "detail", "details",
+    "thiyenawada", "thiyanawada", "thiyeda", "puluwanda", "puluwandha", "puluwan", "baeda", "baedha", "epada",
+    "koheda", "kohomada", "mokakda", "monawada", "mokada", "mokatada", "wisthara", "visthara", "detail", "details",
+    "danaganna", "danagannada", "thanagannadha", "thanaganna", "dhanaganna", "avashyada", "avashya", "avashava", "oneda", "one", "ona", "onee",
+    "karannada", "yannada", "gannada", "ewannada", "kamak nadda", "hariyada", "kawadda", "kavadada", "kavadha", "ai", "ei",
+    "mandatory", "required", "need", "needed", "must",
     "ac", "aircon",
     "what", "how", "when", "where", "why", "who", "which", "can you", "do you", "can i", "is it", "possible", "available",
     "wrong", "incorrect", "pila", "waradi", "dura", "weradi",
@@ -138,7 +147,8 @@ function isPossibleQuestion(text: string, messageType?: string): boolean {
   
   const sinWords = [
     "මිල", "කීයද", "ගාණ", "කොහෙද", "තියෙනවද", "පුළුවන්ද", "විස්තර", "වැරදි", "දුර", "අවලංගු", "ප්‍රශ්න", "සහාය",
-    "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "ඒසී", "ගාස්තු", "ගාස්තුව", "කොමිස්"
+    "මොකක්ද", "මොනවාද", "කොහොමද", "කවද්ද", "කීයටද", "ඒසී", "ගාස්තු", "ගාස්තුව", "කොමිස්",
+    "දැනගන්න", "දැනගන්නද", "අවශ්‍ය", "අවශ්‍යද", "ඕනෙද", "ඕන", "ඕනේද", "ඇයි", "මොකටද", "බැරිද", "එපාද"
   ];
 
   if (text.length > 80 && !lower.startsWith("location:")) return true;
@@ -360,9 +370,8 @@ export async function processCustomerChatStep(
     || /https?:\/\/(?:maps\.google\.com|goo\.gl\/maps|maps\.app\.goo\.gl|www\.google\.com\/maps|google\.com\/maps)[^\s]*/i.test(trimmed)
     || /[-+]?\d{1,2}\.\d+,\s*[-+]?\d{1,3}\.\d+/.test(trimmed);
 
-  const isLocationStep = step === "DELIVERY_LOCATION" || step === "CAB_PICKUP" || step === "CAB_DROPOFF" || step === "RENT_LOCATION";
   const isExpectedAnswer = isExpectedStepAnswer(flow, step, trimmed, data, pricingSettings);
-  const shouldInterceptQuestion = !isLocationMsg && !isExpectedAnswer && (!isLocationStep || trimmed.includes("?"));
+  const shouldInterceptQuestion = !isLocationMsg && !isExpectedAnswer;
 
   // Question interception for active booking flows (Answers question and resumes flow!)
   if ((flow === "CAB_FLOW" || flow === "DELIVERY_FLOW" || flow === "RENT_A_CAR_FLOW") && shouldInterceptQuestion && isPossibleQuestion(trimmed, messageType)) {
@@ -377,39 +386,41 @@ export async function processCustomerChatStep(
       phoneNumber
     );
     
-    if (answer.includes("INTENT_CANCEL_ORDER")) {
-      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
-    }
-    if (answer.includes("INTENT_WRONG_LOCATION")) {
-      delete data.pickup_text;
-      delete data.pickup_coords;
-      delete data.dropoff_text;
-      delete data.dropoff_coords;
-      const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
+    if (answer && answer !== "NOT_A_QUESTION") {
+      if (answer.includes("INTENT_CANCEL_ORDER")) {
+        return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+      }
+      if (answer.includes("INTENT_WRONG_LOCATION")) {
+        delete data.pickup_text;
+        delete data.pickup_coords;
+        delete data.dropoff_text;
+        delete data.dropoff_coords;
+        const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
+        return {
+          replyText: lang === "en"
+            ? "We noticed your location or distance seems incorrect. Please enter your pickup location again:"
+            : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+          nextFlow: flow,
+          nextStep,
+          sessionData: data,
+        };
+      }
+
+      const stepPrompt = getStepPromptText(flow, step, lang);
+      const stepPoll = getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
+      const resumeHeader = lang === "en"
+        ? "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n"
+        : "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
+
       return {
-        replyText: lang === "en"
-          ? "We noticed your location or distance seems incorrect. Please enter your pickup location again:"
-          : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+        replyText: `${answer}\n\n${resumeHeader}${stepPrompt}`,
+        poll: stepPoll,
+        sendTextWithPoll: !!stepPoll,
         nextFlow: flow,
-        nextStep,
+        nextStep: step,
         sessionData: data,
       };
     }
-
-    const stepPrompt = getStepPromptText(flow, step, lang);
-    const stepPoll = getStepPollForCurrentStep(flow, step, data, lang, pricingSettings);
-    const resumeHeader = lang === "en"
-      ? "━━━━━━━━━━━━━━━━━━━━\n📌 *Please continue your booking:*\n"
-      : "━━━━━━━━━━━━━━━━━━━━\n📌 *ඔබගේ Booking එක ඉදිරියට ගෙන යමු:*\n";
-
-    return {
-      replyText: `${answer}\n\n${resumeHeader}${stepPrompt}`,
-      poll: stepPoll,
-      sendTextWithPoll: !!stepPoll,
-      nextFlow: flow,
-      nextStep: step,
-      sessionData: data,
-    };
   }
 
   // =========================================================================
