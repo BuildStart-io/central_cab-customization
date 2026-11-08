@@ -130,6 +130,8 @@ export async function handleRentFlowStep(
 
       return {
         replyText: summaryCard,
+        poll: getBookingConfirmPoll(lang),
+        sendTextWithPoll: true,
         nextFlow: "RENT_A_CAR_FLOW",
         nextStep: "RENT_CONFIRM",
         sessionData: data,
@@ -216,7 +218,8 @@ export async function handleRentFlowStep(
         };
       } else {
         return await invalidFallback(
-          getRentBookingSummaryCard(data, lang)
+          getRentBookingSummaryCard(data, lang),
+          getBookingConfirmPoll(lang)
         );
       }
     }

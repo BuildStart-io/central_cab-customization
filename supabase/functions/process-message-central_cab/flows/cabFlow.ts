@@ -177,7 +177,7 @@ export async function handleCabFlowStep(
       if (digits.length < 9) {
         const phoneErr = lang === "en"
           ? "⚠️ Please enter a valid contact phone number (e.g. 0771234567):"
-          : "⚠️ කරුණාකර නිවැරදි Contact Number එකක් ඇතුළත් කරන්න (උදා: 0771234567):";
+          : "⚠️ කරුණාකර නිවැරදි දුරකථන අංකයක් ඇතුළත් කරන්න (උදා: 0771234567):";
         return await invalidFallback(phoneErr);
       }
       if (digits.startsWith("0") && digits.length === 10) {
@@ -496,6 +496,8 @@ export async function handleCabFlowStep(
 
       return {
         replyText: summary,
+        poll: getBookingConfirmPoll(lang),
+        sendTextWithPoll: true,
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_CONFIRM",
         sessionData: data,
@@ -578,7 +580,8 @@ export async function handleCabFlowStep(
         };
       } else {
         return await invalidFallback(
-          getStepPromptText("CAB_FLOW", "CAB_CONFIRM", lang)
+          getStepPromptText("CAB_FLOW", "CAB_CONFIRM", lang),
+          getBookingConfirmPoll(lang)
         );
       }
     }

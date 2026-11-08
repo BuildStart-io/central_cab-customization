@@ -24,3 +24,4 @@ CREATE INDEX IF NOT EXISTS idx_order_broadcast_queue_order
   ON central_cab.order_broadcast_queue (order_code);
 
 GRANT ALL ON central_cab.order_broadcast_queue TO postgres, anon, authenticated, service_role;
+

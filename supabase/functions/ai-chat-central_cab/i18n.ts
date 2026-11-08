@@ -776,24 +776,23 @@ export function getTripTypePoll(lang: SupportedLanguage = "si"): PollDefinition 
 }
 
 export function getBookingConfirmPoll(lang: SupportedLanguage = "si"): PollDefinition {
-  const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව)";
   if (lang === "en") {
     return {
       name: "Please confirm your booking:",
       options: [
-        "Yes, Confirm Booking ✅",
-        "No, Cancel ❌",
-        resetOption,
+        "1. Yes - Confirm Booking ✅",
+        "2. Cancel - Cancel Booking ❌",
+        "3. Home - Go to Home Page 🏠",
       ],
       multipleAnswers: false,
     };
   }
   return {
-    name: "Booking එක Confirm කරන්න:",
+    name: "Booking එක තහවුරු කිරීමට තෝරන්න:",
     options: [
-      "Yes, Confirm Booking ✅",
-      "No, Cancel ❌",
-      resetOption,
+      "1. Yes - Booking එක Confirm කරන්න ✅",
+      "2. Cancel - අවලංගු කරන්න ❌",
+      "3. Home - ප්‍රධාන මෙනුවට යන්න 🏠",
     ],
     multipleAnswers: false,
   };
@@ -884,7 +883,7 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "CAB_PHONE":
         if (lang === "en") return "Please provide your contact phone number:";
-        return "කරුණාකර ඔබගේ Contact Number එක ලබා දෙන්න:";
+        return "කරුණාකර ඔබගේ දුරකථන අංකය ලබා දෙන්න:";
 
       case "CAB_VEHICLE":
         if (lang === "en") return "Please choose your vehicle type:";
@@ -926,7 +925,7 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         if (lang === "en") {
           return "📞 Please enter your contact WhatsApp or phone number:\n(e.g., 0771234567)";
         }
-        return "📞 ඔබව සම්බන්ධ කරගත හැකි WhatsApp හෝ දුරකථන අංකය ඇතුළත් කරන්න (Contact Number):\n(උදා: 0771234567)";
+        return "📞 ඔබව සම්බන්ධ කරගත හැකි WhatsApp හෝ දුරකථන අංකය ඇතුළත් කරන්න:\n(උදා: 0771234567)";
 
       case "DELIVERY_LOCATION":
         if (lang === "en") {
@@ -952,7 +951,7 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "RENT_PHONE":
         if (lang === "en") return "📞 Please enter your contact phone number:";
-        return "📞 ඔබව සම්බන්ධ කරගත හැකි දුරකථන අංකය ඇතුළත් කරන්න (Contact Phone Number):";
+        return "📞 ඔබව සම්බන්ධ කරගත හැකි දුරකථන අංකය ඇතුළත් කරන්න:";
 
       case "RENT_LOCATION":
         if (lang === "en") return "📍 Please enter the rental location or area (Location / City / Area):";
@@ -1002,20 +1001,18 @@ export function getBookingConfirmManualPrompt(lang: SupportedLanguage = "si"): s
 }
 
 export function getRentBookingSummaryCard(data: any, lang: SupportedLanguage): string {
-  const prompt = getBookingConfirmManualPrompt(lang);
   if (lang === "en") {
-    return `🚗 *Rent a Car Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name || "Customer"}\n📞 *Contact:* ${data.customer_phone || "N/A"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model:* ${data.rent_model || "Any"}\n⏱️ *Duration:* ${data.rent_duration || "N/A"}\n📍 *Location:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `🚗 *Rent a Car Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Name:* ${data.customer_name || "Customer"}\n📞 *Contact:* ${data.customer_phone || "N/A"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model:* ${data.rent_model || "Any"}\n⏱️ *Duration:* ${data.rent_duration || "N/A"}\n📍 *Location:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━`;
   }
-  return `🚗 *Rent a Car ඉල්ලුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *නම:* ${data.customer_name || "පාරිභෝගිකයා"}\n📞 *දුරකථන:* ${data.customer_phone || "N/A"}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *මොඩලය:* ${data.rent_model || "ඕනෑම මාදිලියක් (Any)"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "N/A"}\n📍 *ස්ථානය:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `🚗 *Rent a Car ඉල්ලුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n👤 *නම:* ${data.customer_name || "පාරිභෝගිකයා"}\n📞 *දුරකථන:* ${data.customer_phone || "N/A"}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *මොඩලය:* ${data.rent_model || "ඕනෑම මාදිලියක් (Any)"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "N/A"}\n📍 *ස්ථානය:* ${data.rent_location || "N/A"}\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getDeliveryOrderSummaryCard(data: any, lang: SupportedLanguage): string {
   const loc = formatLocationLinkForCustomer(data.delivery_location || data.dropoff_address || data.pickup_address, data.dropoff_coords);
-  const prompt = getBookingConfirmManualPrompt(lang);
   if (lang === "en") {
-    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
   }
-  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getVehicleLocalizedName(vehicleKey: string = "", lang: SupportedLanguage = "en"): string {
@@ -1051,7 +1048,6 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
   const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
   const pickup = formatLocationLinkForCustomer(data.pickup_address || data.pickup_text, data.pickup_coords);
   const dropoff = formatLocationLinkForCustomer(data.dropoff_address || data.dropoff_text, data.dropoff_coords);
-  const prompt = getBookingConfirmManualPrompt(lang);
   
   const baseVehicleName = getVehicleLocalizedName(data.vehicle_key || data.vehicle_name || "car", lang);
   const vehicleText = data.vehicle_model?.name
@@ -1060,11 +1056,11 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
 
   if (lang === "en") {
     const timingHeader = isScheduled ? `📅 *Long Distance Trip (Schedule):* ${data.scheduled_time}\n` : `⚡ *Short Distance Trip (Short Trip)*\n`;
-    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━`;
   }
 
   const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
-  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━\n${prompt}`;
+  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getBookingSuccessMessage(orderCode: string, lang: SupportedLanguage, category: string = ""): string {

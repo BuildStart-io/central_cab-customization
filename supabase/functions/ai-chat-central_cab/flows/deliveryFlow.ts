@@ -146,6 +146,8 @@ export async function handleDeliveryFlowStep(
 
       return {
         replyText: summary,
+        poll: getBookingConfirmPoll(lang),
+        sendTextWithPoll: true,
         nextFlow: "DELIVERY_FLOW",
         nextStep: "DELIVERY_CONFIRM",
         sessionData: data,
@@ -231,7 +233,8 @@ export async function handleDeliveryFlowStep(
         };
       } else {
         return await invalidFallback(
-          getStepPromptText("DELIVERY_FLOW", "DELIVERY_CONFIRM", lang)
+          getStepPromptText("DELIVERY_FLOW", "DELIVERY_CONFIRM", lang),
+          getBookingConfirmPoll(lang)
         );
       }
     }
