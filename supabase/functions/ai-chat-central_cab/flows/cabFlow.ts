@@ -3,6 +3,7 @@
 // Handles "Ride Now" (immediate) & "Schedule Ride" (advance reservation)
 // ============================================================================
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   getGoogleMapsDistance,
   calculateFare,
@@ -535,7 +536,7 @@ export async function handleCabFlowStep(
         // 1. Save order in central_cab.orders
         await saveOrderToDatabase(supabase, userId, "transport", data);
 
-        // 2. Alert Admin & Broadcast to Driver Groups in background (non-blocking)
+        // 2. Alert Admin & Broadcast to Driver Groups via Queue & Cron (non-blocking)
         runInBackground(
           broadcastBooking(
             supabaseUrl,
@@ -544,7 +545,8 @@ export async function handleCabFlowStep(
             orderCode,
             "Transport",
             data,
-            systemSettings
+            systemSettings,
+            userId
           )
         );
 
@@ -793,7 +795,8 @@ export async function broadcastBooking(
   orderCode: string,
   category: string,
   data: any,
-  systemSettings: CabSystemSettings
+  systemSettings: CabSystemSettings,
+  userId?: string
 ) {
   try {
     const pickupDisplay = formatLocationDisplay(data.pickup_text, data.pickup_coords);
@@ -884,7 +887,7 @@ export async function broadcastBooking(
       }
     }
 
-    // 2. Broadcast to Driver Groups
+    // 2. Broadcast to Driver Groups via Database Queue & Cron (No blocking for-loop)
     const catLower = (category || "").toLowerCase();
     let driverGroups: any[] = [];
 
@@ -903,38 +906,49 @@ export async function broadcastBooking(
         : systemSettings?.target_driver_groups || [];
     }
 
-    const delaySec = Math.max(1, Number(systemSettings?.broadcast_delay_seconds || 2));
+    const resolvedUserId = userId || data.user_id;
 
-    for (let i = 0; i < driverGroups.length; i++) {
-      const group = driverGroups[i];
-      // CRITICAL: Must use group.chat_id (e.g. 120363412586001913@g.us) for WhatsApp groups
+    const queueItems: any[] = [];
+    for (const group of driverGroups) {
       const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-
       if (targetChatId) {
-        if (i > 0 && delaySec > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
-        }
-        console.log(`[broadcastBooking] Forwarding order ${orderCode} to driver group: ${group.name} (${targetChatId})`);
-        try {
-          const gRes = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${supabaseServiceKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              to: targetChatId,
-              message: groupBroadcastText,
-              sessionApiKey,
-            }),
-          });
-          const gResText = await gRes.text();
-          console.log(`[broadcastBooking] Group ${group.name} (${targetChatId}) - status ${gRes.status}: ${gResText.slice(0, 100)}`);
-        } catch (err) {
-          console.error(`[broadcastBooking] Group dispatch ${group.name} (${targetChatId}) failed:`, err);
-        }
+        queueItems.push({
+          order_code: orderCode,
+          user_id: resolvedUserId,
+          group_chat_id: targetChatId,
+          group_name: group.name || "Driver Group",
+          message_text: groupBroadcastText,
+          session_api_key: sessionApiKey,
+          status: "pending",
+        });
       } else {
         console.warn(`[broadcastBooking] Skipping group ${group.name}: No valid chat_id found!`, group);
+      }
+    }
+
+    if (queueItems.length > 0) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        db: { schema: "central_cab" },
+      });
+
+      console.log(`[broadcastBooking] Enqueueing ${queueItems.length} groups to order_broadcast_queue for order ${orderCode}`);
+      const { error: insertErr } = await supabase
+        .from("order_broadcast_queue")
+        .insert(queueItems);
+
+      if (insertErr) {
+        console.error(`[broadcastBooking] Error enqueueing to order_broadcast_queue for order ${orderCode}:`, insertErr);
+      } else {
+        console.log(`[broadcastBooking] Successfully enqueued ${queueItems.length} groups for order ${orderCode}`);
+        // Immediately kick off processing in background without blocking
+        fetch(`${supabaseUrl}/functions/v1/send-broadcast-central_cab`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ trigger: "order_created", orderCode }),
+        }).catch((err) => console.warn(`[broadcastBooking] Immediate trigger of send-broadcast error:`, err));
       }
     }
   } catch (broadcastErr) {
