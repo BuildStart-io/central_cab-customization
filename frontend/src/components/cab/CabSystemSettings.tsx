@@ -23,7 +23,11 @@ import {
   Clock,
   Radio,
   Store,
-  Bike
+  Bike,
+  X,
+  Search,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 
 export interface DriverGroup {
@@ -70,8 +74,15 @@ export default function CabSystemSettings() {
   const [fetchingGroups, setFetchingGroups] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [groupSearchQuery, setGroupSearchQuery] = useState("");
+  const [selectedConfiguredIds, setSelectedConfiguredIds] = useState<Set<string>>(new Set());
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Reset selected groups when changing service tab
+  useEffect(() => {
+    setSelectedConfiguredIds(new Set());
+  }, [activeGroupTab]);
 
   useEffect(() => {
     if (user) {
@@ -317,7 +328,65 @@ export default function CabSystemSettings() {
     setCurrentGroups((prev) => [...prev, ...newItems]);
     toast({
       title: "All Groups Added",
-      description: `Added ${newItems.length} group(s) to ${getTabLabel(activeGroupTab)}.`,
+      description: `Added ${newItems.length} group(s) to ${getTabLabel(activeGroupTab)}. Click "Save System Settings" to persist.`,
+    });
+  };
+
+  const handleRemoveDiscoveredGroup = (wg: WahaGroup) => {
+    setCurrentGroups((prev) => prev.filter((g) => g.chat_id !== wg.id));
+    toast({
+      title: "Group Unselected",
+      description: `Removed "${wg.name || wg.id}" from ${getTabLabel(activeGroupTab)}. Click "Save System Settings" to persist.`,
+    });
+  };
+
+  const handleDeselectAllGroups = () => {
+    const current = getCurrentGroups();
+    if (current.length === 0) return;
+    const count = current.length;
+    setCurrentGroups(() => []);
+    setSelectedConfiguredIds(new Set());
+    toast({
+      title: "All Groups Deselected",
+      description: `Removed all ${count} group(s) from ${getTabLabel(activeGroupTab)}. Click "Save System Settings" to persist.`,
+    });
+  };
+
+  const handleToggleConfiguredGroupSelection = (id: string) => {
+    setSelectedConfiguredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllConfigured = (visibleGroups: DriverGroup[]) => {
+    const visibleIds = visibleGroups.map((g) => g.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedConfiguredIds.has(id));
+    if (allSelected) {
+      setSelectedConfiguredIds((prev) => {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedConfiguredIds((prev) => {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  };
+
+  const handleRemoveSelectedConfigured = () => {
+    if (selectedConfiguredIds.size === 0) return;
+    const count = selectedConfiguredIds.size;
+    setCurrentGroups((prev) => prev.filter((g) => !selectedConfiguredIds.has(g.id)));
+    setSelectedConfiguredIds(new Set());
+    toast({
+      title: "Selected Groups Removed",
+      description: `Removed ${count} group(s) from ${getTabLabel(activeGroupTab)}. Click "Save System Settings" to persist.`,
     });
   };
 
@@ -772,74 +841,138 @@ export default function CabSystemSettings() {
                     </p>
                   </div>
                 </div>
-                <Button
-                  onClick={handleAddAllDiscoveredGroups}
-                  size="sm"
-                  className={`text-xs h-7 gap-1.5 font-bold transition-all shadow-xs ${activeGroupTab === "hire"
-                      ? "!bg-amber-500 hover:!bg-amber-600 !text-slate-950 border border-amber-600/30"
-                      : activeGroupTab === "rent_a_car"
-                        ? "!bg-blue-600 hover:!bg-blue-700 !text-white border border-blue-700/30"
-                        : activeGroupTab === "delivery_shop"
-                          ? "!bg-emerald-600 hover:!bg-emerald-700 !text-white border border-emerald-700/30"
-                          : "!bg-purple-600 hover:!bg-purple-700 !text-white border border-purple-700/30"
-                    }`}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add All to {getTabLabel(activeGroupTab)}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleAddAllDiscoveredGroups}
+                    size="sm"
+                    className={`text-xs h-7 gap-1.5 font-bold transition-all shadow-xs ${activeGroupTab === "hire"
+                        ? "!bg-amber-500 hover:!bg-amber-600 !text-slate-950 border border-amber-600/30"
+                        : activeGroupTab === "rent_a_car"
+                          ? "!bg-blue-600 hover:!bg-blue-700 !text-white border border-blue-700/30"
+                          : activeGroupTab === "delivery_shop"
+                            ? "!bg-emerald-600 hover:!bg-emerald-700 !text-white border border-emerald-700/30"
+                            : "!bg-purple-600 hover:!bg-purple-700 !text-white border border-purple-700/30"
+                      }`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add All to {getTabLabel(activeGroupTab)}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={handleDeselectAllGroups}
+                    variant="outline"
+                    size="sm"
+                    disabled={currentGroups.length === 0}
+                    className="text-xs h-7 gap-1.5 font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-300 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/40"
+                    title={`Unselect all groups from ${getTabLabel(activeGroupTab)}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Deselect All ({currentGroups.length})
+                  </Button>
+                </div>
+              </div>
+
+              {/* Search Bar for Discovered Groups */}
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={groupSearchQuery}
+                  onChange={(e) => setGroupSearchQuery(e.target.value)}
+                  placeholder="Search detected WhatsApp groups by name or chat ID..."
+                  className="h-8 pl-8 pr-8 text-xs bg-background/90"
+                />
+                {groupSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setGroupSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+                    title="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
-                {whatsappGroups.map((wg) => {
-                  const isAddedToCurrent = currentGroups.some((dg) => dg.chat_id === wg.id);
-                  const isAddedToHire = hireGroups.some((dg) => dg.chat_id === wg.id);
-                  const isAddedToRent = rentCarGroups.some((dg) => dg.chat_id === wg.id);
-                  const isAddedToShop = deliveryShopGroups.some((dg) => dg.chat_id === wg.id);
-                  const isAddedToRider = deliveryRiderGroups.some((dg) => dg.chat_id === wg.id);
+                {whatsappGroups
+                  .filter((wg) => {
+                    if (!groupSearchQuery.trim()) return true;
+                    const q = groupSearchQuery.toLowerCase();
+                    return (
+                      (wg.name && wg.name.toLowerCase().includes(q)) ||
+                      (wg.id && wg.id.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((wg) => {
+                    const isAddedToCurrent = currentGroups.some((dg) => dg.chat_id === wg.id);
+                    const isAddedToHire = hireGroups.some((dg) => dg.chat_id === wg.id);
+                    const isAddedToRent = rentCarGroups.some((dg) => dg.chat_id === wg.id);
+                    const isAddedToShop = deliveryShopGroups.some((dg) => dg.chat_id === wg.id);
+                    const isAddedToRider = deliveryRiderGroups.some((dg) => dg.chat_id === wg.id);
 
-                  return (
-                    <div
-                      key={wg.id}
-                      className="flex items-center justify-between p-2.5 rounded-lg border bg-background text-xs shadow-2xs hover:border-primary/50 transition-all gap-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-foreground truncate text-xs">
-                          {String(wg.name || "Unnamed WhatsApp Group")}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted-foreground truncate">
-                          {String(wg.id || "")}
-                        </p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {isAddedToHire && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-50 text-amber-700 border-amber-300">🚖 Hire</Badge>}
-                          {isAddedToRent && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-300">🚗 Rent</Badge>}
-                          {isAddedToShop && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-emerald-50 text-emerald-700 border-emerald-300">🏪 Shop</Badge>}
-                          {isAddedToRider && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-300">🛵 Rider</Badge>}
+                    return (
+                      <div
+                        key={wg.id}
+                        className={`flex items-center justify-between p-2.5 rounded-lg border text-xs shadow-2xs transition-all gap-2 ${
+                          isAddedToCurrent
+                            ? "bg-primary/[0.04] border-primary/40 ring-1 ring-primary/20"
+                            : "bg-background hover:border-primary/50"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-foreground truncate text-xs">
+                            {String(wg.name || "Unnamed WhatsApp Group")}
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground truncate">
+                            {String(wg.id || "")}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {isAddedToHire && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-amber-50 text-amber-700 border-amber-300">🚖 Hire</Badge>}
+                            {isAddedToRent && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-300">🚗 Rent</Badge>}
+                            {isAddedToShop && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-emerald-50 text-emerald-700 border-emerald-300">🏪 Shop</Badge>}
+                            {isAddedToRider && <Badge variant="outline" className="text-[9px] px-1 py-0 bg-purple-50 text-purple-700 border-purple-300">🛵 Rider</Badge>}
+                          </div>
                         </div>
+                        {isAddedToCurrent ? (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              <Check className="h-3 w-3" /> Added
+                            </span>
+                            <Button
+                              type="button"
+                              onClick={() => handleRemoveDiscoveredGroup(wg)}
+                              size="sm"
+                              variant="outline"
+                              className="text-xs h-7 px-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-300 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/40 gap-1 font-medium"
+                              title="Unselect this group from this tab"
+                            >
+                              <X className="h-3 w-3" /> Unselect
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            type="button"
+                            onClick={() => handleAddDiscoveredGroup(wg)}
+                            size="sm"
+                            className="text-xs h-7 px-2.5 gap-1 shrink-0"
+                          >
+                            <Plus className="h-3 w-3" /> Add
+                          </Button>
+                        )}
                       </div>
-                      {isAddedToCurrent ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 shrink-0">
-                          <Check className="h-3 w-3" /> Added
-                        </span>
-                      ) : (
-                        <Button
-                          onClick={() => handleAddDiscoveredGroup(wg)}
-                          size="sm"
-                          className="text-xs h-7 px-2.5 gap-1 shrink-0"
-                        >
-                          <Plus className="h-3 w-3" /> Add
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
           )}
 
           {/* Configured Service Driver Groups List */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border shadow-2xs ${activeGroupTab === "hire"
                       ? "bg-amber-100 text-amber-950 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
@@ -855,11 +988,56 @@ export default function CabSystemSettings() {
                   {activeGroupTab === "delivery_shop" && "🏪 Delivery Shop"}
                   {activeGroupTab === "delivery_riders" && "🛵 Delivery Rider"} Broadcast Groups ({currentGroups.length})
                 </span>
+
+                {currentGroups.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSelectAllConfigured(currentGroups)}
+                    className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {currentGroups.length > 0 &&
+                    currentGroups.every((g) => selectedConfiguredIds.has(g.id))
+                      ? "Deselect All Checkboxes"
+                      : "Select All Checkboxes"}
+                  </Button>
+                )}
               </div>
-              <Button onClick={handleAddGroup} variant="outline" size="sm" className="gap-1.5 text-xs h-7 font-medium">
-                <Plus className="h-3 w-3" />
-                Add Custom Group
-              </Button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedConfiguredIds.size > 0 && (
+                  <Button
+                    type="button"
+                    onClick={handleRemoveSelectedConfigured}
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5 text-xs h-7 font-bold shadow-xs"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove Selected ({selectedConfiguredIds.size})
+                  </Button>
+                )}
+
+                {currentGroups.length > 0 && (
+                  <Button
+                    type="button"
+                    onClick={handleDeselectAllGroups}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs h-7 font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-300 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/40"
+                    title={`Remove all groups from ${getTabLabel(activeGroupTab)}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear All
+                  </Button>
+                )}
+
+                <Button onClick={handleAddGroup} variant="outline" size="sm" className="gap-1.5 text-xs h-7 font-medium">
+                  <Plus className="h-3 w-3" />
+                  Add Custom Group
+                </Button>
+              </div>
             </div>
 
             {currentGroups.length === 0 ? (
@@ -869,7 +1047,7 @@ export default function CabSystemSettings() {
                   <p className="text-sm font-medium">No Groups Configured for {getTabLabel(activeGroupTab)}</p>
                   <p className="text-xs text-muted-foreground mt-0.5 max-w-sm mx-auto">
                     {whatsappGroups.length > 0
-                      ? `Click "Add" next to any detected group above to add it to ${getTabLabel(activeGroupTab)}.`
+                      ? `Click "Add" or "Add All" next to any detected group above to add it to ${getTabLabel(activeGroupTab)}.`
                       : "Click \"Scan Phone Groups\" above or add group credentials manually below."}
                   </p>
                 </div>
@@ -901,25 +1079,47 @@ export default function CabSystemSettings() {
                       }`}
                   >
                     <div className="flex items-center justify-between pb-1">
-                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                        Group #{idx + 1}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] font-bold px-2 py-0.5 border ${activeGroupTab === "hire"
-                            ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200"
-                            : activeGroupTab === "rent_a_car"
-                              ? "bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200"
-                              : activeGroupTab === "delivery_shop"
-                                ? "bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200"
-                                : "bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950/60 dark:text-purple-200"
-                          }`}
-                      >
-                        {activeGroupTab === "hire" && "🚖 Hire Driver Group"}
-                        {activeGroupTab === "rent_a_car" && "🚗 Rent a Car Group"}
-                        {activeGroupTab === "delivery_shop" && "🏪 Delivery Shop Group"}
-                        {activeGroupTab === "delivery_riders" && "🛵 Delivery Rider Group"}
-                      </Badge>
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedConfiguredIds.has(group.id)}
+                          onChange={() => handleToggleConfiguredGroupSelection(group.id)}
+                          className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-primary focus:ring-primary cursor-pointer"
+                          title="Select for bulk action"
+                        />
+                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                          Group #{idx + 1}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] font-bold px-2 py-0.5 border ${activeGroupTab === "hire"
+                              ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-200"
+                              : activeGroupTab === "rent_a_car"
+                                ? "bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950/60 dark:text-blue-200"
+                                : activeGroupTab === "delivery_shop"
+                                  ? "bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200"
+                                  : "bg-purple-50 text-purple-900 border-purple-300 dark:bg-purple-950/60 dark:text-purple-200"
+                            }`}
+                        >
+                          {activeGroupTab === "hire" && "🚖 Hire Driver Group"}
+                          {activeGroupTab === "rent_a_car" && "🚗 Rent a Car Group"}
+                          {activeGroupTab === "delivery_shop" && "🏪 Delivery Shop Group"}
+                          {activeGroupTab === "delivery_riders" && "🛵 Delivery Rider Group"}
+                        </Badge>
+                        <Button
+                          type="button"
+                          onClick={() => handleRemoveGroup(group.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/40 text-xs gap-1 h-7 px-2 font-medium"
+                          title="Remove Group"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Remove</span>
+                        </Button>
+                      </div>
                     </div>
 
                     {/* WhatsApp Groups dropdown if fetched from connected phone */}

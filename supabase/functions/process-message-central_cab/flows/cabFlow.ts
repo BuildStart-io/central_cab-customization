@@ -913,6 +913,7 @@ export async function broadcastBooking(
 
     const queueItems: any[] = [];
     for (const group of driverGroups) {
+      if ((group as any)?.enabled === false) continue;
       const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
       if (targetChatId) {
         queueItems.push({
