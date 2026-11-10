@@ -9,6 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2,
   Save,
   Smartphone,
@@ -76,6 +86,19 @@ export default function CabSystemSettings() {
   const [saving, setSaving] = useState(false);
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
   const [selectedConfiguredIds, setSelectedConfiguredIds] = useState<Set<string>>(new Set());
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    actionLabel: string;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    actionLabel: "",
+    onConfirm: () => {},
+  });
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -387,6 +410,34 @@ export default function CabSystemSettings() {
     toast({
       title: "Selected Groups Removed",
       description: `Removed ${count} group(s) from ${getTabLabel(activeGroupTab)}. Click "Save System Settings" to persist.`,
+    });
+  };
+
+  const requestDeselectAllGroups = () => {
+    const current = getCurrentGroups();
+    if (current.length === 0) return;
+    setConfirmDialog({
+      open: true,
+      title: `Deselect All Groups (${current.length})?`,
+      description: `Are you sure you want to remove all ${current.length} group(s) from ${getTabLabel(activeGroupTab)}? This will not be saved permanently until you click "Save System Settings".`,
+      actionLabel: "Deselect All",
+      onConfirm: () => {
+        handleDeselectAllGroups();
+      },
+    });
+  };
+
+  const requestRemoveSelectedConfigured = () => {
+    if (selectedConfiguredIds.size === 0) return;
+    const count = selectedConfiguredIds.size;
+    setConfirmDialog({
+      open: true,
+      title: `Remove ${count} Selected Group(s)?`,
+      description: `Are you sure you want to remove the ${count} selected group(s) from ${getTabLabel(activeGroupTab)}? Click "Save System Settings" after removing to persist changes.`,
+      actionLabel: "Remove Selected",
+      onConfirm: () => {
+        handleRemoveSelectedConfigured();
+      },
     });
   };
 
@@ -861,7 +912,7 @@ export default function CabSystemSettings() {
 
                   <Button
                     type="button"
-                    onClick={handleDeselectAllGroups}
+                    onClick={requestDeselectAllGroups}
                     variant="outline"
                     size="sm"
                     disabled={currentGroups.length === 0}
@@ -1009,7 +1060,7 @@ export default function CabSystemSettings() {
                 {selectedConfiguredIds.size > 0 && (
                   <Button
                     type="button"
-                    onClick={handleRemoveSelectedConfigured}
+                    onClick={requestRemoveSelectedConfigured}
                     variant="destructive"
                     size="sm"
                     className="gap-1.5 text-xs h-7 font-bold shadow-xs"
@@ -1022,7 +1073,7 @@ export default function CabSystemSettings() {
                 {currentGroups.length > 0 && (
                   <Button
                     type="button"
-                    onClick={handleDeselectAllGroups}
+                    onClick={requestDeselectAllGroups}
                     variant="outline"
                     size="sm"
                     className="gap-1 text-xs h-7 font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-300 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/40"
@@ -1226,6 +1277,27 @@ export default function CabSystemSettings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Confirmation Modal for destructive group actions */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                confirmDialog.onConfirm();
+              }}
+            >
+              {confirmDialog.actionLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

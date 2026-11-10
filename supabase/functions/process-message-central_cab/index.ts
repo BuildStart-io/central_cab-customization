@@ -287,13 +287,15 @@ async function handleSingleMessage(
           body: JSON.stringify({
             to: phoneNumber,
             mediaUrl: stepMediaUrl,
+            message: replyText || undefined,
             sessionApiKey,
           }),
         }).catch(err => console.error("Media send error:", err));
       }
 
       // Send text message if no poll, or if explicitly configured (e.g. welcome message before language poll)
-      const shouldSendText = replyText && replyText.trim() && (!stepPoll || stepResult.sendTextWithPoll);
+      // If mediaUrl was already sent with replyText caption, do not duplicate text
+      const shouldSendText = replyText && replyText.trim() && !stepMediaUrl && (!stepPoll || stepResult.sendTextWithPoll);
       if (shouldSendText) {
         console.log(`[${corrId}] Outbound reply to ${phoneNumber}: ${replyText.substring(0, 60)}`);
         

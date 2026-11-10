@@ -671,9 +671,9 @@ export function getDropoffHelpPoll(lang: SupportedLanguage = "si"): PollDefiniti
 
 export function getDropoffHelpGuide(lang: SupportedLanguage): string {
   if (lang === "en") {
-    return `🗺️ *How to Share a Google Maps Link (Guide):*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ Open the *Google Maps* app on your mobile phone.\n2️⃣ Search for your destination in the search bar (or long-press on the map to drop a pin 📍).\n3️⃣ Tap the *Share* button in the place details below.\n4️⃣ Tap *Copy link* to copy the location URL.\n5️⃣ Come back to this WhatsApp chat, Paste the link, and send it!\n━━━━━━━━━━━━━━━━━━━━\n👉 Now, please send your destination (Drop-off) *Google Maps Link* here:`;
+    return `🗺️ *How to Share a Google Maps Link (Guide):*\n━━━━━━━━━━━━━━━━━━━━\n🎥 *Please watch the video tutorial above!*\n1️⃣ Open the *Google Maps* app on your mobile phone.\n2️⃣ Search for your destination in the search bar (or long-press on the map to drop a pin 📍).\n3️⃣ Tap the *Share* button in the place details below.\n4️⃣ Tap *Copy link* to copy the location URL.\n5️⃣ Come back to this WhatsApp chat, Paste the link, and send it!\n━━━━━━━━━━━━━━━━━━━━\n👉 Now, please send your destination (Drop-off) *Google Maps Link* here:`;
   }
-  return `🗺️ *Google Maps Link එක Share කරන්නේ කෙසේද? (උපදෙස්):*\n━━━━━━━━━━━━━━━━━━━━\n1️⃣ ඔබගේ දුරකථනයේ *Google Maps* App එක විවෘත කරන්න.\n2️⃣ Search bar එකේ ඔබ යා යුතු ස්ථානය Search කරන්න (හෝ Map එකේ අදාළ ස්ථානය Long Press කර Pin කරන්න 📍).\n3️⃣ පහතින් දිස්වන විස්තර අතරින් *Share* බොත්තම ඔබන්න.\n4️⃣ *Copy Link* තෝරාගෙන Link එක Copy කරගන්න.\n5️⃣ නැවත මෙම WhatsApp Chat එකට පැමිණ එම Link එක Paste කර එවන්න!\n━━━━━━━━━━━━━━━━━━━━\n👉 කරුණාකර ඔබගේ ගමනාන්තයේ (Drop-off) *Google Maps Link* එක මෙහි එවන්න:`;
+  return `🗺️ *Google Maps Link එක Share කරන්නේ කෙසේද? (උපදෙස්):*\n━━━━━━━━━━━━━━━━━━━━\n🎥 *කරුණාකර ඉහත වීඩියෝ උපදෙස් බලන්න!*\n1️⃣ ඔබගේ දුරකථනයේ *Google Maps* App එක විවෘත කරන්න.\n2️⃣ Search bar එකේ ඔබ යා යුතු ස්ථානය Search කරන්න (හෝ Map එකේ අදාළ ස්ථානය Long Press කර Pin කරන්න 📍).\n3️⃣ පහතින් දිස්වන විස්තර අතරින් *Share* බොත්තම ඔබන්න.\n4️⃣ *Copy Link* තෝරාගෙන Link එක Copy කරගන්න.\n5️⃣ නැවත මෙම WhatsApp Chat එකට පැමිණ එම Link එක Paste කර එවන්න!\n━━━━━━━━━━━━━━━━━━━━\n👉 කරුණාකර ඔබගේ ගමනාන්තයේ (Drop-off) *Google Maps Link* එක මෙහි එවන්න:`;
 }
 
 export function getDropoffDirectLinkPrompt(lang: SupportedLanguage): string {
@@ -689,9 +689,9 @@ export function getLocationRejectMessage(
 ): string {
   if (type === "pickup") {
     if (lang === "en") {
-      return `⚠️ Typing location names is not accepted.\n\nPlease share your live *WhatsApp Location Pin* or send a valid *Google Maps Link* directly.`;
+      return `⚠️ Typing location names is not accepted.\n\n📍 *How to share your Pickup Location:*\n1️⃣ Tap the + icon below\n2️⃣ Select Location\n3️⃣ Tap 'Send your current location'\n\nPlease follow the steps in the guide above and send your live location:`;
     }
-    return `⚠️ ස්ථානයේ නම Type කිරීම පිළිගත නොහැක.\n\nකරුණාකර ඔබගේ සජීවී *WhatsApp Location Pin* එකක් හෝ *Google Maps Link* එකක් පමණක් මෙහි share කරන්න.`;
+    return `⚠️ ස්ථානයේ නම Type කිරීම පිළිගත නොහැක.\n\n📍 *සජීවී WhatsApp Location Pin එකක් එවන්නේ කෙසේද?*\n1️⃣ පහත + ලකුණ ඔබන්න\n2️⃣ Location තෝරන්න\n3️⃣ 'Send your current location' ඔබන්න\n\nකරුණාකර ඉහත පින්තූරයේ පියවර අනුගමනය කර ඔබගේ ස්ථානය share කරන්න:`;
   }
 
   if (type === "dropoff") {
@@ -977,9 +977,9 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
   // 5. Ask a Question / More Details & Get App Flow
   if (flow === "FAQ_FLOW" || step === "FAQ_ASK") {
     if (lang === "en") {
-      return "ℹ️ *For More Details & Get App*\n\nPlease type your question or inquiry here, or visit our website (www.centralonline.lk) to download our app and learn more.\n\n(Type *Menu* anytime to return to main options)";
+      return "ℹ️ *Central Cabs - Details & Official App*\n\n📱 *Download our Official Android App:*\n🔗 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\n💬 Have any questions? Please type your question or inquiry here.\n(Type *Menu* anytime to return to main options)";
     }
-    return "ℹ️ *වැඩිවිස්තර සදහා සහ ඇප් එක ලබාගැනීමට*\n\nඅපගේ සේවාවන් පිළිබඳ වැඩිවිස්තර සඳහා ඔබගේ ප්‍රශ්නය මෙහි Type කරන්න, නැතහොත් අපගේ ඇප් එක / වෙබ් අඩවිය (www.centralonline.lk) වෙත පිවිසෙන්න.\n\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
+    return "ℹ️ *Central Cabs - වැඩිවිස්තර සහ ඇප් එක ලබාගැනීමට*\n\n📱 *අපගේ නිල Android App එක මෙතැනින් Download කරගන්න:*\n🔗 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\n💬 ඔබට යම් ගැටළුවක් හෝ විමසීමක් ඇත්නම් කරුණාකර මෙහි Type කරන්න.\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
   }
 
   return lang === "en" ? "Please provide your answer." : "කරුණාකර ඔබගේ පිළිතුර ලබා දෙන්න.";
@@ -1056,11 +1056,13 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
 
   if (lang === "en") {
     const timingHeader = isScheduled ? `📅 *Long Distance Trip (Schedule):* ${data.scheduled_time}\n` : `⚡ *Short Distance Trip (Short Trip)*\n`;
-    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━`;
+    const disclaimer = isDelivery ? "" : `\n──────────────────────\n⚠️ *Important Notice:*\n• The above fare is for the trip only.\n• Expressway toll ticket charges are not included and must be paid by the passenger.\n• If waiting exceeds 1 hour, additional waiting charges apply from the 2nd hour.\n_(By confirming, you agree to these terms)_`;
+    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
   }
 
   const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
-  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}\n━━━━━━━━━━━━━━━━━━━━`;
+  const disclaimer = isDelivery ? "" : `\n──────────────────────\n⚠️ *සැලකිය යුතුයි:*\n• ඉහත සඳහන් මිල ගමන් වාරය සඳහා පමණි.\n• අධිවේගී මාර්ග (Expressway) භාවිතා කරන්නේ නම්, ටිකට්පත් ගාස්තු මගියා විසින් දැරිය යුතුය.\n• පැය 1කට වඩා රැඳී සිටින්නේ නම්, දෙවන පැයේ සිට අමතර පොරොත්තු ගාස්තු (Waiting Charges) අය කෙරේ.\n_(Booking එක Confirm කිරීමෙන් ඔබ ඉහත කොන්දේසි වලට එකඟ වේ)_`;
+  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getBookingSuccessMessage(orderCode: string, lang: SupportedLanguage, category: string = ""): string {

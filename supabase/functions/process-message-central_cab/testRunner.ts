@@ -562,9 +562,9 @@ export async function runAllAutomatedTests(
     record("10.2 Progressive slab discount amount matches exact model (1100)", fare100.discountAmount === 1100, `Got: ${fare100.discountAmount}`);
     record("10.3 Progressive slab gross fare is correct (10000)", fare100.grossFare === 10000, `Got: ${fare100.grossFare}`);
 
-    // 10.2 Round trip 50 km (50 x 2 = 100 km total)
+    // 10.2 Round trip 50 km (50 x 2 = 100 km total) with 10% round trip discount on total
     const fareRoundTrip = calculateFare(50, "50 km", "car", "round_trip", slabPricingSettings);
-    record("10.4 Round-trip 50km correctly expands to 100km and calculates same progressive slab total", fareRoundTrip.totalFare === 8900, `Got: ${fareRoundTrip.totalFare}`);
+    record("10.4 Round-trip 50km correctly expands to 100km and applies both slabs and round-trip discount (8010)", fareRoundTrip.totalFare === 8010, `Got: ${fareRoundTrip.totalFare}`);
 
     // 10.3 Model-specific slabs override vehicle slabs
     const customModelWithSlabs: VehicleModel = {

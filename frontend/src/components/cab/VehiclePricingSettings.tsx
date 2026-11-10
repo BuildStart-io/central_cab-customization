@@ -36,6 +36,9 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  ArrowDownUp,
 } from "lucide-react";
 
 export interface DistanceDiscountSlab {
@@ -520,13 +523,25 @@ export default function VehiclePricingSettings() {
   };
 
   const handleFieldChange = (vehicleKey: string, field: keyof VehiclePricing, val: any) => {
-    setPricing((prev) => ({
-      ...prev,
-      [vehicleKey]: {
-        ...(prev[vehicleKey] || DEFAULT_PRICING[vehicleKey]),
-        [field]: typeof val === "number" || typeof val === "string" ? (Number(val) >= 0 ? Number(val) : val) : val,
-      },
-    }));
+    setPricing((prev) => {
+      const current = prev[vehicleKey] || DEFAULT_PRICING[vehicleKey];
+      const parsedVal = typeof val === "number" || typeof val === "string" ? (Number(val) >= 0 ? Number(val) : val) : val;
+
+      let updatedSlabs = current.discount_slabs;
+      if (field === "coverage_km" && Array.isArray(updatedSlabs) && updatedSlabs.length > 0) {
+        const nextFrom = Math.round(Number(parsedVal)) + 1;
+        updatedSlabs = updatedSlabs.map((s, idx) => (idx === 0 ? { ...s, from_km: nextFrom } : s));
+      }
+
+      return {
+        ...prev,
+        [vehicleKey]: {
+          ...current,
+          [field]: parsedVal,
+          discount_slabs: updatedSlabs,
+        },
+      };
+    });
   };
 
   const handleAddCategory = () => {
@@ -683,7 +698,14 @@ export default function VehiclePricingSettings() {
           return { ...m, discount_slabs: val };
         }
         const num = Number(val) >= 0 ? Number(val) : 0;
-        return { ...m, [field]: num };
+
+        let updatedSlabs = m.discount_slabs;
+        if (field === "coverage_km" && Array.isArray(updatedSlabs) && updatedSlabs.length > 0) {
+          const nextFrom = Math.round(num) + 1;
+          updatedSlabs = updatedSlabs.map((s, idx) => (idx === 0 ? { ...s, from_km: nextFrom } : s));
+        }
+
+        return { ...m, [field]: num, discount_slabs: updatedSlabs };
       });
 
       return {
@@ -693,6 +715,41 @@ export default function VehiclePricingSettings() {
           models: updatedModels,
         },
       };
+    });
+  };
+
+  const handleMoveModel = (categoryKey: string, modelIndex: number, direction: -1 | 1) => {
+    setPricing((prev) => {
+      const currentModels = [...(prev[categoryKey]?.models || [])];
+      const targetIndex = modelIndex + direction;
+      if (targetIndex < 0 || targetIndex >= currentModels.length) return prev;
+      const [moved] = currentModels.splice(modelIndex, 1);
+      currentModels.splice(targetIndex, 0, moved);
+      return {
+        ...prev,
+        [categoryKey]: {
+          ...prev[categoryKey],
+          models: currentModels,
+        },
+      };
+    });
+  };
+
+  const handleSortModelsByPrice = (categoryKey: string) => {
+    setPricing((prev) => {
+      const currentModels = [...(prev[categoryKey]?.models || [])];
+      currentModels.sort((a, b) => (Number(a.base_price) || 0) - (Number(b.base_price) || 0));
+      return {
+        ...prev,
+        [categoryKey]: {
+          ...prev[categoryKey],
+          models: currentModels,
+        },
+      };
+    });
+    toast({
+      title: "Variations Sorted",
+      description: `Variations arranged with lowest base fare first. Click Save Pricing to persist.`,
     });
   };
 
@@ -835,7 +892,7 @@ export default function VehiclePricingSettings() {
                   </CardHeader>
 
                   <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       <div>
                         <Label className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground mb-1">
                           <DollarSign className="h-3.5 w-3.5 text-amber-600" />
@@ -878,6 +935,22 @@ export default function VehiclePricingSettings() {
                           value={item.coverage_km}
                           onChange={(e) => handleFieldChange(key, "coverage_km", e.target.value)}
                           className="font-semibold text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 mb-1">
+                          <Percent className="h-3.5 w-3.5 text-emerald-600" />
+                          Round Trip Off (%)
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={item.discount_percentage ?? 10}
+                          onChange={(e) => handleFieldChange(key, "discount_percentage", e.target.value)}
+                          className="font-semibold text-sm text-emerald-600 dark:text-emerald-400"
                         />
                       </div>
                     </div>
@@ -997,7 +1070,7 @@ export default function VehiclePricingSettings() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div>
                           <Label className="text-[11px] font-medium text-muted-foreground">Base Price (LKR)</Label>
                           <Input
@@ -1023,9 +1096,22 @@ export default function VehiclePricingSettings() {
                           <Input
                             type="number"
                             min="0"
+                            step="0.5"
                             value={categoryConfig.coverage_km}
                             onChange={(e) => handleFieldChange(key, "coverage_km", e.target.value)}
                             className="h-8 text-xs font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Round Trip Off (%)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={categoryConfig.discount_percentage ?? 15}
+                            onChange={(e) => handleFieldChange(key, "discount_percentage", e.target.value)}
+                            className="h-8 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
                           />
                         </div>
                       </div>
@@ -1043,6 +1129,18 @@ export default function VehiclePricingSettings() {
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                           Configured Variations ({models.length})
                         </h4>
+                        {models.length > 1 && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleSortModelsByPrice(key)}
+                            className="h-7 text-xs gap-1.5 font-semibold text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                          >
+                            <ArrowDownUp className="h-3.5 w-3.5" />
+                            Sort Lowest Price First
+                          </Button>
+                        )}
                       </div>
 
                       {models.length === 0 ? (
@@ -1071,15 +1169,40 @@ export default function VehiclePricingSettings() {
                                 <span className="text-xs font-bold text-primary uppercase tracking-wider">
                                   Variation #{idx + 1}: {model.name}
                                 </span>
-                                <Button
-                                  onClick={() => handleRemoveModel(key, model.id)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
-                                  title="Remove variation"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleMoveModel(key, idx, -1)}
+                                    disabled={idx === 0}
+                                    title="Move earlier / left"
+                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <ChevronLeft className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleMoveModel(key, idx, 1)}
+                                    disabled={idx === models.length - 1}
+                                    title="Move later / right"
+                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  >
+                                    <ChevronRight className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() => handleRemoveModel(key, model.id)}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                                    title="Remove variation"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </div>
 
                               {/* Variation Name & Description */}
@@ -1114,7 +1237,7 @@ export default function VehiclePricingSettings() {
                               </div>
 
                               {/* Pricing Inputs */}
-                              <div className="grid grid-cols-3 gap-2 pt-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                                 <div>
                                   <Label className="text-[10px] font-medium text-muted-foreground block mb-0.5">
                                     Base Fare (LKR)
@@ -1160,6 +1283,23 @@ export default function VehiclePricingSettings() {
                                       handleModelFieldChange(key, model.id, "coverage_km", e.target.value)
                                     }
                                     className="h-8 text-xs font-semibold"
+                                  />
+                                </div>
+
+                                <div>
+                                  <Label className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 block mb-0.5">
+                                    Round Trip Off (%)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="1"
+                                    value={model.discount_percentage ?? 15}
+                                    onChange={(e) =>
+                                      handleModelFieldChange(key, model.id, "discount_percentage", e.target.value)
+                                    }
+                                    className="h-8 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
                                   />
                                 </div>
                               </div>

@@ -326,7 +326,13 @@ export async function handleCabFlowStep(
     case "CAB_PICKUP": {
       // Must be a valid WhatsApp Location Pin, Google Maps Link, or GPS Coordinates (NO plain text names)
       if (!isValidLocationInput(trimmed, rawPayload)) {
-        return await invalidFallback(getLocationRejectMessage(lang, "pickup"));
+        return {
+          replyText: getLocationRejectMessage(lang, "pickup"),
+          mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_PICKUP",
+          sessionData: data,
+        };
       }
 
       const loc = extractLocation(trimmed, rawPayload);
@@ -383,6 +389,7 @@ export async function handleCabFlowStep(
       if (isHelpChoice) {
         return {
           replyText: getDropoffHelpGuide(lang),
+          mediaUrl: "https://app.buildstart.io/guides/dropoff_guide.mp4",
           nextFlow: "CAB_FLOW",
           nextStep: "CAB_DROPOFF",
           sessionData: data,

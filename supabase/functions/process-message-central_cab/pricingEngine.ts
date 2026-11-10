@@ -921,12 +921,13 @@ export function calculateFare(
 
     totalFare = basePrice + totalSlabKmCharge;
     discountAmount = Math.max(0, grossFare - totalFare);
-  } else {
-    // 2. Legacy fallback calculation (Round trip discount percentage)
-    if (isRoundTrip && discountPercentage > 0) {
-      discountAmount = Math.round((grossFare * (discountPercentage / 100)) * 100) / 100;
-      totalFare = grossFare - discountAmount;
-    }
+  }
+
+  // 2. Round trip discount percentage on total fare (Applies to all round trips regardless of distance or slabs)
+  if (isRoundTrip && discountPercentage > 0) {
+    const roundTripDiscount = Math.round((totalFare * (discountPercentage / 100)) * 100) / 100;
+    discountAmount = Math.round((discountAmount + roundTripDiscount) * 100) / 100;
+    totalFare = Math.round(Math.max(0, totalFare - roundTripDiscount) * 100) / 100;
   }
 
   // Round final fares to 2 decimals
