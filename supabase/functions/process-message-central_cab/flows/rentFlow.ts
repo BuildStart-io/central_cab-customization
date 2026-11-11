@@ -12,6 +12,7 @@ import {
   isAffirmativeInput,
   isNegativeInput,
   isHomeOrResetInput,
+  getLanguagePoll,
   getCategoryPoll,
   getBookingConfirmPoll,
   getPostBookingPoll,
@@ -207,14 +208,14 @@ export async function handleRentFlowStep(
           nextStep: "CATEGORY_CHOICE",
           sessionData: { language: lang },
         };
-      } else if (isHomeOrResetInput(trimmed)) {
-        const homeMsg = lang === "en" ? "🏠 Returned to Main Menu.\n\n" : "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n";
+      } else if (isHomeOrResetInput(trimmed, "RENT_CONFIRM")) {
         return {
-          replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-          poll: getCategoryPoll(lang),
+          replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+          poll: getLanguagePoll(),
+          sendTextWithPoll: true,
           nextFlow: "IDLE",
-          nextStep: "CATEGORY_CHOICE",
-          sessionData: { language: lang },
+          nextStep: "LANGUAGE_CHOICE",
+          sessionData: {},
         };
       } else {
         return await invalidFallback(

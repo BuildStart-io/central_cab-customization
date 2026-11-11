@@ -27,6 +27,7 @@ import {
   isHomeOrResetInput,
   isTimingNowChoice,
   isTimingScheduleChoice,
+  getLanguagePoll,
   getCategoryPoll,
   getVehiclePoll,
   getVehicleModelPoll,
@@ -248,6 +249,7 @@ export async function handleCabFlowStep(
             data.vehicle_name = `${getVehicleDisplayName(vehicleKey, pricingSettings)} (${directModelMatch.name}${directModelMatch.description ? ` - ${directModelMatch.description}` : ""})`;
             return {
               replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
+              mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
               nextFlow: "CAB_FLOW",
               nextStep: "CAB_PICKUP",
               sessionData: data,
@@ -273,6 +275,7 @@ export async function handleCabFlowStep(
       data.vehicle_name = getVehicleDisplayName(vehicleKey, pricingSettings);
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
+        mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_PICKUP",
         sessionData: data,
@@ -317,6 +320,7 @@ export async function handleCabFlowStep(
 
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
+        mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_PICKUP",
         sessionData: data,
@@ -576,14 +580,14 @@ export async function handleCabFlowStep(
           nextStep: "CATEGORY_CHOICE",
           sessionData: { language: lang },
         };
-      } else if (isHomeOrResetInput(trimmed)) {
-        const homeMsg = lang === "en" ? "🏠 Returned to Main Menu.\n\n" : "🏠 ප්‍රධාන මෙනුවට පැමිණියා.\n\n";
+      } else if (isHomeOrResetInput(trimmed, "CAB_CONFIRM")) {
         return {
-          replyText: homeMsg + getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-          poll: getCategoryPoll(lang),
+          replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+          poll: getLanguagePoll(),
+          sendTextWithPoll: true,
           nextFlow: "IDLE",
-          nextStep: "CATEGORY_CHOICE",
-          sessionData: { language: lang },
+          nextStep: "LANGUAGE_CHOICE",
+          sessionData: {},
         };
       } else {
         return await invalidFallback(

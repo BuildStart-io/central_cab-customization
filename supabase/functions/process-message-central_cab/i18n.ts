@@ -243,32 +243,39 @@ export function isNegativeInput(text: string): boolean {
 /**
  * Home page / Menu reset checks for confirmation steps
  */
-export function isHomeOrResetInput(text: string): boolean {
+export function isHomeOrResetInput(text: string, currentStep?: string): boolean {
   const l = (text || "").toLowerCase().trim();
+  if (!l) return false;
+
   if (
-    l === "3" ||
-    l.startsWith("3.") ||
-    l.startsWith("3 ") ||
-    l === "home" ||
-    l === "go to home page" ||
-    l === "goto home page" ||
-    l === "go to home" ||
-    l === "goto home" ||
-    l === "home page" ||
-    l.includes("home page") ||
-    l.includes("go to home") ||
-    l.includes("goto home") ||
     l === "main menu" ||
     l === "menu" ||
     l === "reset" ||
     l === "restart" ||
     l === "start over" ||
-    l === "back" ||
+    l === "home" ||
+    l.includes("main menu") ||
+    l.includes("මුල් මෙනුව") ||
     l.includes("ප්‍රධාන මෙනුව") ||
-    l.includes("මුල් මෙනුව")
+    l.includes("home page") ||
+    l.includes("go to home") ||
+    l.includes("goto home")
   ) {
     return true;
   }
+
+  // In confirmation steps where Option 3 is "3. Home - Go to Home Page 🏠"
+  if (
+    currentStep === "CAB_CONFIRM" ||
+    currentStep === "RENT_CONFIRM" ||
+    currentStep === "DELIVERY_CONFIRM" ||
+    currentStep === "BOOKING_COMPLETED"
+  ) {
+    if (l === "3" || l.startsWith("3.") || l.startsWith("3 ") || l.startsWith("3)")) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -890,8 +897,8 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:";
 
       case "CAB_PICKUP":
-        if (lang === "en") return "📍 Please share your Pickup Location using a live WhatsApp Location Pin or send a valid Google Maps Link:";
-        return "📍 කරුණාකර ඔබගේ ආරම්භක ස්ථානය (Pickup Location) සජීවී WhatsApp Location Pin එකක් හෝ Google Maps Link එකක් මඟින් මෙහි share කරන්න:";
+        if (lang === "en") return "📍 *Pickup Location (Live Location):*\n\nPlease follow the guide photo above and share your live WhatsApp Location Pin or send a Google Maps Link:";
+        return "📍 *ආරම්භක ස්ථානය (Pickup Location):*\n\nකරුණාකර ඉහත Guide පින්තූරයේ පෙන්වා ඇති පරිදි ඔබගේ සජීවී WhatsApp Location එක (Live Location Pin) හෝ Google Maps Link එකක් මෙහි එවන්න:";
 
       case "CAB_DROPOFF":
         if (lang === "en") return "🏁 *Drop-off Location:*\n\nDo you know how to share your destination Google Maps Link, or do you need help/guide? Please choose below (or send the Google Maps Link directly):";

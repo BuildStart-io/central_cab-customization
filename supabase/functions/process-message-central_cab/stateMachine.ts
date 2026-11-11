@@ -202,14 +202,15 @@ export async function processCustomerChatStep(
   // =========================================================================
   // 1. GLOBAL RESET INTERCEPTION (Poll vote or text command)
   // =========================================================================
-  if (isResetChoice(trimmed)) {
-    console.log(`[stateMachine] Reset requested by ${phoneNumber}`);
+  if (isResetChoice(trimmed) || isHomeOrResetInput(trimmed, session.current_step)) {
+    console.log(`[stateMachine] Reset/Menu requested by ${phoneNumber}`);
     return {
-      replyText: "",
-      poll: getCategoryPoll(lang),
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+      poll: getLanguagePoll(),
+      sendTextWithPoll: true,
       nextFlow: "IDLE",
-      nextStep: "CATEGORY_CHOICE",
-      sessionData: { language: lang },
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: {},
     };
   }
 
@@ -294,6 +295,19 @@ export async function processCustomerChatStep(
 
   const flow = session.flow_type || "IDLE";
   const step = session.current_step || "WELCOME";
+
+  // 0. Global Menu / Reset handler - Immediately returns to Language Choice
+  if (isHomeOrResetInput(trimmed, step)) {
+    console.log(`[stateMachine] Reset/Menu requested by ${phoneNumber} from ${flow}/${step}`);
+    return {
+      replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+      poll: getLanguagePoll(),
+      sendTextWithPoll: true,
+      nextFlow: "IDLE",
+      nextStep: "LANGUAGE_CHOICE",
+      sessionData: {},
+    };
+  }
 
   // Invalid fallback helper
   const invalidFallback = async (fallbackStr: string, stepPoll?: PollPayload): Promise<StepProcessResult> => {
@@ -390,11 +404,12 @@ export async function processCustomerChatStep(
     }
     if (aiResult.action === "main_menu") {
       return {
-        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-        poll: getCategoryPoll(lang),
+        replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+        poll: getLanguagePoll(),
+        sendTextWithPoll: true,
         nextFlow: "IDLE",
-        nextStep: "CATEGORY_CHOICE",
-        sessionData: { language: lang },
+        nextStep: "LANGUAGE_CHOICE",
+        sessionData: {},
       };
     }
     if (aiResult.action === "answer_question" && aiResult.reply) {
@@ -406,8 +421,9 @@ export async function processCustomerChatStep(
         const nextStep = flow === "DELIVERY_FLOW" ? "DELIVERY_PICKUP" : "CAB_PICKUP";
         return {
           replyText: lang === "en"
-            ? "We noticed your location or distance seems incorrect. Please enter your pickup location again:"
-            : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර නැවත ඔබගේ Pickup Location එක ලබා දෙන්න:",
+            ? "We noticed your location or distance seems incorrect. Please enter your pickup location again as shown in the guide above:"
+            : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර ඉහත Guide එකේ පරිදි ඔබගේ Pickup Location එක නැවත ලබා දෙන්න:",
+          mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
           nextFlow: flow,
           nextStep,
           sessionData: data,
@@ -493,14 +509,15 @@ export async function processCustomerChatStep(
       return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
     }
 
-    // Explicit request to return to Main Menu
-    if (isHomeOrResetInput(trimmed) || lower === "3" || lower.startsWith("3.") || lower.includes("menu") || lower.includes("main menu")) {
+    // Explicit request to return to Main Menu / Restart
+    if (isHomeOrResetInput(trimmed, step) || lower === "3" || lower.startsWith("3.") || lower.includes("menu") || lower.includes("main menu")) {
       return {
-        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-        poll: getCategoryPoll(lang),
+        replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+        poll: getLanguagePoll(),
+        sendTextWithPoll: true,
         nextFlow: "IDLE",
-        nextStep: "CATEGORY_CHOICE",
-        sessionData: { language: lang },
+        nextStep: "LANGUAGE_CHOICE",
+        sessionData: {},
       };
     }
 
@@ -520,11 +537,12 @@ export async function processCustomerChatStep(
     }
     if (aiResult.action === "main_menu") {
       return {
-        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
-        poll: getCategoryPoll(lang),
+        replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
+        poll: getLanguagePoll(),
+        sendTextWithPoll: true,
         nextFlow: "IDLE",
-        nextStep: "CATEGORY_CHOICE",
-        sessionData: { language: lang },
+        nextStep: "LANGUAGE_CHOICE",
+        sessionData: {},
       };
     }
 

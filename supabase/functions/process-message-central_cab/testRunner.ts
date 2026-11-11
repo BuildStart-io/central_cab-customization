@@ -115,6 +115,50 @@ export async function runAllAutomatedTests(
     const siGuide = getDropoffHelpGuide("si");
     record("3.7 Sinhala Help Guide has 5-step tutorial", siGuide.includes("1️⃣") && siGuide.includes("Copy") && siGuide.includes("Paste"));
 
+    // 3.8 Selecting vehicle prompts CAB_PICKUP with pickup guide media URL
+    const vehicleSelectSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "CAB_FLOW",
+      current_step: "CAB_VEHICLE",
+      session_data: {
+        language: "si",
+        booking_type: "now",
+        customer_name: "Test User",
+        customer_phone: "0771234567",
+      },
+    };
+    const vehiclePickupGuideRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "Three-wheeler 🛺",
+      "text",
+      {},
+      vehicleSelectSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record("3.8 Vehicle selection to CAB_PICKUP includes pickup guide mediaUrl", vehiclePickupGuideRes.nextStep === "CAB_PICKUP" && vehiclePickupGuideRes.mediaUrl === "https://app.buildstart.io/guides/pickup_guide.jpg", vehiclePickupGuideRes.mediaUrl);
+
+    // 3.9 Selecting Reset / Main Menu poll option from CAB_VEHICLE returns LANGUAGE_CHOICE
+    const menuResetRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "🔄 Reset / Main Menu (මුල් මෙනුව)",
+      "poll_response",
+      {},
+      vehicleSelectSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record("3.9 Reset / Main Menu poll choice returns Language Selection Poll", menuResetRes.nextStep === "LANGUAGE_CHOICE" && (menuResetRes.poll?.name.toLowerCase().includes("language") || menuResetRes.poll?.name.includes("භාෂාව")));
+
     // ------------------------------------------------------------------------
     // TEST 4: CAB_PICKUP State Machine Validation
     // ------------------------------------------------------------------------
@@ -389,7 +433,7 @@ export async function runAllAutomatedTests(
         defaultSystemSettings
       );
 
-      record("7.7 Explicit 'Menu' returns to Main Menu CATEGORY_CHOICE", postBookingMenuRes.nextStep === "CATEGORY_CHOICE" && postBookingMenuRes.poll?.name.includes("සේවාව තෝරන්න"));
+      record("7.7 Explicit 'Menu' returns to Language Selection Poll", postBookingMenuRes.nextStep === "LANGUAGE_CHOICE" && (postBookingMenuRes.poll?.name.toLowerCase().includes("language") || postBookingMenuRes.poll?.name.includes("භාෂාව")));
     }
 
     // ------------------------------------------------------------------------
