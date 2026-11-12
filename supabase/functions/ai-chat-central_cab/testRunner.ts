@@ -948,7 +948,7 @@ export async function runAllAutomatedTests(
     // 5-10km (5km) @ 57 = 285
     // Total = 150 + 240 + 285 = 675
     record("12.12 Delivery Motorbike 10km fare is correct (675)", delFareMb.totalFare === 675, `Got: ${delFareMb.totalFare}`);
-    record("12.13 Delivery pricing has NO round-trip discount", delFareMb.totalFare === delFareMb.oneWayFare);
+    record("12.13 Delivery pricing is strictly one-way (no round-trip)", delFareMb.tripType === "one_way");
 
     // ------------------------------------------------------------------------
     // TEST 13: ADMIN HANDLING & SERVICE APPROVAL WORKFLOWS (ALL SERVICES)
@@ -1160,6 +1160,25 @@ export async function runAllAutomatedTests(
       .eq("order_code", "DELR 991")
       .maybeSingle();
     record("13.18 Delivery Order in DB transitioned to DELR 991 with shop pickup", verifiedDel1?.order_code === "DELR 991" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
+
+    // Step 2b: Admin sends "DELR 991" code text -> prompts for Driver Voice Note
+    const delRes2b = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "DELR 991",
+      "text",
+      {},
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.18b Admin typing DELR 991 prompts for Driver Voice Note",
+      delRes2b.handled && (delRes2b.replyText?.includes("DELR 991") ?? false) && (delRes2b.replyText?.includes("Voice Note") ?? false),
+      delRes2b.replyText
+    );
 
     // Step 3: Admin sends voice note to confirm DELR 991
     const delRes3 = await handleAdminMessage(

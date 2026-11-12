@@ -1089,12 +1089,15 @@ export function getDeliveryCustomerConfirmedMessage(
   distanceText: string,
   fareLKR: string,
   productList: string,
-  lang: SupportedLanguage = "si"
+  lang: string = "si"
 ): string {
   if (lang === "en") {
-    return `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *Shop Pickup:* ${shopLocationDisplay}\n📍 *Delivery Location:* ${dropoffDisplay}\n🛵 *Vehicle:* ${vehicleName}\n🛣️ *Distance:* ${distanceText}\n💰 *Delivery Fee:* ${fareLKR}\n📦 *Items:* ${productList}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to you!\n\nThank you for choosing Central Delivery! 📦`;
+    return `🛵 *Your Delivery Order has been Dispatched!*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *Shop Pickup:* ${shopLocationDisplay}\n📍 *Delivery Location:* ${dropoffDisplay}\n🛵 *Vehicle:* ${vehicleName}\n🛣️ *Distance:* ${distanceText}\n💰 *Delivery Fee:* ${fareLKR}\n📦 *Items:* ${productList}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to you!\n\nThank you for choosing Central Delivery! 📦`;
   }
-  return `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n📍 *භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n🛵 *වාහනය:* ${vehicleName}\n🛣️ *දුර:* ${distanceText}\n💰 *Delivery ගාස්තුව:* ${fareLKR}\n📦 *භාණ්ඩ:* ${productList}\n\n🛵 Delivery Rider මහතා කඩයට ගොස් භාණ්ඩ ලබාගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`;
+  if (lang === "ta") {
+    return `🛵 *உங்கள் Delivery ஆர்டர் அனுப்பப்பட்டது (Dispatched)!*\n\n🏷️ *ஆர்டர் எண் (Order):* *${orderCode}*\n🏪 *கடை அமைவிடம் (Shop):* ${shopLocationDisplay}\n📍 *டெலிவரி இடம் (Location):* ${dropoffDisplay}\n🛵 *வாகனம்:* ${vehicleName}\n🛣️ *தூரம்:* ${distanceText}\n💰 *Delivery கட்டணம்:* ${fareLKR}\n📦 *பொருட்கள்:* ${productList}\n\n🛵 எமது டெலிவரி ரைடர் உங்கள் பொருட்களைப் பெற்றுக்கொண்டு உங்களிடம் வர கடைக்கு புறப்பட்டுள்ளார்!\n\nநன்றி! Central Delivery 📦`;
+  }
+  return `🛵 *ඔබගේ Delivery ඇණවුම පිටත් කරන ලදී (Order Dispatched)!*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n📍 *භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n🛵 *වාහනය:* ${vehicleName}\n🛣️ *දුර:* ${distanceText}\n💰 *Delivery ගාස්තුව:* ${fareLKR}\n📦 *භාණ්ඩ:* ${productList}\n\n🛵 Delivery Rider මහතා කඩයට ගොස් භාණ්ඩ ලබාගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`;
 }
 
 export function getShortTripCustomerConfirmedMessage(

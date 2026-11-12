@@ -221,9 +221,39 @@ export async function dispatchConfirmedDeliveryOrder(
 
   const vName = targetOrder.vehicle_type || (vehicleKey === "three_wheeler" ? "Three-wheeler 🛺" : "Motorbike 🏍️");
 
+  // 6. Forward Delivery Ride Job immediately to Delivery Riders Groups (DELR code with pickup, dropoff, distance, fare)
+  const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
+    ? systemSettings.delivery_rider_groups
+    : (systemSettings.target_driver_groups || []);
+
+  let serviceAdminPhone = (systemSettings?.delivery_rider_admin_number || systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
+  const groupContact = serviceAdminPhone || "Admin Office";
+
+  const riderJobNotice = `🛵 *නව Delivery සවාරියක් (Ride Job): ${riderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${shopLocationDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffLocationDisplay}\n\n🛵 *වාහනය:* ${vName}\n🛣️ *දුර:* ${fareResult.distanceText}\n💰 *Delivery ගාස්තුව:* ${formatLKR(fareResult.totalFare)}\n📦 *ලබාගත යුතු භාණ්ඩ:* ${productList}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
+
+  const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
+  for (let gIdx = 0; gIdx < riderGroups.length; gIdx++) {
+    const group = riderGroups[gIdx];
+    const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+    if (targetChatId) {
+      if (gIdx > 0) {
+        const jitterMs = Math.floor(Math.random() * 1000);
+        await new Promise((resolve) => setTimeout(resolve, delaySec * 1000 + jitterMs));
+      }
+      console.log(`[AdminHandler] Forwarding delivery ride job to Rider group: ${group.name} (${targetChatId})`);
+      await sendWhatsAppMessage(
+        supabaseUrl,
+        supabaseServiceKey,
+        targetChatId,
+        riderJobNotice,
+        sessionApiKey
+      );
+    }
+  }
+
   return {
     handled: true,
-    replyText: `🛵 *Delivery Rider Job ${riderCode} Ready!*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📍 *Customer Drop-off Location:*\n${dropoffLocationDisplay}\n\n🛵 *Vehicle:* ${vName}\n🛣️ *Distance:* ${fareResult.distanceText}\n💰 *Delivery Fee:* ${formatLKR(fareResult.totalFare)}\n📦 *Items:* ${productList}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ Please send *${riderCode}* and the Driver Voice Note to assign rider.`,
+    replyText: `🛵 *Delivery Rider Job ${riderCode} Dispatched to Riders Group!*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📍 *Customer Drop-off Location:*\n${dropoffLocationDisplay}\n\n🛵 *Vehicle:* ${vName}\n🛣️ *Distance:* ${fareResult.distanceText}\n💰 *Delivery Fee:* ${formatLKR(fareResult.totalFare)}\n📦 *Items:* ${productList}\n━━━━━━━━━━━━━━━━━━━━\n📌 Riders Group වෙත Job එක යොමු කරන ලදී.\n🎙️ Rider කෙනෙක් භාරගත් පසු Voice Note එක දැමීමට *${riderCode}* ලෙස එවන්න.`,
   };
 }
 
@@ -724,6 +754,24 @@ export async function handleAdminMessage(
       if (altOrder) order = altOrder;
     }
 
+    // Fallback: Check if DEL vs DELR swapped (e.g. order in DB is DELR 019 but admin typed DEL 019, or vice versa)
+    if (!order && (orderCode.startsWith("DEL") || orderCode.startsWith("DELR"))) {
+      const swappedCode = orderCode.startsWith("DELR")
+        ? orderCode.replace(/^DELR\b/i, "DEL")
+        : orderCode.replace(/^DEL\b/i, "DELR");
+      const cleanSwapped = swappedCode.replace(/\s+/g, "");
+      const { data: swappedOrder } = await supabase
+        .schema("central_cab")
+        .from("orders")
+        .select("*")
+        .eq("user_id", userId)
+        .or(`order_code.ilike.%${swappedCode}%,order_code.ilike.%${cleanSwapped}%`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (swappedOrder) order = swappedOrder;
+    }
+
     if (!order) {
       const cleanCode = orderCode.replace(/\s+/g, "");
       const { data: globalOrder } = await supabase
@@ -817,10 +865,31 @@ export async function handleAdminMessage(
       };
     }
 
-    const isDelivery = sType.includes("delivery") || orderCode.startsWith("DEL");
+    const isDeliveryRider = orderCode.startsWith("DELR") || (order.order_code && order.order_code.startsWith("DELR") && Boolean(order.pickup_address));
+    const isDeliveryShop = (sType.includes("delivery") || orderCode.startsWith("DEL")) && !isDeliveryRider;
 
-    // Case B: Delivery Order: Admin sends order number first, then shop pickup location
-    if (isDelivery) {
+    // Case B-1: Delivery Rider Order: Admin typed DELR code -> prompt for Driver Voice Note
+    if (isDeliveryRider) {
+      await supabase
+        .schema("central_cab")
+        .from("bot_sessions")
+        .upsert({
+          phone_number: adminPhoneNumber,
+          user_id: userId,
+          flow_type: "ADMIN_FLOW",
+          current_step: "AWAITING_VOICE_NOTE",
+          session_data: { pending_admin_order_code: order.order_code, pending_order_id: order.id },
+          updated_at: new Date().toISOString(),
+        });
+
+      return {
+        handled: true,
+        replyText: `🎙️ *Delivery Rider Job ${order.order_code} Selected!*\n━━━━━━━━━━━━━━━━━━━━\nකරුණාකර Rider / Driver මහතා සඳහා Voice Note එක එවන්න.\n\n(Please send the Driver Voice Note now. It will be dispatched to confirm the delivery rider job.)`,
+      };
+    }
+
+    // Case B-2: Delivery Shop Order: Admin sends order number first, then shop pickup location
+    if (isDeliveryShop) {
       let shopPickupLocation = extractShopPickupLocation(messageText, orderCode);
       let shopPickupCoords: { lat: number; lng: number } | null = null;
 
