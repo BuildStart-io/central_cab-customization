@@ -5,6 +5,7 @@ import {
   formatLocationDisplay,
   PricingSettings,
   calculateFare,
+  calculateDeliveryFare,
   normalizeVehicleKey,
   DistanceDiscountSlab,
   VehicleModel,
@@ -435,6 +436,59 @@ export async function runAllAutomatedTests(
 
       record("7.7 Explicit 'Menu' returns to Language Selection Poll", postBookingMenuRes.nextStep === "LANGUAGE_CHOICE" && (postBookingMenuRes.poll?.name.toLowerCase().includes("language") || postBookingMenuRes.poll?.name.includes("භාෂාව")));
     }
+
+    // 7.8 DELIVERY_ITEMS to DELIVERY_VEHICLE progression
+    const deliveryItemsSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "DELIVERY_FLOW",
+      current_step: "DELIVERY_ITEMS",
+      session_data: {
+        language: "en",
+        delivery_category: "Food & Drinks",
+      },
+    };
+    const deliveryVehiclePromptRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "2 Burgers, 1 Coke",
+      "text",
+      {},
+      deliveryItemsSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record("7.8 DELIVERY_ITEMS transitions to DELIVERY_VEHICLE with poll", deliveryVehiclePromptRes.nextStep === "DELIVERY_VEHICLE" && deliveryVehiclePromptRes.poll != null);
+
+    // 7.9 Selecting Motorbike transitions to DELIVERY_PHONE
+    const deliveryVehicleSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "DELIVERY_FLOW",
+      current_step: "DELIVERY_VEHICLE",
+      session_data: {
+        language: "en",
+        delivery_category: "Food & Drinks",
+        delivery_items: "2 Burgers, 1 Coke",
+      },
+    };
+    const deliveryVehicleSelectRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "1",
+      "text",
+      {},
+      deliveryVehicleSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record("7.9 Selecting vehicle (1. Motorbike) transitions to DELIVERY_PHONE", deliveryVehicleSelectRes.nextStep === "DELIVERY_PHONE" && deliveryVehicleSelectRes.sessionData?.vehicle_key === "motorbike");
 
     // ------------------------------------------------------------------------
     // TEST 8: DELIVERY FLOW Location Validation
@@ -874,6 +928,28 @@ export async function runAllAutomatedTests(
     record("12.10 Bus Rosa Mini Bus gross fare is correct (44200)", fareBus.grossFare === 44200, `Got: ${fareBus.grossFare}`);
     record("12.11 Bus Rosa Mini Bus discount amount is correct (4280)", fareBus.discountAmount === 4280, `Got: ${fareBus.discountAmount}`);
 
+    // 12.12 Delivery Vehicle Pricing test - Motorbike (10 km)
+    const deliveryPricingConfig: PricingSettings = {
+      ...allVehiclesSettings,
+      delivery_motorbike: {
+        base_price: 150,
+        per_km_rate: 60,
+        coverage_km: 1,
+        discount_slabs: [
+          { from_km: 0, to_km: 5, discount_percentage: 0 },
+          { from_km: 5, to_km: 15, discount_percentage: 5 },
+          { from_km: 15, to_km: null, discount_percentage: 10 },
+        ],
+      },
+    };
+    const delFareMb = calculateDeliveryFare(10, "10 km", "motorbike", deliveryPricingConfig);
+    // Base 150 (1km) -> 9km chargeable:
+    // 1-5km (4km) @ 60 = 240
+    // 5-10km (5km) @ 57 = 285
+    // Total = 150 + 240 + 285 = 675
+    record("12.12 Delivery Motorbike 10km fare is correct (675)", delFareMb.totalFare === 675, `Got: ${delFareMb.totalFare}`);
+    record("12.13 Delivery pricing has NO round-trip discount", delFareMb.totalFare === delFareMb.oneWayFare);
+
     // ------------------------------------------------------------------------
     // TEST 13: ADMIN HANDLING & SERVICE APPROVAL WORKFLOWS (ALL SERVICES)
     // ------------------------------------------------------------------------
@@ -882,6 +958,7 @@ export async function runAllAutomatedTests(
       hire_admin_number: "94770003344",
       rent_admin_number: "94770005566",
       delivery_admin_number: "94770007788",
+      delivery_rider_admin_number: "94770009900",
       hire_driver_groups: [],
       rent_a_car_groups: [],
       delivery_driver_groups: [],
@@ -895,12 +972,15 @@ export async function runAllAutomatedTests(
     record("13.3 Hire Admin phone authentication", isAdminUser("94770003344", adminSystemSettings) === true);
     record("13.4 Rent a Car Admin phone authentication", isAdminUser("94770005566", adminSystemSettings) === true);
     record("13.5 Delivery Admin phone authentication", isAdminUser("94770007788", adminSystemSettings) === true);
+    record("13.5a Delivery Rider Admin phone authentication", isAdminUser("94770009900", adminSystemSettings) === true);
     record("13.6 Rejects non-admin phone", isAdminUser("94719998877", adminSystemSettings) === false);
 
     // 13.7 - 13.9: Order Code Extraction
     record("13.7 Extract HIR order code", extractOrderCode("CONFIRM HIR 015") === "HIR 015");
+    record("13.7a Extract HIRS order code", extractOrderCode("HIRS 022") === "HIRS 022");
     record("13.8 Extract RNT order code", extractOrderCode("RNT 003") === "RNT 003");
     record("13.9 Extract DEL order code", extractOrderCode("DEL 008") === "DEL 008");
+    record("13.9a Extract DELR order code", extractOrderCode("DELR 008") === "DELR 008");
 
     // 13.10: Shop Location Extraction
     const extractedShop = extractShopPickupLocation("CONFIRM DEL 008 Perera Bakers, Main Street", "DEL 008");
@@ -1019,7 +1099,7 @@ export async function runAllAutomatedTests(
       .maybeSingle();
     record("13.15 Rent a Car status in DB is confirmed", verifiedRent?.status === "confirmed");
 
-    // 13.16 - 13.17: Service 3 (Delivery) Two-Step Approval Workflow
+    // 13.16 - 13.20: Service 3 (Delivery) Two-Step Approval Workflow (DEL -> DELR -> Voice Note)
     await supabase.schema("central_cab").from("orders").insert({
       user_id: userId,
       order_code: "DEL 991",
@@ -1068,20 +1148,47 @@ export async function runAllAutomatedTests(
       dummyApiKey
     );
     record(
-      "13.17 Delivery Order step 2 assigning shop location confirms order",
-      delRes2.handled && (delRes2.replyText?.includes("Shop Pickup Location assigned for Delivery Order DEL 991") ?? false),
+      "13.17 Delivery Order step 2 assigning shop location transitions to DELR and prompts Voice Note",
+      delRes2.handled && (delRes2.replyText?.includes("DELR 991") ?? false) && (delRes2.replyText?.includes("Voice Note") ?? false),
       delRes2.replyText
     );
 
     const { data: verifiedDel1 } = await supabase
       .schema("central_cab")
       .from("orders")
-      .select("status, pickup_address")
-      .eq("order_code", "DEL 991")
+      .select("status, order_code, pickup_address")
+      .eq("order_code", "DELR 991")
       .maybeSingle();
-    record("13.18 Delivery Order status in DB is confirmed with shop pickup", verifiedDel1?.status === "confirmed" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
+    record("13.18 Delivery Order in DB transitioned to DELR 991 with shop pickup", verifiedDel1?.order_code === "DELR 991" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
 
-    // 13.19: Service 3 (Delivery) One-Step Approval Workflow
+    // Step 3: Admin sends voice note to confirm DELR 991
+    const delRes3 = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "Voice Note Audio",
+      "ptt",
+      { directMediaUrl: "https://example.com/test-del-voice.ogg" },
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.19 Delivery Order step 3 voice note confirms DELR 991",
+      delRes3.handled && (delRes3.replyText?.includes("Voice update for Order *DELR 991*") ?? false),
+      delRes3.replyText
+    );
+
+    const { data: verifiedDelConfirmed } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status, assigned_voice_url")
+      .eq("order_code", "DELR 991")
+      .maybeSingle();
+    record("13.20 Delivery Order DELR 991 status in DB is confirmed with voice URL", verifiedDelConfirmed?.status === "confirmed" && verifiedDelConfirmed?.assigned_voice_url === "https://example.com/test-del-voice.ogg");
+
+    // 13.21: Service 3 (Delivery) One-Step Approval with inline shop location -> transitions to DELR
     await supabase.schema("central_cab").from("orders").insert({
       user_id: userId,
       order_code: "DEL 992",
@@ -1112,21 +1219,65 @@ export async function runAllAutomatedTests(
       dummyApiKey
     );
     record(
-      "13.19 Delivery Order single-step approval with inline shop location",
-      delFastRes.handled && (delFastRes.replyText?.includes("Shop Pickup Location assigned for Delivery Order DEL 992") ?? false),
+      "13.21 Delivery Order single-step shop assignment transitions to DELR 992 and prompts Voice Note",
+      delFastRes.handled && (delFastRes.replyText?.includes("DELR 992") ?? false) && (delFastRes.replyText?.includes("Voice Note") ?? false),
       delFastRes.replyText
     );
 
     const { data: verifiedDel2 } = await supabase
       .schema("central_cab")
       .from("orders")
-      .select("status, pickup_address")
-      .eq("order_code", "DEL 992")
+      .select("status, order_code, pickup_address")
+      .eq("order_code", "DELR 992")
       .maybeSingle();
-    record("13.20 Delivery Order single-step status in DB is confirmed", verifiedDel2?.status === "confirmed" && verifiedDel2?.pickup_address?.includes("Royal Restaurant"));
+    record("13.22 Delivery Order DELR 992 in DB has shop pickup assigned", verifiedDel2?.order_code === "DELR 992" && verifiedDel2?.pickup_address?.includes("Royal Restaurant"));
+
+    // 13.23: Short Trip (Ride Now) HIRS 991 Confirmation with Voice Note
+    await supabase.schema("central_cab").from("orders").insert({
+      user_id: userId,
+      order_code: "HIRS 991",
+      service_type: "transport",
+      customer_name: "Test Rider Customer",
+      customer_phone: "0771234567",
+      whatsapp_phone: "94771234567",
+      vehicle_type: "Motorbike 🏍️",
+      pickup_address: "Batticaloa Clock Tower",
+      dropoff_address: "Kallady Bridge",
+      status: "pending",
+      booking_type: "now",
+      total_fare: 350,
+      total_amount: 350,
+      order_items: [],
+    });
+
+    const hirsVoiceRes = await handleAdminMessage(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testAdminPhone,
+      "HIRS 991 Voice Note Audio",
+      "ptt",
+      { directMediaUrl: "https://example.com/test-hirs-voice.ogg" },
+      adminSystemSettings,
+      dummyApiKey
+    );
+    record(
+      "13.23 Short Trip (Ride Now) HIRS 991 voice note confirms order",
+      hirsVoiceRes.handled && (hirsVoiceRes.replyText?.includes("Voice update for Order *HIRS 991*") ?? false),
+      hirsVoiceRes.replyText
+    );
+
+    const { data: verifiedHirs } = await supabase
+      .schema("central_cab")
+      .from("orders")
+      .select("status, assigned_voice_url")
+      .eq("order_code", "HIRS 991")
+      .maybeSingle();
+    record("13.24 Short Trip HIRS 991 status in DB is confirmed with voice URL", verifiedHirs?.status === "confirmed" && verifiedHirs?.assigned_voice_url === "https://example.com/test-hirs-voice.ogg");
 
     // Clean up test orders
-    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "RNT 991", "DEL 991", "DEL 992"]);
+    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "HIRS 991", "RNT 991", "DEL 991", "DELR 991", "DEL 992", "DELR 992"]);
 
   } catch (err: any) {
     record("Fatal Test Exception", false, err.message + "\n" + err.stack);

@@ -53,6 +53,7 @@ export interface SystemSettingsConfig {
   hire_admin_number?: string;
   rent_admin_number?: string;
   delivery_admin_number?: string;
+  delivery_rider_admin_number?: string;
   broadcast_delay_seconds: number;
   hire_driver_groups: DriverGroup[];
   rent_a_car_groups: DriverGroup[];
@@ -71,6 +72,7 @@ export default function CabSystemSettings() {
   const [hireAdminPhone, setHireAdminPhone] = useState("");
   const [rentAdminPhone, setRentAdminPhone] = useState("");
   const [deliveryAdminPhone, setDeliveryAdminPhone] = useState("");
+  const [deliveryRiderAdminPhone, setDeliveryRiderAdminPhone] = useState("");
   const [broadcastDelay, setBroadcastDelay] = useState<number>(3);
   const [activeGroupTab, setActiveGroupTab] = useState<ServiceGroupType>("hire");
 
@@ -235,6 +237,7 @@ export default function CabSystemSettings() {
         setHireAdminPhone(typeof val.hire_admin_number === "string" ? val.hire_admin_number : "");
         setRentAdminPhone(typeof val.rent_admin_number === "string" ? val.rent_admin_number : "");
         setDeliveryAdminPhone(typeof val.delivery_admin_number === "string" ? val.delivery_admin_number : "");
+        setDeliveryRiderAdminPhone(typeof val.delivery_rider_admin_number === "string" ? val.delivery_rider_admin_number : "");
         setBroadcastDelay(Number(val.broadcast_delay_seconds) > 0 ? Number(val.broadcast_delay_seconds) : 3);
 
         const legacyGroups = parseDriverGroups(val.target_driver_groups);
@@ -461,10 +464,11 @@ export default function CabSystemSettings() {
             user_id: user.id,
             key: "cab_system_settings",
             value: {
-              admin_whatsapp_number: adminPhone.trim(),
+              admin_whatsapp_number: (hireAdminPhone.trim() || deliveryRiderAdminPhone.trim() || deliveryAdminPhone.trim() || adminPhone.trim()),
               hire_admin_number: hireAdminPhone.trim(),
               rent_admin_number: rentAdminPhone.trim(),
               delivery_admin_number: deliveryAdminPhone.trim(),
+              delivery_rider_admin_number: deliveryRiderAdminPhone.trim(),
               broadcast_delay_seconds: delay,
               hire_driver_groups: cleanHire,
               rent_a_car_groups: cleanRent,
@@ -554,81 +558,110 @@ export default function CabSystemSettings() {
                 <Smartphone className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle className="text-base font-semibold">Admin WhatsApp Numbers</CardTitle>
+                <CardTitle className="text-base font-semibold">Service Admin WhatsApp Numbers</CardTitle>
                 <CardDescription className="text-xs">
-                  Configure Master Admin and dedicated Service Admins for Hire, Rent a Car, and Delivery.
+                  Dedicated service admin numbers for Hire Cabs, Car Rentals, Delivery Shops, and Riders.
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3.5 pt-1">
-            <div>
-              <Label className="text-xs font-medium text-foreground mb-1 block">
-                👑 Main Admin WhatsApp Number (Master)
-              </Label>
-              <Input
-                type="text"
-                value={adminPhone}
-                onChange={(e) => setAdminPhone(e.target.value)}
-                placeholder="94771234567"
-                className="font-mono font-medium"
-              />
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Receives all bookings, authorizes dispatch, and can confirm/book any service.
-              </p>
+          <CardContent className="space-y-3 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* 1. Hire Admin */}
+              <div className="p-2.5 rounded-xl border bg-amber-500/5 border-amber-200 dark:border-amber-900/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                    <Car className="h-3.5 w-3.5 text-amber-600" />
+                    Hire Admin
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-800 dark:text-amber-300">
+                    🚕 Cabs
+                  </Badge>
+                </div>
+                <Input
+                  type="text"
+                  value={hireAdminPhone}
+                  onChange={(e) => setHireAdminPhone(e.target.value)}
+                  placeholder="94771234567"
+                  className="font-mono text-xs h-8 bg-white dark:bg-slate-900 font-semibold"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Short trips & scheduled cab bookings.
+                </p>
+              </div>
+
+              {/* 2. Rent a Car Admin */}
+              <div className="p-2.5 rounded-xl border bg-blue-500/5 border-blue-200 dark:border-blue-900/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+                    <Car className="h-3.5 w-3.5 text-blue-600" />
+                    Rent a Car Admin
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-800 dark:text-blue-300">
+                    🚗 Rental
+                  </Badge>
+                </div>
+                <Input
+                  type="text"
+                  value={rentAdminPhone}
+                  onChange={(e) => setRentAdminPhone(e.target.value)}
+                  placeholder="94771234567"
+                  className="font-mono text-xs h-8 bg-white dark:bg-slate-900 font-semibold"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Self-drive and rental car inquiries.
+                </p>
+              </div>
+
+              {/* 3. Delivery Admin (Shop) */}
+              <div className="p-2.5 rounded-xl border bg-emerald-500/5 border-emerald-200 dark:border-emerald-900/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                    <Store className="h-3.5 w-3.5 text-emerald-600" />
+                    Delivery Admin (Shop)
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-800 dark:text-emerald-300">
+                    🏪 Shop
+                  </Badge>
+                </div>
+                <Input
+                  type="text"
+                  value={deliveryAdminPhone}
+                  onChange={(e) => setDeliveryAdminPhone(e.target.value)}
+                  placeholder="94771234567"
+                  className="font-mono text-xs h-8 bg-white dark:bg-slate-900 font-semibold"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Receives orders & assigns shop pickup pin.
+                </p>
+              </div>
+
+              {/* 4. Delivery Rider Admin */}
+              <div className="p-2.5 rounded-xl border bg-teal-500/5 border-teal-200 dark:border-teal-900/40 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-teal-900 dark:text-teal-300 flex items-center gap-1.5">
+                    <Bike className="h-3.5 w-3.5 text-teal-600" />
+                    Delivery Rider Admin
+                  </Label>
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-teal-300 text-teal-800 dark:text-teal-300">
+                    🛵 Rider
+                  </Badge>
+                </div>
+                <Input
+                  type="text"
+                  value={deliveryRiderAdminPhone}
+                  onChange={(e) => setDeliveryRiderAdminPhone(e.target.value)}
+                  placeholder="94771234567"
+                  className="font-mono text-xs h-8 bg-white dark:bg-slate-900 font-semibold"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Confirms rider jobs with driver voice note.
+                </p>
+              </div>
             </div>
 
-            <div className="pt-2 border-t space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground">
-                  Service-Specific Admin Numbers (Tags)
-                </span>
-                <Badge variant="outline" className="text-[10px] py-0">Direct Routing</Badge>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-[11px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <Car className="h-3 w-3 text-amber-500" /> Hire Admin
-                  </Label>
-                  <Input
-                    type="text"
-                    value={hireAdminPhone}
-                    onChange={(e) => setHireAdminPhone(e.target.value)}
-                    placeholder="9477..."
-                    className="font-mono text-xs h-8"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-[11px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <Car className="h-3 w-3 text-blue-500" /> Rent Admin
-                  </Label>
-                  <Input
-                    type="text"
-                    value={rentAdminPhone}
-                    onChange={(e) => setRentAdminPhone(e.target.value)}
-                    placeholder="9477..."
-                    className="font-mono text-xs h-8"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-[11px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <Package className="h-3 w-3 text-emerald-500" /> Delivery Admin
-                  </Label>
-                  <Input
-                    type="text"
-                    value={deliveryAdminPhone}
-                    onChange={(e) => setDeliveryAdminPhone(e.target.value)}
-                    placeholder="9477..."
-                    className="font-mono text-xs h-8"
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                When specified, orders are also delivered directly to that specific service admin. Delivery Admin can confirm orders and assign shop pickup locations.
-              </p>
+            <div className="rounded-lg bg-muted/40 p-2 text-[10px] text-muted-foreground leading-normal">
+              💡 Orders and authorization requests are directly sent to their dedicated service admin numbers above.
             </div>
           </CardContent>
         </Card>

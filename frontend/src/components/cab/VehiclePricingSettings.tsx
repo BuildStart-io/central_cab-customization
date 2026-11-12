@@ -34,6 +34,7 @@ import {
   Sparkles,
   Info,
   Layers,
+  Package,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
@@ -65,6 +66,7 @@ export interface VehiclePricing {
   badge_color?: string;
   accent_color?: string;
   is_ride_now?: boolean;
+  is_delivery?: boolean;
   base_price: number;
   per_km_rate: number;
   coverage_km: number;
@@ -76,6 +78,36 @@ export interface VehiclePricing {
 export type PricingConfigMap = Record<string, VehiclePricing>;
 
 export const DEFAULT_PRICING: PricingConfigMap = {
+  delivery_motorbike: {
+    label: "Motorbike (Delivery)",
+    icon: "🛵",
+    badge_color: "bg-emerald-500/10 text-emerald-600 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300",
+    is_delivery: true,
+    base_price: 150,
+    per_km_rate: 60,
+    coverage_km: 1,
+    discount_percentage: 0,
+    discount_slabs: [
+      { id: "del_mb_s1", from_km: 0, to_km: 5, discount_percentage: 0 },
+      { id: "del_mb_s2", from_km: 5, to_km: 15, discount_percentage: 5 },
+      { id: "del_mb_s3", from_km: 15, to_km: null, discount_percentage: 10 },
+    ],
+  },
+  delivery_three_wheeler: {
+    label: "Three-wheeler (Delivery)",
+    icon: "🛺",
+    badge_color: "bg-teal-500/10 text-teal-600 border-teal-300 dark:bg-teal-950/40 dark:text-teal-300",
+    is_delivery: true,
+    base_price: 250,
+    per_km_rate: 80,
+    coverage_km: 1,
+    discount_percentage: 0,
+    discount_slabs: [
+      { id: "del_tw_s1", from_km: 0, to_km: 5, discount_percentage: 0 },
+      { id: "del_tw_s2", from_km: 5, to_km: 15, discount_percentage: 5 },
+      { id: "del_tw_s3", from_km: 15, to_km: null, discount_percentage: 10 },
+    ],
+  },
   motorbike: {
     label: "Motorbike",
     icon: "🏍️",
@@ -431,7 +463,7 @@ function SlabEditor({
 
 export default function VehiclePricingSettings() {
   const [pricing, setPricing] = useState<PricingConfigMap>(DEFAULT_PRICING);
-  const [activeTab, setActiveTab] = useState<"ride_now" | "ride_later">("ride_now");
+  const [activeTab, setActiveTab] = useState<"ride_now" | "ride_later" | "delivery">("ride_now");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { user } = useAuth();
@@ -795,13 +827,24 @@ export default function VehiclePricingSettings() {
     );
   }
 
-  // Filter categories for Ride Now vs Ride Later
+  // Filter categories for Ride Now vs Ride Later vs Delivery
   const rideNowKeys = Object.keys(pricing).filter(
-    (k) => k === "motorbike" || k === "three_wheeler" || Boolean(pricing[k]?.is_ride_now)
+    (k) =>
+      k !== "delivery_motorbike" &&
+      k !== "delivery_three_wheeler" &&
+      (k === "motorbike" || k === "three_wheeler" || Boolean(pricing[k]?.is_ride_now))
   );
 
+  const deliveryKeys = ["delivery_motorbike", "delivery_three_wheeler"];
+
   const scheduleKeys = Object.keys(pricing).filter(
-    (k) => k !== "motorbike" && k !== "three_wheeler" && !pricing[k]?.is_ride_now
+    (k) =>
+      k !== "motorbike" &&
+      k !== "three_wheeler" &&
+      k !== "delivery_motorbike" &&
+      k !== "delivery_three_wheeler" &&
+      !pricing[k]?.is_ride_now &&
+      !pricing[k]?.is_delivery
   );
 
   const rideLaterTotalModels = scheduleKeys.reduce(
@@ -825,12 +868,12 @@ export default function VehiclePricingSettings() {
         </Button>
       </div>
 
-      {/* Tabs: Ride Now vs Ride Later */}
+      {/* Tabs: Ride Now vs Ride Later vs Delivery */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-        <TabsList className="grid grid-cols-2 h-auto p-1.5 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 gap-2 shadow-inner max-w-xl">
+        <TabsList className="grid grid-cols-1 sm:grid-cols-3 h-auto p-1.5 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 gap-2 shadow-inner max-w-2xl">
           <TabsTrigger
             value="ride_now"
-            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 border cursor-pointer ${
+            className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 flex items-center justify-center gap-1.5 border cursor-pointer ${
               activeTab === "ride_now"
                 ? "!bg-gradient-to-r !from-amber-400 !via-amber-500 !to-yellow-500 !text-slate-950 !border-amber-400 !shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/60 scale-[1.01]"
                 : "bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-amber-500/15 hover:text-amber-900"
@@ -842,14 +885,26 @@ export default function VehiclePricingSettings() {
 
           <TabsTrigger
             value="ride_later"
-            className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 border cursor-pointer ${
+            className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 flex items-center justify-center gap-1.5 border cursor-pointer ${
               activeTab === "ride_later"
                 ? "!bg-gradient-to-r !from-blue-600 !via-indigo-600 !to-blue-700 !text-white !border-blue-400 !shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/60 scale-[1.01]"
                 : "bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-blue-500/15 hover:text-blue-900"
             }`}
           >
             <Calendar className="h-4 w-4" />
-            <span>📅 Ride Later ({scheduleKeys.length} Categories, {rideLaterTotalModels} Models)</span>
+            <span>📅 Ride Later ({scheduleKeys.length})</span>
+          </TabsTrigger>
+
+          <TabsTrigger
+            value="delivery"
+            className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all duration-300 flex items-center justify-center gap-1.5 border cursor-pointer ${
+              activeTab === "delivery"
+                ? "!bg-gradient-to-r !from-emerald-500 !via-teal-600 !to-emerald-700 !text-white !border-emerald-400 !shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-400/60 scale-[1.01]"
+                : "bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-500/15 hover:text-emerald-900"
+            }`}
+          >
+            <Package className="h-4 w-4" />
+            <span>📦 Delivery (2)</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1060,13 +1115,13 @@ export default function VehiclePricingSettings() {
 
                   <CardContent className="space-y-4 pt-4">
                     {/* Category Level Default Parameters */}
-                    <div className="p-3 bg-muted/10 rounded-xl border space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-foreground">
-                          Category Fallback Rates & Slabs:
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          (Used if no specific variation is matched)
+                    <div className="p-3.5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-950/30 dark:via-amber-950/15 rounded-xl border-2 border-amber-300/80 dark:border-amber-700/60 space-y-3 shadow-2xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-amber-200/60 dark:border-amber-800/40">
+                        <Badge className="bg-amber-500 text-slate-950 dark:bg-amber-400 dark:text-slate-950 font-bold text-xs flex items-center gap-1.5 py-0.5 px-2.5 shadow-xs border-amber-600">
+                          🛡️ Category Fallback Rates & Slabs
+                        </Badge>
+                        <span className="text-[11px] text-amber-900/80 dark:text-amber-200/80 font-medium">
+                          (Used only when no specific variation is matched)
                         </span>
                       </div>
 
@@ -1317,6 +1372,110 @@ export default function VehiclePricingSettings() {
                         </div>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        {/* ========================================================================= */}
+        {/* SUB-TAB 3: DELIVERY VEHICLES */}
+        {/* ========================================================================= */}
+        <TabsContent value="delivery" className="space-y-4 pt-4">
+          <div className="p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/70 dark:bg-emerald-950/20 text-xs text-emerald-950 dark:text-emerald-200 flex items-start gap-2 shadow-2xs">
+            <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold">Delivery Pricing Rules:</span> Delivery orders are strictly one-way trips from the assigned Shop Pickup location to the Customer Drop-off location. Round Trip discount percentage is not applicable for deliveries.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {deliveryKeys.map((key) => {
+              const item = pricing[key] || DEFAULT_PRICING[key] || {
+                base_price: key === "delivery_motorbike" ? 150 : 250,
+                per_km_rate: key === "delivery_motorbike" ? 60 : 80,
+                coverage_km: 1,
+                discount_percentage: 0,
+              };
+
+              const label = item.label || (key === "delivery_motorbike" ? "Motorbike (Delivery)" : "Three-wheeler (Tuk-Tuk Delivery)");
+              const icon = item.icon || (key === "delivery_motorbike" ? "🛵" : "🛺");
+
+              return (
+                <Card key={key} className="border-2 border-emerald-200/80 dark:border-emerald-900/60 shadow-sm hover:border-emerald-400 transition-all">
+                  <CardHeader className="pb-3 bg-emerald-50/40 dark:bg-emerald-950/10 border-b">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-2xl">{icon}</span>
+                        <div>
+                          <CardTitle className="text-base font-bold">{label}</CardTitle>
+                          <CardDescription className="text-xs">One-way Delivery Option</CardDescription>
+                        </div>
+                      </div>
+                      <Badge className="bg-emerald-600 text-white font-bold border-emerald-700">Delivery Vehicle</Badge>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4 pt-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground mb-1">
+                          <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                          Base Price (LKR)
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={item.base_price}
+                          onChange={(e) => handleFieldChange(key, "base_price", e.target.value)}
+                          className="font-semibold text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground mb-1">
+                          <Navigation className="h-3.5 w-3.5 text-emerald-600" />
+                          Base KM Rate (LKR)
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="5"
+                          value={item.per_km_rate}
+                          onChange={(e) => handleFieldChange(key, "per_km_rate", e.target.value)}
+                          className="font-semibold text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground mb-1">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          Base Coverage (KM)
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={item.coverage_km}
+                          onChange={(e) => handleFieldChange(key, "coverage_km", e.target.value)}
+                          className="font-semibold text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground italic flex items-center gap-1 bg-muted/40 p-2 rounded-lg">
+                      <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span>Round trip discounts are disabled for delivery vehicles (strictly 1-way billing).</span>
+                    </div>
+
+                    {/* Distance Slabs Editor */}
+                    <SlabEditor
+                      slabs={item.discount_slabs || []}
+                      baseRate={item.per_km_rate}
+                      onChange={(newSlabs) => handleFieldChange(key, "discount_slabs", newSlabs)}
+                    />
                   </CardContent>
                 </Card>
               );

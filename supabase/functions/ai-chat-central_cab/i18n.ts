@@ -269,6 +269,7 @@ export function isHomeOrResetInput(text: string, currentStep?: string): boolean 
     currentStep === "CAB_CONFIRM" ||
     currentStep === "RENT_CONFIRM" ||
     currentStep === "DELIVERY_CONFIRM" ||
+    currentStep === "DELIVERY_VEHICLE" ||
     currentStep === "BOOKING_COMPLETED"
   ) {
     if (l === "3" || l.startsWith("3.") || l.startsWith("3 ") || l.startsWith("3)")) {
@@ -652,6 +653,57 @@ export function detectDeliveryCategory(text: string): string | null {
   return null;
 }
 
+export function getDeliveryVehiclePoll(lang: SupportedLanguage = "si"): PollDefinition {
+  const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව)";
+  if (lang === "en") {
+    return {
+      name: "🛵 Choose Delivery Vehicle:",
+      options: [
+        "1. Motorbike (Bike) 🏍️",
+        "2. Three-wheeler (Tuk-Tuk) 🛺",
+        resetOption,
+      ],
+      multipleAnswers: false,
+    };
+  }
+  return {
+    name: "🛵 බෙදාහැරීමේ වාහනය තෝරන්න (Delivery Vehicle):",
+    options: [
+      "1. යතුරුපැදිය (Motorbike) 🏍️",
+      "2. ත්‍රිරෝද රථය (Three-wheeler) 🛺",
+      resetOption,
+    ],
+    multipleAnswers: false,
+  };
+}
+
+export function detectDeliveryVehicle(text: string): { key: string; name: string } | null {
+  const t = (text || "").toLowerCase().trim();
+  if (!t) return null;
+  if (
+    t === "1" ||
+    t.startsWith("1.") ||
+    t.startsWith("1 ") ||
+    t.includes("bike") ||
+    t.includes("motor") ||
+    t.includes("යතුරුපැදි")
+  ) {
+    return { key: "motorbike", name: "Motorbike 🏍️" };
+  }
+  if (
+    t === "2" ||
+    t.startsWith("2.") ||
+    t.startsWith("2 ") ||
+    t.includes("three") ||
+    t.includes("tuk") ||
+    t.includes("auto") ||
+    t.includes("ත්‍රිරෝද")
+  ) {
+    return { key: "three_wheeler", name: "Three-wheeler 🛺" };
+  }
+  return null;
+}
+
 export function getDropoffHelpPoll(lang: SupportedLanguage = "si"): PollDefinition {
   const resetOption = "🔄 Reset / Main Menu (මුල් මෙනුව)";
   if (lang === "en") {
@@ -928,6 +980,12 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         }
         return "📝 කරුණාකර ඔබට අවශ්‍ය විශේෂිත භාණ්ඩ මොනවාදැයි විස්තර (Product Name / Quantity) සමඟ මෙහි Type කරන්න:\n\n(උදා: 1kg Chocolate Cake, Burgers 2ක්, හෝ Large T-shirt)";
 
+      case "DELIVERY_VEHICLE":
+        if (lang === "en") {
+          return "🛵 Which vehicle do you need for this delivery? Please choose Motorbike or Three-wheeler below:";
+        }
+        return "🛵 මෙම Delivery සේවාව සඳහා අවශ්‍ය වාහනය කුමක්ද? කරුණාකර පහතින් Motorbike හෝ Three-wheeler තෝරන්න:";
+
       case "DELIVERY_PHONE":
         if (lang === "en") {
           return "📞 Please enter your contact WhatsApp or phone number:\n(e.g., 0771234567)";
@@ -1016,10 +1074,42 @@ export function getRentBookingSummaryCard(data: any, lang: SupportedLanguage): s
 
 export function getDeliveryOrderSummaryCard(data: any, lang: SupportedLanguage): string {
   const loc = formatLocationLinkForCustomer(data.delivery_location || data.dropoff_address || data.pickup_address, data.dropoff_coords);
+  const vehicleText = data.vehicle_name || (data.vehicle_key === "three_wheeler" ? (lang === "en" ? "Three-wheeler 🛺" : "ත්‍රිරෝද රථය 🛺") : (lang === "en" ? "Motorbike 🏍️" : "යතුරුපැදිය 🏍️"));
   if (lang === "en") {
-    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
+    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *Vehicle:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n💰 *Delivery Fee:* Calculated upon Shop assignment\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
   }
-  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
+  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *වාහනය:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n💰 *Delivery ගාස්තුව:* කඩය තහවුරු කළ පසු ගණනය කෙරේ\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
+}
+
+export function getDeliveryCustomerConfirmedMessage(
+  orderCode: string,
+  shopLocationDisplay: string,
+  dropoffDisplay: string,
+  vehicleName: string,
+  distanceText: string,
+  fareLKR: string,
+  productList: string,
+  lang: SupportedLanguage = "si"
+): string {
+  if (lang === "en") {
+    return `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *Shop Pickup:* ${shopLocationDisplay}\n📍 *Delivery Location:* ${dropoffDisplay}\n🛵 *Vehicle:* ${vehicleName}\n🛣️ *Distance:* ${distanceText}\n💰 *Delivery Fee:* ${fareLKR}\n📦 *Items:* ${productList}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to you!\n\nThank you for choosing Central Delivery! 📦`;
+  }
+  return `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${orderCode}*\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n📍 *භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n🛵 *වාහනය:* ${vehicleName}\n🛣️ *දුර:* ${distanceText}\n💰 *Delivery ගාස්තුව:* ${fareLKR}\n📦 *භාණ්ඩ:* ${productList}\n\n🛵 Delivery Rider මහතා කඩයට ගොස් භාණ්ඩ ලබාගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`;
+}
+
+export function getShortTripCustomerConfirmedMessage(
+  orderCode: string,
+  pickupDisplay: string,
+  dropoffDisplay: string,
+  vehicleName: string,
+  distanceText: string,
+  fareLKR: string,
+  lang: SupportedLanguage = "si"
+): string {
+  if (lang === "en") {
+    return `✅ *Your Short Trip Booking is Confirmed!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *Vehicle:* ${vehicleName}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${distanceText}\n💰 *Estimated Fare:* ${fareLKR}\n\n⚡ A quick-dispatch rider has been assigned and is heading to your pickup location!`;
+  }
+  return `✅ *ඔබගේ කෙටි ගමන (Short Trip) තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *වාහනය:* ${vehicleName}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${distanceText}\n💰 *ගාස්තුව:* ${fareLKR}\n\n⚡ ළඟම සිටින Rider මහතා ඔබව සම්බන්ධ කරගෙන පැමිණෙනු ඇත!`;
 }
 
 export function getVehicleLocalizedName(vehicleKey: string = "", lang: SupportedLanguage = "en"): string {

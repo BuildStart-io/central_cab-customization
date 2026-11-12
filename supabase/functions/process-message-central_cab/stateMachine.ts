@@ -11,6 +11,7 @@ import {
   detectServiceCategory,
   detectRentVehicleCategory,
   detectDeliveryCategory,
+  detectDeliveryVehicle,
   isAffirmativeInput,
   isNegativeInput,
   isHomeOrResetInput,
@@ -90,6 +91,9 @@ function isExpectedStepAnswer(
     if (step === "DELIVERY_CATEGORY") {
       const cat = detectDeliveryCategory(trimmed);
       if (cat) return true;
+    } else if (step === "DELIVERY_VEHICLE") {
+      const v = detectDeliveryVehicle(trimmed);
+      if (v) return true;
     } else if (step === "DELIVERY_CONFIRM") {
       if (isAffirmativeInput(trimmed) || isNegativeInput(trimmed)) return true;
     } else if (step === "DELIVERY_PHONE") {
@@ -924,6 +928,7 @@ export async function classifyAndAnswerWithAi(
     else if (stepName === "RENT_DURATION") stepDescription = "Specifying rental duration (days/weeks)";
     else if (stepName === "DELIVERY_CATEGORY") stepDescription = "Selecting delivery category (Food/Grocery/Medicine/Parcel)";
     else if (stepName === "DELIVERY_ITEMS") stepDescription = "Listing items to purchase or deliver";
+    else if (stepName === "DELIVERY_VEHICLE") stepDescription = "Selecting delivery vehicle (Motorbike or Three-wheeler)";
     else if (stepName === "DELIVERY_LOCATION") stepDescription = "Providing delivery drop-off location";
 
     userLiveContext = `

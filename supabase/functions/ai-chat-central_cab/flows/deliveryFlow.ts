@@ -17,6 +17,8 @@ import {
   getBookingSuccessMessage,
   getDeliveryCategoryPoll,
   detectDeliveryCategory,
+  getDeliveryVehiclePoll,
+  detectDeliveryVehicle,
   getDeliveryOrderSummaryCard,
   getLocationRejectMessage,
 } from "../i18n.ts";
@@ -84,6 +86,31 @@ export async function handleDeliveryFlowStep(
       data.delivery_items = trimmed;
 
       return {
+        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_VEHICLE", lang),
+        poll: getDeliveryVehiclePoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "DELIVERY_FLOW",
+        nextStep: "DELIVERY_VEHICLE",
+        sessionData: data,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 2b: Delivery Vehicle Selection (Motorbike vs Three-wheeler)
+    // ------------------------------------------------------------------------
+    case "DELIVERY_VEHICLE": {
+      const detected = detectDeliveryVehicle(trimmed);
+      if (!detected) {
+        return await invalidFallback(
+          getStepPromptText("DELIVERY_FLOW", "DELIVERY_VEHICLE", lang),
+          getDeliveryVehiclePoll(lang)
+        );
+      }
+
+      data.vehicle_key = detected.key;
+      data.vehicle_name = detected.name;
+
+      return {
         replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_PHONE", lang),
         nextFlow: "DELIVERY_FLOW",
         nextStep: "DELIVERY_PHONE",
@@ -140,8 +167,8 @@ export async function handleDeliveryFlowStep(
       data.dropoff_coords = loc.coords;
       data.pickup_address = "Pending Shop Pickup Assignment";
       data.pickup_text = "Pending Shop Pickup Assignment";
-      data.vehicle_name = "Motorbike / Delivery Rider";
-      data.vehicle_key = "motorbike";
+      data.vehicle_name = data.vehicle_name || "Motorbike 🏍️";
+      data.vehicle_key = data.vehicle_key || "motorbike";
 
       const summary = getDeliveryOrderSummaryCard(data, lang);
 

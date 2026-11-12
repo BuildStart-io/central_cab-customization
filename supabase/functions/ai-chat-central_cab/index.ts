@@ -185,7 +185,8 @@ async function handleSingleMessage(
       messageType,
       rawPayload,
       systemSettings,
-      sessionApiKey
+      sessionApiKey,
+      pricingSettings
     );
     replyText = adminResult.replyText || "";
 

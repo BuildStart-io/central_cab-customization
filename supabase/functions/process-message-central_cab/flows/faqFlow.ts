@@ -15,6 +15,7 @@ import {
   getBookingConfirmPoll,
   getRentVehiclePoll,
   getDeliveryCategoryPoll,
+  getDeliveryVehiclePoll,
   getStepPromptText,
   isResumeBookingChoice,
   PollDefinition,
@@ -66,6 +67,9 @@ export function getStepPollForCurrentStep(
   if (flow === "DELIVERY_FLOW") {
     if (step === "DELIVERY_CATEGORY") {
       return getDeliveryCategoryPoll(lang);
+    }
+    if (step === "DELIVERY_VEHICLE") {
+      return getDeliveryVehiclePoll(lang);
     }
     if (step === "DELIVERY_CONFIRM") {
       return getBookingConfirmPoll(lang);

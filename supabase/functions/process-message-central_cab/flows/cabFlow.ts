@@ -529,7 +529,9 @@ export async function handleCabFlowStep(
           };
         }
 
-        const orderCode = await generateOrderCode(supabase, userId, "transport");
+        const isRideNow = data.booking_type === "now";
+        const orderCategory = isRideNow ? "transport_short" : "transport";
+        const orderCode = await generateOrderCode(supabase, userId, orderCategory);
         data.order_code = orderCode;
 
         // Immediately update session in DB so any concurrent incoming message sees BOOKING_COMPLETED
@@ -644,10 +646,14 @@ export async function generateOrderCode(
 ): Promise<string> {
   const cat = (category || "").toLowerCase();
   let prefix = "HIR";
-  if (cat.includes("delivery")) {
+  if (cat.includes("rider") || cat.includes("delr")) {
+    prefix = "DELR";
+  } else if (cat.includes("delivery")) {
     prefix = "DEL";
   } else if (cat.includes("rent")) {
     prefix = "RNT";
+  } else if (cat.includes("short") || cat.includes("now") || cat.includes("hirs")) {
+    prefix = "HIRS";
   }
 
   if (supabase) {
@@ -822,6 +828,7 @@ export async function broadcastBooking(
 
     const isDelivery = category.toLowerCase() === "delivery";
     const isRent = category.toLowerCase().includes("rent");
+    const isRideNow = data.booking_type === "now" || orderCode.startsWith("HIRS");
     const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
     const timingHeader = isScheduled ? `📅 *ගමන් දිනය/වේලාව:* ${data.scheduled_time} (දුර ගමනක්)\n` : (isRent ? "" : `⚡ *ක්ෂණික ගමනක් (ලග ගමනක්)*\n`);
 
@@ -838,9 +845,11 @@ export async function broadcastBooking(
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
       const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
       groupBroadcastText = `📦 *නව Delivery ඇණවුමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *වර්ගය (Category):* ${data.delivery_category || "සාමාන්‍ය භාණ්ඩ"}\n📝 *අවශ්‍ය භාණ්ඩ:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n🌐 *වෙබ් අඩවිය:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර ඇණවුම පරීක්ෂා කර Shop Pickup Location එක ලබා දෙන්න.`;
+    } else if (isRideNow) {
+      const riderAdminPhone = (systemSettings?.delivery_rider_admin_number || systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
+      groupBroadcastText = `🛵 *නව කෙටි ගමනක් (Short Trip - Ride Now): ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name}\n📞 *කාර්යාල දුරකථන:* ${riderAdminPhone}\n🛵 *වාහනය:* ${data.vehicle_name}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* එක් පැත්තක් (One-Way)\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n⚡ ළඟම සිටින Rider මහතා මෙම කෙටි ගමන භාරගන්න!`;
     } else {
       // Group broadcast for Transport / Hire / Cab: Contact number is the Service Admin's number (NOT customer phone)
-      const isRideNow = data.booking_type === "now";
       const transportAdminPhone = (!isRideNow && systemSettings?.hire_admin_number
         ? systemSettings.hire_admin_number
         : (systemSettings?.admin_whatsapp_number || systemSettings?.hire_admin_number || "")
@@ -859,6 +868,8 @@ export async function broadcastBooking(
     } else if (isDelivery) {
       const dropoffLoc = data.delivery_location || data.dropoff_address || data.dropoff_text || "Customer Location";
       adminBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📱 *Customer Contact:* ${data.customer_phone || "N/A"}\n💬 *Customer WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n💡 *Order Confirmation Steps:*\n1️⃣ Reply with Order ID: *${orderCode}*\n2️⃣ Then send the Shop Pickup Location (Location Pin 📍 or Address)`;
+    } else if (isRideNow) {
+      adminBroadcastText = `🛵 *NEW SHORT TRIP BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name}\n${contactLine}\n🛵 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign rider.`;
     } else {
       // Transport: Admin receives full customer phone and whatsapp details
       adminBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign driver.`;
@@ -871,9 +882,20 @@ export async function broadcastBooking(
     }
     if (isRent && systemSettings?.rent_admin_number) {
       adminRecipients.add(systemSettings.rent_admin_number.trim());
-    } else if (isDelivery && systemSettings?.delivery_admin_number) {
-      adminRecipients.add(systemSettings.delivery_admin_number.trim());
-    } else if (!isRent && !isDelivery && systemSettings?.hire_admin_number) {
+    } else if (isDelivery) {
+      if (systemSettings?.delivery_admin_number) {
+        adminRecipients.add(systemSettings.delivery_admin_number.trim());
+      }
+      if (systemSettings?.delivery_rider_admin_number) {
+        adminRecipients.add(systemSettings.delivery_rider_admin_number.trim());
+      }
+    } else if (isRideNow) {
+      if (systemSettings?.delivery_rider_admin_number) {
+        adminRecipients.add(systemSettings.delivery_rider_admin_number.trim());
+      } else if (systemSettings?.delivery_admin_number) {
+        adminRecipients.add(systemSettings.delivery_admin_number.trim());
+      }
+    } else if (systemSettings?.hire_admin_number) {
       adminRecipients.add(systemSettings.hire_admin_number.trim());
     }
 
@@ -913,6 +935,10 @@ export async function broadcastBooking(
       driverGroups = systemSettings?.delivery_driver_groups?.length
         ? systemSettings.delivery_driver_groups
         : systemSettings?.target_driver_groups || [];
+    } else if (isRideNow) {
+      driverGroups = systemSettings?.delivery_rider_groups?.length
+        ? systemSettings.delivery_rider_groups
+        : (systemSettings?.delivery_driver_groups || systemSettings?.target_driver_groups || []);
     } else {
       // Default Transport / Hire cab
       driverGroups = systemSettings?.hire_driver_groups?.length

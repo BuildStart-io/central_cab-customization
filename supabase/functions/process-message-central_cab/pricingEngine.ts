@@ -948,3 +948,93 @@ export function calculateFare(
     vehicleKey,
   };
 }
+
+/**
+ * Calculate Delivery Dynamic Pricing according to the delivery business rules:
+ * 1. Base Price covers the first Base Coverage KM.
+ * 2. Beyond Base Coverage KM, progressive distance slabs apply discounted per-KM rates.
+ * 3. NO round-trip discount is ever applied (delivery is strictly one-way).
+ * 4. Supports delivery vehicle keys: "motorbike" / "three_wheeler" (or "delivery_motorbike" / "delivery_three_wheeler").
+ */
+export function calculateDeliveryFare(
+  distanceKm: number,
+  distanceText: string,
+  vehicleKey: string,
+  pricingSettings: PricingSettings
+): FareCalculationResult {
+  const normKey = (vehicleKey || "").toLowerCase();
+  const isBike = normKey.includes("motor") || normKey.includes("bike");
+  const defaultDeliveryKey = isBike ? "delivery_motorbike" : "delivery_three_wheeler";
+  const fallbackRideNowKey = isBike ? "motorbike" : "three_wheeler";
+
+  const config = pricingSettings[defaultDeliveryKey] || pricingSettings[fallbackRideNowKey] || {
+    base_price: isBike ? 150 : 200,
+    per_km_rate: isBike ? 60 : 80,
+    coverage_km: 1,
+    discount_slabs: [
+      { id: "del_s1", from_km: 0, to_km: 5, discount_percentage: 0 },
+      { id: "del_s2", from_km: 5, to_km: 15, discount_percentage: 5 },
+      { id: "del_s3", from_km: 15, to_km: null, discount_percentage: 10 },
+    ],
+  };
+
+  const basePrice = Number(config.base_price) || 0;
+  const perKmRate = Number(config.per_km_rate) || 0;
+  const coverageKm = Number(config.coverage_km) || 0;
+  const slabs: DistanceDiscountSlab[] =
+    config.discount_slabs && config.discount_slabs.length > 0 ? config.discount_slabs : [];
+
+  const effectiveDistance = Math.max(0.5, distanceKm);
+  const chargeableKm = Math.max(0, effectiveDistance - coverageKm);
+  const grossFare = basePrice + (chargeableKm * perKmRate);
+
+  let discountAmount = 0;
+  let totalFare = grossFare;
+
+  if (slabs.length > 0 && chargeableKm > 0) {
+    const sortedSlabs = [...slabs].sort((a, b) => (Number(a.from_km) || 0) - (Number(b.from_km) || 0));
+    let totalSlabKmCharge = 0;
+    let coveredKm = 0;
+
+    for (const slab of sortedSlabs) {
+      const slabStart = Math.max(0, Number(slab.from_km) || 0);
+      const slabEnd = slab.to_km != null && Number(slab.to_km) > slabStart ? Number(slab.to_km) : Infinity;
+
+      const effectiveStart = Math.max(slabStart, coverageKm);
+      const effectiveEnd = Math.min(slabEnd, effectiveDistance);
+
+      if (effectiveEnd > effectiveStart) {
+        const kmInSlab = effectiveEnd - effectiveStart;
+        const discountPct = Math.max(0, Math.min(100, Number(slab.discount_percentage) || 0));
+        const effectiveRate = perKmRate * (1 - discountPct / 100);
+        totalSlabKmCharge += kmInSlab * effectiveRate;
+        coveredKm += kmInSlab;
+      }
+    }
+
+    const remainingKm = Math.max(0, chargeableKm - coveredKm);
+    if (remainingKm > 0) {
+      totalSlabKmCharge += remainingKm * perKmRate;
+    }
+
+    totalFare = basePrice + totalSlabKmCharge;
+    discountAmount = Math.max(0, grossFare - totalFare);
+  }
+
+  discountAmount = Math.round(discountAmount * 100) / 100;
+  totalFare = Math.round(totalFare * 100) / 100;
+
+  return {
+    distanceKm: Math.round(effectiveDistance * 10) / 10,
+    distanceText: `${Math.round(effectiveDistance * 10) / 10} km`,
+    basePrice,
+    perKmRate,
+    coverageKm,
+    chargeableKm: Math.round(chargeableKm * 10) / 10,
+    grossFare: Math.round(grossFare * 100) / 100,
+    discountAmount,
+    totalFare,
+    tripType: "one_way",
+    vehicleKey: isBike ? "motorbike" : "three_wheeler",
+  };
+}

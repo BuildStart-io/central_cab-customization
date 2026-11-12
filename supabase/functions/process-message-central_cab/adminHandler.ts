@@ -7,7 +7,18 @@
 // 3. Multi-admin phone number validation
 // ============================================================================
 
-import { buildGoogleMapsLink, formatLocationDisplay } from "./pricingEngine.ts";
+import {
+  buildGoogleMapsLink,
+  formatLocationDisplay,
+  getRoutingDistance,
+  calculateDeliveryFare,
+  PricingSettings,
+} from "./pricingEngine.ts";
+import { formatLKR } from "./flows/cabFlow.ts";
+import {
+  getDeliveryCustomerConfirmedMessage,
+  getShortTripCustomerConfirmedMessage,
+} from "./i18n.ts";
 
 export interface DriverGroup {
   id?: string;
@@ -16,10 +27,11 @@ export interface DriverGroup {
 }
 
 export interface CabSystemSettings {
-  admin_whatsapp_number: string;
+  admin_whatsapp_number?: string;
   hire_admin_number?: string;
   rent_admin_number?: string;
   delivery_admin_number?: string;
+  delivery_rider_admin_number?: string;
   broadcast_delay_seconds?: number;
   hire_driver_groups?: DriverGroup[];
   rent_a_car_groups?: DriverGroup[];
@@ -61,6 +73,7 @@ export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettin
     normalizePhone(systemSettings?.hire_admin_number),
     normalizePhone(systemSettings?.rent_admin_number),
     normalizePhone(systemSettings?.delivery_admin_number),
+    normalizePhone(systemSettings?.delivery_rider_admin_number),
   ].filter(Boolean);
 
   const senderLast9 = senderPhone.slice(-9);
@@ -73,12 +86,12 @@ export function isAdminUser(phoneNumber: string, systemSettings: CabSystemSettin
 }
 
 /**
- * Extract Order Code from text (e.g., "HIR 001", "RNT 001", "DEL 001", "#ORD845")
+ * Extract Order Code from text (e.g., "HIRS 001", "DELR 001", "HIR 001", "RNT 001", "DEL 001", "#ORD845")
  */
 export function extractOrderCode(text: string): string | null {
   if (!text) return null;
-  // Match HIR 001, DEL 001, RNT 001 (with optional #, -, _, space)
-  const prefixMatch = text.match(/\b(?:#)?(HIR|DEL|RNT)[-_\s]?(\d{1,6})\b/i);
+  // Match HIRS 001, DELR 001, HIR 001, DEL 001, RNT 001 (with optional #, -, _, space)
+  const prefixMatch = text.match(/\b(?:#)?(HIRS|HIR|DELR|DEL|RNT)[-_\s]?(\d{1,6})\b/i);
   if (prefixMatch) {
     const prefix = prefixMatch[1].toUpperCase();
     const num = prefixMatch[2].padStart(3, "0");
@@ -106,7 +119,8 @@ export async function dispatchConfirmedDeliveryOrder(
   shopLocationText: string,
   shopCoords: { lat: number; lng: number } | null,
   adminPhoneNumber: string,
-  userId: string
+  userId: string,
+  pricingSettings?: PricingSettings
 ): Promise<{ handled: boolean; replyText?: string }> {
   const productList = targetOrder.delivery_items
     || targetOrder.custom_fields?.raw_data?.delivery_products
@@ -117,20 +131,58 @@ export async function dispatchConfirmedDeliveryOrder(
     || targetOrder.custom_fields?.raw_data?.delivery_location
     || "Customer Location";
 
-  // 1. Update order in database: status -> confirmed, pickup_address -> shopLocationText
+  // 1. Calculate road distance between Shop Pickup & Customer Dropoff
+  const distanceInfo = await getRoutingDistance(
+    { text: shopLocationText, coords: shopCoords || undefined },
+    { text: customerDropoff, coords: targetOrder.dropoff_coords || undefined }
+  );
+
+  // 2. Fetch or use Pricing Settings to calculate delivery fare
+  let activePricing: PricingSettings = pricingSettings || {} as any;
+  if (!activePricing || Object.keys(activePricing).length === 0) {
+    try {
+      const { data: pSet } = await supabase
+        .schema("central_cab")
+        .from("settings")
+        .select("value")
+        .eq("user_id", userId)
+        .eq("key", "cab_pricing")
+        .maybeSingle();
+      if (pSet?.value) activePricing = pSet.value;
+    } catch (e) {
+      console.warn("[dispatchConfirmedDeliveryOrder] Error loading cab_pricing:", e);
+    }
+  }
+
+  const vehicleKey = targetOrder.vehicle_key || targetOrder.custom_fields?.raw_data?.vehicle_key || "motorbike";
+  const fareResult = calculateDeliveryFare(
+    distanceInfo.distanceKm,
+    distanceInfo.distanceText,
+    vehicleKey,
+    activePricing
+  );
+
+  const baseCode = (targetOrder.order_code || "DEL 001").trim();
+  const riderCode = baseCode.startsWith("DELR") ? baseCode : baseCode.replace(/^DEL\b/i, "DELR");
+
+  // 3. Update order in database: status -> awaiting_rider, set shop pickup, distance, fare, and rider code
   await supabase
     .schema("central_cab")
     .from("orders")
     .update({
-      status: "confirmed",
+      order_code: riderCode,
+      status: "pending",
       pickup_address: shopLocationText,
       pickup_coords: shopCoords || null,
-      special_instructions: `[Shop Pickup: ${shopLocationText}] [Items: ${productList}]`,
+      distance_km: fareResult.distanceKm,
+      total_fare: fareResult.totalFare,
+      total_amount: fareResult.totalFare,
+      special_instructions: `[Shop Pickup: ${shopLocationText}] [Items: ${productList}] [Distance: ${fareResult.distanceText}] [Delivery Fare: LKR ${fareResult.totalFare}]`,
       updated_at: new Date().toISOString(),
     })
     .eq("id", targetOrder.id);
 
-  // 2. Clear admin pending state in bot_sessions
+  // 4. Update admin session to await Voice Note for this rider job
   await supabase
     .schema("central_cab")
     .from("bot_sessions")
@@ -138,20 +190,20 @@ export async function dispatchConfirmedDeliveryOrder(
       phone_number: adminPhoneNumber,
       user_id: userId,
       flow_type: "ADMIN_FLOW",
-      current_step: "IDLE",
-      session_data: {},
+      current_step: "AWAITING_VOICE_NOTE",
+      session_data: { pending_admin_order_code: riderCode, pending_order_id: targetOrder.id },
       updated_at: new Date().toISOString(),
     });
 
   const shopLocationDisplay = formatLocationDisplay(shopLocationText, shopCoords);
   const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
 
-  // 3. Send Confirmed notice to Delivery Shop Groups (Sinhala text)
+  // 5. Send Shop confirmation notice to Delivery Shop Groups (Sinhala text)
   const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
     ? systemSettings.delivery_driver_groups
     : (systemSettings.target_driver_groups || []);
 
-  const shopConfirmNotice = `✅ *Delivery ඇණවුම තහවුරු කරන ලදී: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 ඇණවුම තහවුරු කරන ලදී. භාණ්ඩ ලබාගැනීමට Delivery Rider පිටත්ව ඇත.`;
+  const shopConfirmNotice = `✅ *Delivery ඇණවුම සඳහා කඩය තහවුරු කරන ලදී: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 කඩයේ ස්ථානය සටහන් කරගන්නා ලදී. Delivery Rider යොමු කරනු ලැබේ.`;
 
   for (const group of shopGroups) {
     const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -167,48 +219,11 @@ export async function dispatchConfirmedDeliveryOrder(
     }
   }
 
-  // 4. Dispatch Ride Job to Delivery Riders Groups (Sinhala text)
-  const riderGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
-    ? systemSettings.delivery_rider_groups
-    : shopGroups;
-
-  const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-  const riderJobNotice = `🛵 *නව Delivery සවාරියක් (Ride Job): ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${shopLocationDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffLocationDisplay}\n\n📦 *ලබාගත යුතු භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
-
-  for (const group of riderGroups) {
-    const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-    if (targetChatId) {
-      console.log(`[AdminHandler] Forwarding delivery ride job to Rider group: ${group.name} (${targetChatId})`);
-      await sendWhatsAppMessage(
-        supabaseUrl,
-        supabaseServiceKey,
-        targetChatId,
-        riderJobNotice,
-        sessionApiKey
-      );
-    }
-  }
-
-  // 5. Send Confirmation Update to Customer WhatsApp
-  const targetCustomerNumber = targetOrder.whatsapp_phone || targetOrder.customer_whatsapp || targetOrder.customer_phone;
-  if (targetCustomerNumber) {
-    const orderLang = targetOrder.custom_fields?.language || "si";
-    const customerConfirmText = orderLang === "en"
-      ? `✅ *Your Delivery Order is Confirmed!*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup Location:* ${shopLocationDisplay}\n📦 *Products:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 A delivery rider has been assigned and is heading to the shop for pickup and delivery to your location.\n\nThank you for choosing Central Delivery! 📦`
-      : `✅ *ඔබගේ Delivery ඇණවුම තහවුරු කරන ලදී! (Order Confirmed)*\n\n🏷️ *Order Code:* *${targetOrder.order_code}*\n🏪 *Shop Pickup:*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📍 *Delivery Location:* ${dropoffLocationDisplay}\n\n🛵 Delivery Rider කඩයට ගොස් භාණ්ඩ රැගෙන ඔබගේ ස්ථානයට පැමිණීමට පිටත්ව ඇත!\n\nස්තූතියි! 📦`;
-
-    await sendWhatsAppMessage(
-      supabaseUrl,
-      supabaseServiceKey,
-      targetCustomerNumber,
-      customerConfirmText,
-      sessionApiKey
-    );
-  }
+  const vName = targetOrder.vehicle_type || (vehicleKey === "three_wheeler" ? "Three-wheeler 🛺" : "Motorbike 🏍️");
 
   return {
     handled: true,
-    replyText: `✅ *Shop Pickup Location assigned for Delivery Order ${targetOrder.order_code}!* (Confirmed)\n\n🏪 *Shop Location:*\n${shopLocationDisplay}\n\n🛵 Dispatched to ${riderGroups.length} Delivery Rider group(s) & confirmation sent to customer.`,
+    replyText: `🛵 *Delivery Rider Job ${riderCode} Ready!*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📍 *Customer Drop-off Location:*\n${dropoffLocationDisplay}\n\n🛵 *Vehicle:* ${vName}\n🛣️ *Distance:* ${fareResult.distanceText}\n💰 *Delivery Fee:* ${formatLKR(fareResult.totalFare)}\n📦 *Items:* ${productList}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ Please send *${riderCode}* and the Driver Voice Note to assign rider.`,
   };
 }
 
@@ -225,7 +240,8 @@ export async function handleAdminMessage(
   messageType: string,
   rawPayload: any,
   systemSettings: CabSystemSettings,
-  sessionApiKey: string
+  sessionApiKey: string,
+  pricingSettings?: PricingSettings
 ): Promise<{ handled: boolean; replyText?: string }> {
   console.log(`[AdminHandler] Processing message from Admin (${adminPhoneNumber}), type=${messageType}: ${messageText}`);
 
@@ -316,7 +332,8 @@ export async function handleAdminMessage(
           shopLocText,
           shopCoords,
           adminPhoneNumber,
-          userId
+          userId,
+          pricingSettings
         );
       }
     }
@@ -430,7 +447,8 @@ export async function handleAdminMessage(
           cleanShopText,
           adminLocCoords,
           adminPhoneNumber,
-          userId
+          userId,
+          pricingSettings
         );
       }
 
@@ -524,13 +542,18 @@ export async function handleAdminMessage(
 
     console.log(`[AdminHandler] Found Order ${targetOrderCode} for customer ${order.customer_phone}. Dispatching voice note to driver groups...`);
 
-    let targetGroups: DriverGroup[] = [];
     const sType = String(order.service_type || "").toLowerCase();
-    if (sType.includes("delivery")) {
-      targetGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
-        ? systemSettings.delivery_driver_groups
-        : (systemSettings.target_driver_groups || []);
-    } else if (sType.includes("rent")) {
+    const isShortTrip = targetOrderCode.startsWith("HIRS") || order.booking_type === "now";
+    const isDeliveryRider = targetOrderCode.startsWith("DELR") || sType.includes("delivery");
+    const isRent = sType.includes("rent") || targetOrderCode.startsWith("RNT");
+    const isHire = !isShortTrip && !isDeliveryRider && !isRent;
+
+    let targetGroups: DriverGroup[] = [];
+    if (isDeliveryRider || isShortTrip) {
+      targetGroups = (systemSettings.delivery_rider_groups && systemSettings.delivery_rider_groups.length > 0)
+        ? systemSettings.delivery_rider_groups
+        : (systemSettings.delivery_driver_groups || systemSettings.target_driver_groups || []);
+    } else if (isRent) {
       targetGroups = (systemSettings.rent_a_car_groups && systemSettings.rent_a_car_groups.length > 0)
         ? systemSettings.rent_a_car_groups
         : (systemSettings.target_driver_groups || []);
@@ -543,27 +566,27 @@ export async function handleAdminMessage(
     const pickupDisplay = formatLocationDisplay(order.pickup_address, order.pickup_coords);
     const dropoffDisplay = formatLocationDisplay(order.dropoff_address, order.dropoff_coords);
 
-    const isHire = !sType.includes("delivery") && !sType.includes("rent");
-    const isRent = sType.includes("rent") || targetOrderCode.startsWith("RNT");
-    const isDelivery = sType.includes("delivery") || targetOrderCode.startsWith("DEL");
-
     let serviceAdminPhone = (systemSettings?.admin_whatsapp_number || "").trim();
-    if (isHire && systemSettings?.hire_admin_number) {
-      serviceAdminPhone = systemSettings.hire_admin_number.trim();
+    if (isShortTrip || isDeliveryRider) {
+      serviceAdminPhone = (systemSettings?.delivery_rider_admin_number || systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
     } else if (isRent && systemSettings?.rent_admin_number) {
       serviceAdminPhone = systemSettings.rent_admin_number.trim();
-    } else if (isDelivery && systemSettings?.delivery_admin_number) {
-      serviceAdminPhone = systemSettings.delivery_admin_number.trim();
+    } else if (isHire && systemSettings?.hire_admin_number) {
+      serviceAdminPhone = systemSettings.hire_admin_number.trim();
     }
     const groupContact = serviceAdminPhone || "Admin Office";
 
-    const broadcastTag = isHire
-      ? `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`
-      : (isRent
-        ? `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`
-        : (isDelivery
-          ? `✅ *Delivery සවාරිය සඳහා Rider යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *භාරදිය යුතු ස්ථානය:*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 Delivery rider යොමු කරන ලදී.`
-          : `📢 *ඇණවුම පිළිබඳ යාවත්කාලීන කිරීමක්: ${targetOrderCode}*\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *Pickup:*\n${pickupDisplay}\n🏁 *Drop-off:*\n${dropoffDisplay}`));
+    let broadcastTag = "";
+    if (isDeliveryRider) {
+      const productList = order.delivery_items || order.custom_fields?.raw_data?.delivery_products || "Items";
+      broadcastTag = `🛵 *නව Delivery සවාරියක් (Ride Job): ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${pickupDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffDisplay}\n\n🛵 *වාහනය:* ${order.vehicle_type || "Motorbike"}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *Delivery ගාස්තුව:* ${formatLKR(order.total_fare)}\n📦 *ලබාගත යුතු භාණ්ඩ:* ${productList}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
+    } else if (isShortTrip) {
+      broadcastTag = `🛵 *නව කෙටි ගමනක් (Short Trip - Ride Now): ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🛵 *වාහනය:* ${order.vehicle_type || "Ride Now Vehicle"}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(order.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n⚡ ළඟම සිටින Rider මහතා මෙම කෙටි ගමන භාරගන්න!`;
+    } else if (isHire) {
+      broadcastTag = `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`;
+    } else if (isRent) {
+      broadcastTag = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
+    }
 
     const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
 
@@ -605,7 +628,29 @@ export async function handleAdminMessage(
       console.log(`[AdminHandler] Sending confirmation alert to customer WhatsApp: ${targetCustomerNumber}`);
       const orderLang = order.custom_fields?.language || "si";
       let customerConfirmText = "";
-      if (sType.includes("rent")) {
+      if (isDeliveryRider) {
+        const productList = order.delivery_items || order.custom_fields?.raw_data?.delivery_products || "Items";
+        customerConfirmText = getDeliveryCustomerConfirmedMessage(
+          targetOrderCode,
+          pickupDisplay,
+          dropoffDisplay,
+          order.vehicle_type || "Motorbike 🏍️",
+          order.distance_km ? `${order.distance_km} km` : "N/A",
+          formatLKR(order.total_fare),
+          productList,
+          orderLang
+        );
+      } else if (isShortTrip) {
+        customerConfirmText = getShortTripCustomerConfirmedMessage(
+          targetOrderCode,
+          pickupDisplay,
+          dropoffDisplay,
+          order.vehicle_type || "Motorbike 🏍️",
+          order.distance_km ? `${order.distance_km} km` : "N/A",
+          formatLKR(order.total_fare),
+          orderLang
+        );
+      } else if (sType.includes("rent")) {
         customerConfirmText = orderLang === "en"
           ? `✅ *Your Rent a Car Booking is Confirmed!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *Vehicle:* ${order.vehicle_type || "Vehicle"}\n📍 *Location:* ${order.pickup_address || "N/A"}\n\nOur rental provider has been assigned and will contact you shortly.`
           : `✅ *ඔබගේ Rent a Car Booking එක තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${targetOrderCode}*\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:* ${order.pickup_address || "N/A"}\n\nඅපගේ නියෝජිතයෙකු ඉක්මනින් ඔබව සම්බන්ධ කරගනු ඇත.`;
@@ -833,7 +878,8 @@ export async function handleAdminMessage(
         shopPickupLocation,
         shopPickupCoords,
         adminPhoneNumber,
-        userId
+        userId,
+        pricingSettings
       );
     }
 
@@ -859,7 +905,7 @@ export async function handleAdminMessage(
   // General Admin Menu
   return {
     handled: true,
-    replyText: `👋 *Central Cabs Admin Control Panel*\n\n1. Send *CONFIRM HIR 001* or *HIR 001* (+ Voice Note) to confirm a ride.\n2. Send *RNT 001* to mark Rent a Car as Booked.\n3. Send *DEL 001* to start Delivery Confirmation, then share Shop Location.`,
+    replyText: `👋 *Central Cabs Admin Control Panel*\n\n1. Send *CONFIRM HIR 001* or *HIRS 001* (+ Voice Note) to confirm a ride.\n2. Send *RNT 001* to mark Rent a Car as Booked.\n3. Send *DEL 001* to set Shop Location, then send *DELR 001* (+ Voice Note) for Rider dispatch.`,
   };
 }
 
