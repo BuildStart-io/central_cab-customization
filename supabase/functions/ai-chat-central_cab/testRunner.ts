@@ -25,6 +25,7 @@ import {
   getBookingSummaryCard,
   getDeliveryOrderSummaryCard,
   getTripTypePoll,
+  getShortTripCustomerConfirmedMessage,
 } from "./i18n.ts";
 import {
   handleAdminMessage,
@@ -981,6 +982,10 @@ export async function runAllAutomatedTests(
     record("13.8 Extract RNT order code", extractOrderCode("RNT 003") === "RNT 003");
     record("13.9 Extract DEL order code", extractOrderCode("DEL 008") === "DEL 008");
     record("13.9a Extract DELR order code", extractOrderCode("DELR 008") === "DELR 008");
+    record("13.9b Extract DELR with multiple spaces", extractOrderCode("DELR  020") === "DELR 020");
+    record("13.9c Extract HIRS with multiple spaces", extractOrderCode("HIRS   004") === "HIRS 004");
+    record("13.9d Short Trip customer notification includes driver call notice", getShortTripCustomerConfirmedMessage("HIRS 004", "Loc A", "Loc B", "Motorbike", "3 km", "Rs. 300", "si").includes("Call කරනු ඇත"));
+    record("13.9e Short Trip customer notification Tamil includes driver call notice", getShortTripCustomerConfirmedMessage("HIRS 004", "Loc A", "Loc B", "Motorbike", "3 km", "Rs. 300", "ta").includes("Call செய்வார்"));
 
     // 13.10: Shop Location Extraction
     const extractedShop = extractShopPickupLocation("CONFIRM DEL 008 Perera Bakers, Main Street", "DEL 008");

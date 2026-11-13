@@ -78,6 +78,8 @@ async function getActiveSession(preferredSession?: string): Promise<string> {
     });
     if (res.ok) {
       const sessions = await res.json();
+      const central = sessions.find((s: any) => (s.name === "ceylon-central-cabs" || s.name?.includes("central")) && s.status === "WORKING");
+      if (central?.name) return central.name;
       const working = sessions.find((s: any) => s.status === "WORKING");
       if (working?.name) return working.name;
       if (sessions[0]?.name) return sessions[0].name;
@@ -85,7 +87,7 @@ async function getActiveSession(preferredSession?: string): Promise<string> {
   } catch (err) {
     console.warn("[send-whatsapp-central_cab] Failed to query active sessions:", err);
   }
-  return preferredSession || Deno.env.get("WAHA_DEFAULT_SESSION") || "default";
+  return preferredSession || Deno.env.get("WAHA_DEFAULT_SESSION") || "ceylon-central-cabs";
 }
 
 serve(async (req) => {
@@ -178,15 +180,29 @@ serve(async (req) => {
         case "video":
           res = await wahaFetch("/api/sendVideo", { session: sessionName, chatId, file, caption });
           break;
-        case "audio":
-          res = await wahaFetch("/api/sendVoice", { session: sessionName, chatId, file });
-          // If sendVoice fails (e.g. WAHA WEBJS puppeteer waveform decode error), fallback to sendFile
-          if (!res.ok) {
-            const errBody = await res.text();
-            console.warn(`[send-whatsapp-central_cab] /api/sendVoice failed [${res.status}]: ${errBody}. Retrying via /api/sendFile...`);
-            res = await wahaFetch("/api/sendFile", { session: sessionName, chatId, file, caption });
+        case "audio": {
+          let voiceOk = false;
+          try {
+            res = await wahaFetch("/api/sendVoice", { session: sessionName, chatId, file });
+            if (res.ok) {
+              voiceOk = true;
+            } else {
+              const errBody = await res.text();
+              console.warn(`[send-whatsapp-central_cab] /api/sendVoice failed [${res.status}]: ${errBody}. Retrying via /api/sendFile...`);
+            }
+          } catch (vErr) {
+            console.warn(`[send-whatsapp-central_cab] /api/sendVoice request error:`, vErr);
+          }
+          if (!voiceOk) {
+            const fallbackAudioFile = {
+              ...file,
+              filename: file.filename || "voice_note.oga",
+              mimetype: file.mimetype || "audio/ogg",
+            };
+            res = await wahaFetch("/api/sendFile", { session: sessionName, chatId, file: fallbackAudioFile, caption });
           }
           break;
+        }
         case "document":
           res = await wahaFetch("/api/sendFile", { session: sessionName, chatId, file, caption });
           break;

@@ -1107,12 +1107,15 @@ export function getShortTripCustomerConfirmedMessage(
   vehicleName: string,
   distanceText: string,
   fareLKR: string,
-  lang: SupportedLanguage = "si"
+  lang: string = "si"
 ): string {
   if (lang === "en") {
-    return `✅ *Your Short Trip Booking is Confirmed!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *Vehicle:* ${vehicleName}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${distanceText}\n💰 *Estimated Fare:* ${fareLKR}\n\n⚡ A quick-dispatch rider has been assigned and is heading to your pickup location!`;
+    return `✅ *Your Short Trip Booking is Confirmed!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *Vehicle:* ${vehicleName}\n📍 *Pickup:* ${pickupDisplay}\n🏁 *Drop-off:* ${dropoffDisplay}\n🛣️ *Distance:* ${distanceText}\n💰 *Estimated Fare:* ${fareLKR}\n\n⚡ A quick-dispatch rider has been assigned and will call you shortly!`;
   }
-  return `✅ *ඔබගේ කෙටි ගමන (Short Trip) තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *වාහනය:* ${vehicleName}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${distanceText}\n💰 *ගාස්තුව:* ${fareLKR}\n\n⚡ ළඟම සිටින Rider මහතා ඔබව සම්බන්ධ කරගෙන පැමිණෙනු ඇත!`;
+  if (lang === "ta") {
+    return `✅ *உங்கள் Short Trip முன்பதிவு உறுதிசெய்யப்பட்டது!*\n\n🏷️ *ஆர்டர் எண் (Order ID):* *${orderCode}*\n🛵 *வாகனம்:* ${vehicleName}\n📍 *ஆரம்ப இடம் (Pickup):* ${pickupDisplay}\n🏁 *சேருமிடம் (Drop-off):* ${dropoffDisplay}\n🛣️ *தூரம்:* ${distanceText}\n💰 *கட்டணம்:* ${fareLKR}\n\n⚡ உங்களுக்கான ரைடர் நியமிக்கப்பட்டு உங்களை விரைவில் தொடர்புகொள்வார் (Call செய்வார்)!`;
+  }
+  return `✅ *ඔබගේ කෙටි ගමන (Short Trip) තහවුරු කරන ලදී!*\n\n🏷️ *Order ID:* *${orderCode}*\n🛵 *වාහනය:* ${vehicleName}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${distanceText}\n💰 *ගාස්තුව:* ${fareLKR}\n\n⚡ ළඟම සිටින Rider මහතා ඔබව සම්බන්ධ කරගනු ඇත (Call කරනු ඇත)!`;
 }
 
 export function getVehicleLocalizedName(vehicleKey: string = "", lang: SupportedLanguage = "en"): string {
