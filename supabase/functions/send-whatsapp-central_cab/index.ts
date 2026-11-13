@@ -150,7 +150,10 @@ serve(async (req) => {
           if (fileRes.ok) {
             const buf = await fileRes.arrayBuffer();
             const b64 = uint8ToBase64(new Uint8Array(buf));
-            const contentType = fileRes.headers.get("content-type") || (detectedType === "audio" ? "audio/ogg; codecs=opus" : "application/octet-stream");
+            const rawContentType = fileRes.headers.get("content-type");
+            const contentType = detectedType === "audio"
+              ? "audio/ogg; codecs=opus"
+              : (rawContentType || "application/octet-stream");
             file = {
               data: b64,
               filename: fileName || (detectedType === "audio" ? "voice.oga" : "file"),
@@ -182,8 +185,18 @@ serve(async (req) => {
           break;
         case "audio": {
           let voiceOk = false;
+          const voiceFile = {
+            ...file,
+            filename: file.filename || "voice.oga",
+            mimetype: "audio/ogg; codecs=opus",
+          };
           try {
-            res = await wahaFetch("/api/sendVoice", { session: sessionName, chatId, file });
+            res = await wahaFetch("/api/sendVoice", {
+              session: sessionName,
+              chatId,
+              file: voiceFile,
+              convert: true,
+            });
             if (res.ok) {
               voiceOk = true;
             } else {
@@ -196,8 +209,8 @@ serve(async (req) => {
           if (!voiceOk) {
             const fallbackAudioFile = {
               ...file,
-              filename: file.filename || "voice_note.oga",
-              mimetype: file.mimetype || "audio/ogg",
+              filename: file.filename || "voice_note.ogg",
+              mimetype: "audio/ogg; codecs=opus",
             };
             res = await wahaFetch("/api/sendFile", { session: sessionName, chatId, file: fallbackAudioFile, caption });
           }

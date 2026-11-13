@@ -875,28 +875,21 @@ export async function broadcastBooking(
       adminBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign driver.`;
     }
 
-    // 1. Send to Admin WhatsApp Numbers (Main Admin + Dedicated Service Admin)
+    // 1. Send strictly to Dedicated Service Admin WhatsApp Number (No leaking across services)
     const adminRecipients = new Set<string>();
-    if (systemSettings?.admin_whatsapp_number) {
-      adminRecipients.add(systemSettings.admin_whatsapp_number.trim());
-    }
-    if (isRent && systemSettings?.rent_admin_number) {
-      adminRecipients.add(systemSettings.rent_admin_number.trim());
+    if (isRent) {
+      const targetAdmin = systemSettings?.rent_admin_number?.trim() || systemSettings?.admin_whatsapp_number?.trim();
+      if (targetAdmin) adminRecipients.add(targetAdmin);
     } else if (isDelivery) {
-      if (systemSettings?.delivery_admin_number) {
-        adminRecipients.add(systemSettings.delivery_admin_number.trim());
-      }
-      if (systemSettings?.delivery_rider_admin_number) {
-        adminRecipients.add(systemSettings.delivery_rider_admin_number.trim());
-      }
+      const targetAdmin = systemSettings?.delivery_admin_number?.trim() || systemSettings?.delivery_rider_admin_number?.trim() || systemSettings?.admin_whatsapp_number?.trim();
+      if (targetAdmin) adminRecipients.add(targetAdmin);
     } else if (isRideNow) {
-      if (systemSettings?.delivery_rider_admin_number) {
-        adminRecipients.add(systemSettings.delivery_rider_admin_number.trim());
-      } else if (systemSettings?.delivery_admin_number) {
-        adminRecipients.add(systemSettings.delivery_admin_number.trim());
-      }
-    } else if (systemSettings?.hire_admin_number) {
-      adminRecipients.add(systemSettings.hire_admin_number.trim());
+      const targetAdmin = systemSettings?.delivery_rider_admin_number?.trim() || systemSettings?.delivery_admin_number?.trim() || systemSettings?.admin_whatsapp_number?.trim();
+      if (targetAdmin) adminRecipients.add(targetAdmin);
+    } else {
+      // isHire / general cab booking
+      const targetAdmin = systemSettings?.hire_admin_number?.trim() || systemSettings?.admin_whatsapp_number?.trim();
+      if (targetAdmin) adminRecipients.add(targetAdmin);
     }
 
     for (const adminPhone of adminRecipients) {
