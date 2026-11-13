@@ -948,6 +948,10 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         if (lang === "en") return "Please choose your vehicle type:";
         return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:";
 
+      case "CAB_DISTRICT_VILLAGE":
+        if (lang === "en") return "🏘️ *District & Village / City:*\n\nPlease enter the District and Village or Town you are in\n(e.g., Colombo, Nugegoda or Batticaloa, Kallady):";
+        return "🏘️ *දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර ඔබ සිටින දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කොළඹ, නුගේගොඩ හෝ මඩකලපුව, කල්ලඩි):";
+
       case "CAB_PICKUP":
         if (lang === "en") return "📍 *Pickup Location (Live Location):*\n\nPlease follow the guide photo above and share your live WhatsApp Location Pin or send a Google Maps Link:";
         return "📍 *ආරම්භක ස්ථානය (Pickup Location):*\n\nකරුණාකර ඉහත Guide පින්තූරයේ පෙන්වා ඇති පරිදි ඔබගේ සජීවී WhatsApp Location එක (Live Location Pin) හෝ Google Maps Link එකක් මෙහි එවන්න:";
@@ -991,6 +995,12 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
           return "📞 Please enter your contact WhatsApp or phone number:\n(e.g., 0771234567)";
         }
         return "📞 ඔබව සම්බන්ධ කරගත හැකි WhatsApp හෝ දුරකථන අංකය ඇතුළත් කරන්න:\n(උදා: 0771234567)";
+
+      case "DELIVERY_DISTRICT_VILLAGE":
+        if (lang === "en") {
+          return "🏘️ *Delivery District & Village / City:*\n\nPlease enter the District and Village or Town where the items should be delivered\n(e.g., Colombo, Nugegoda or Batticaloa, Kallady):";
+        }
+        return "🏘️ *භාණ්ඩ භාරදිය යුතු දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර භාණ්ඩ ලබාදිය යුතු දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කොළඹ, නුගේගොඩ හෝ මඩකලපුව, කල්ලඩි):";
 
       case "DELIVERY_LOCATION":
         if (lang === "en") {
@@ -1075,10 +1085,13 @@ export function getRentBookingSummaryCard(data: any, lang: SupportedLanguage): s
 export function getDeliveryOrderSummaryCard(data: any, lang: SupportedLanguage): string {
   const loc = formatLocationLinkForCustomer(data.delivery_location || data.dropoff_address || data.pickup_address, data.dropoff_coords);
   const vehicleText = data.vehicle_name || (data.vehicle_key === "three_wheeler" ? (lang === "en" ? "Three-wheeler 🛺" : "ත්‍රිරෝද රථය 🛺") : (lang === "en" ? "Motorbike 🏍️" : "යතුරුපැදිය 🏍️"));
+  const districtLine = data.district_village || data.district
+    ? `🏘️ *${lang === "en" ? "District & Village" : "දිස්ත්‍රික්කය සහ නගරය"}:* ${data.district_village || data.district}\n`
+    : "";
   if (lang === "en") {
-    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *Vehicle:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *Delivery Location:*\n${loc}\n💰 *Delivery Fee:* Calculated upon Shop assignment\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
+    return `📦 *Delivery Order Summary*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *Vehicle:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n${districtLine}📍 *Delivery Location:*\n${loc}\n💰 *Delivery Fee:* Calculated upon Shop assignment\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
   }
-  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *වාහනය:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n📍 *ස්ථානය (Delivery Location):*\n${loc}\n💰 *Delivery ගාස්තුව:* කඩය තහවුරු කළ පසු ගණනය කෙරේ\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
+  return `📦 *Delivery ඇණවුම් විස්තරය (Summary)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *කාණ්ඩය (Category):* ${data.delivery_category || "General Items"}\n📝 *භාණ්ඩ (Products):* ${data.delivery_products || data.delivery_items || "N/A"}\n🛵 *වාහනය:* ${vehicleText}\n📞 *WhatsApp:* ${data.customer_phone || "N/A"}\n${districtLine}📍 *ස්ථානය (Delivery Location):*\n${loc}\n💰 *Delivery ගාස්තුව:* කඩය තහවුරු කළ පසු ගණනය කෙරේ\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getDeliveryCustomerConfirmedMessage(
@@ -1157,15 +1170,19 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
     ? `${baseVehicleName} (${data.vehicle_model.name})`
     : baseVehicleName;
 
+  const districtLine = data.district_village || data.district
+    ? `🏘️ *${lang === "en" ? "District & Village" : "දිස්ත්‍රික්කය සහ නගරය"}:* ${data.district_village || data.district}\n`
+    : "";
+
   if (lang === "en") {
     const timingHeader = isScheduled ? `📅 *Long Distance Trip (Schedule):* ${data.scheduled_time}\n` : `⚡ *Short Distance Trip (Short Trip)*\n`;
     const disclaimer = isDelivery ? "" : `\n──────────────────────\n⚠️ *Important Notice:*\n• The above fare is for the trip only.\n• Expressway toll ticket charges are not included and must be paid by the passenger.\n• If waiting exceeds 1 hour, additional waiting charges apply from the 2nd hour.\n_(By confirming, you agree to these terms)_`;
-    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
+    return `📋 *Booking Summary*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Name:* ${data.customer_name}\n📱 *Contact:* ${data.customer_phone}\n🚗 *Vehicle:* ${vehicleText}\n${districtLine}📍 *Pickup Location:*\n${pickup}\n🏁 *Drop-off Location:*\n${dropoff}\n${isDelivery ? `📦 *Items:* ${data.delivery_items}\n` : `🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n`}🛣️ *Distance:* ${data.distance_text}\n💰 *Total Fare:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
   }
 
   const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
   const disclaimer = isDelivery ? "" : `\n──────────────────────\n⚠️ *සැලකිය යුතුයි:*\n• ඉහත සඳහන් මිල ගමන් වාරය සඳහා පමණි.\n• අධිවේගී මාර්ග (Expressway) භාවිතා කරන්නේ නම්, ටිකට්පත් ගාස්තු මගියා විසින් දැරිය යුතුය.\n• පැය 1කට වඩා රැඳී සිටින්නේ නම්, දෙවන පැයේ සිට අමතර පොරොත්තු ගාස්තු (Waiting Charges) අය කෙරේ.\n_(Booking එක Confirm කිරීමෙන් ඔබ ඉහත කොන්දේසි වලට එකඟ වේ)_`;
-  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
+  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getBookingSuccessMessage(orderCode: string, lang: SupportedLanguage, category: string = ""): string {

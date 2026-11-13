@@ -138,6 +138,55 @@ export async function handleDeliveryFlowStep(
       data.customer_whatsapp = phoneNumber || digits;
 
       return {
+        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_DISTRICT_VILLAGE", lang),
+        nextFlow: "DELIVERY_FLOW",
+        nextStep: "DELIVERY_DISTRICT_VILLAGE",
+        sessionData: data,
+      };
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 3b: Delivery District & Village / City
+    // ------------------------------------------------------------------------
+    case "DELIVERY_DISTRICT_VILLAGE": {
+      // 1. If user sent a WhatsApp Location Pin or Google Maps Link directly, accept as delivery location
+      if (isValidLocationInput(trimmed, rawPayload)) {
+        const loc = extractLocation(trimmed, rawPayload);
+        if (!loc.coords && loc.text) {
+          const resolved = await resolveLocationCoords(loc, "dropoff");
+          if (resolved) loc.coords = resolved;
+        }
+
+        const locDisplay = loc.text || (loc.coords ? `${loc.coords.lat}, ${loc.coords.lng}` : trimmed);
+        data.delivery_location = locDisplay;
+        data.dropoff_address = locDisplay;
+        data.dropoff_text = locDisplay;
+        data.dropoff_coords = loc.coords;
+        data.district_village = loc.text || "Location Pin";
+        data.district = loc.text || "Location Pin";
+        data.pickup_address = "Pending Shop Pickup Assignment";
+        data.pickup_text = "Pending Shop Pickup Assignment";
+        data.vehicle_name = data.vehicle_name || "Motorbike 🏍️";
+        data.vehicle_key = data.vehicle_key || "motorbike";
+
+        const summary = getDeliveryOrderSummaryCard(data, lang);
+
+        return {
+          replyText: summary,
+          poll: getBookingConfirmPoll(lang),
+          sendTextWithPoll: true,
+          nextFlow: "DELIVERY_FLOW",
+          nextStep: "DELIVERY_CONFIRM",
+          sessionData: data,
+        };
+      }
+
+      // 2. Normal text response with District and Village
+      data.district_village = trimmed;
+      const parts = trimmed.split(/,|\n|-|\//).map((s: string) => s.trim()).filter(Boolean);
+      data.district = parts[0] || trimmed;
+
+      return {
         replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_LOCATION", lang),
         nextFlow: "DELIVERY_FLOW",
         nextStep: "DELIVERY_LOCATION",

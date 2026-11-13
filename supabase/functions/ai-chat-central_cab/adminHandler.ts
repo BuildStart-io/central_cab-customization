@@ -229,7 +229,10 @@ export async function dispatchConfirmedDeliveryOrder(
   let serviceAdminPhone = (systemSettings?.delivery_rider_admin_number || systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim();
   const groupContact = serviceAdminPhone || "Admin Office";
 
-  const riderJobNotice = `🛵 *නව Delivery සවාරියක් (Ride Job): ${riderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${shopLocationDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffLocationDisplay}\n\n🛵 *වාහනය:* ${vName}\n🛣️ *දුර:* ${fareResult.distanceText}\n💰 *Delivery ගාස්තුව:* ${formatLKR(fareResult.totalFare)}\n📦 *ලබාගත යුතු භාණ්ඩ:* ${productList}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
+  const districtText = targetOrder.district || (targetOrder.custom_fields as any)?.district_village || (targetOrder.custom_fields as any)?.raw_data?.district_village || "";
+  const districtInfo = districtText ? `🏘️ *දිස්ත්‍රික්කය සහ නගරය:* ${districtText}\n` : "";
+
+  const riderJobNotice = `🛵 *නව Delivery සවාරියක් (Ride Job): ${riderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *භාණ්ඩ ලබාගත යුතු කඩය (Shop Pickup Location):*\n${shopLocationDisplay}\n\n📦 *ලබාගත යුතු භාණ්ඩ (Delivery Items):*\n${productList}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffLocationDisplay}\n${districtInfo}\n🛵 *වාහනය:* ${vName}\n🛣️ *දුර:* ${fareResult.distanceText}\n💰 *Delivery ගාස්තුව:* ${formatLKR(fareResult.totalFare)}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර මෙම Delivery සවාරිය භාරගෙන කඩය වෙත ගොස් භාණ්ඩ ලබාගන්න!`;
 
   const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
   for (let gIdx = 0; gIdx < riderGroups.length; gIdx++) {
@@ -253,7 +256,7 @@ export async function dispatchConfirmedDeliveryOrder(
 
   return {
     handled: true,
-    replyText: `🛵 *Delivery Rider Job ${riderCode} Dispatched to Riders Group!*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📍 *Customer Drop-off Location:*\n${dropoffLocationDisplay}\n\n🛵 *Vehicle:* ${vName}\n🛣️ *Distance:* ${fareResult.distanceText}\n💰 *Delivery Fee:* ${formatLKR(fareResult.totalFare)}\n📦 *Items:* ${productList}\n━━━━━━━━━━━━━━━━━━━━\n📌 Riders Group වෙත Job එක යොමු කරන ලදී.\n🎙️ Rider කෙනෙක් භාරගත් පසු Voice Note එක දැමීමට *${riderCode}* ලෙස එවන්න.`,
+    replyText: `🛵 *Delivery Rider Job ${riderCode} Dispatched to Riders Group!*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *Shop Pickup Location:*\n${shopLocationDisplay}\n\n📦 *Delivery Items:*\n${productList}\n\n📍 *Customer Drop-off Location:*\n${dropoffLocationDisplay}\n${districtText ? `🏘️ *District & Village:* ${districtText}\n` : ""}\n🛵 *Vehicle:* ${vName}\n🛣️ *Distance:* ${fareResult.distanceText}\n💰 *Delivery Fee:* ${formatLKR(fareResult.totalFare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 Riders Group වෙත Job එක යොමු කරන ලදී.\n🎙️ Rider කෙනෙක් භාරගත් පසු Voice Note එක දැමීමට *${riderCode}* ලෙස එවන්න.`,
   };
 }
 
@@ -606,16 +609,19 @@ export async function handleAdminMessage(
     }
     const groupContact = serviceAdminPhone || "Admin Office";
 
+    const districtText = order.district || order.custom_fields?.district_village || order.custom_fields?.raw_data?.district_village || "";
+    const districtLine = districtText ? `🏘️ *දිස්ත්‍රික්කය සහ නගරය:* ${districtText}\n` : "";
+
     let broadcastTag = "";
     if (isDeliveryRider) {
       const productList = order.delivery_items || order.custom_fields?.raw_data?.delivery_products || "Items";
-      broadcastTag = `✅ *Delivery සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${pickupDisplay}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffDisplay}\n\n🛵 *වාහනය:* ${order.vehicle_type || "Motorbike"}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *Delivery ගාස්තුව:* ${formatLKR(order.total_fare)}\n📦 *භාණ්ඩ:* ${productList}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම Delivery සවාරිය සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
+      broadcastTag = `✅ *Delivery සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${pickupDisplay}\n\n📦 *භාණ්ඩ (Delivery Items):*\n${productList}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffDisplay}\n${districtLine}\n🛵 *වාහනය:* ${order.vehicle_type || "Motorbike"}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *Delivery ගාස්තුව:* ${formatLKR(order.total_fare)}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම Delivery සවාරිය සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
     } else if (isShortTrip) {
-      broadcastTag = `✅ *කෙටි ගමන තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🛵 *වාහනය:* ${order.vehicle_type || "Ride Now Vehicle"}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *ගාස්තුව:* ${formatLKR(order.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම කෙටි ගමන සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
+      broadcastTag = `✅ *කෙටි ගමන තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🛵 *වාහනය:* ${order.vehicle_type || "Ride Now Vehicle"}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *ගාස්තුව:* ${formatLKR(order.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම කෙටි ගමන සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
     } else if (isHire) {
-      broadcastTag = `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`;
+      broadcastTag = `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`;
     } else if (isRent) {
-      broadcastTag = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
+      broadcastTag = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n${districtLine}📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
     }
 
     const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));

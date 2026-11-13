@@ -28,6 +28,7 @@ import {
   DollarSign,
   Navigation,
   Plus,
+  Minus,
   Trash2,
   Zap,
   Calendar,
@@ -336,16 +337,49 @@ function SlabEditor({
   };
 
   const handleFieldChange = (id: string, field: "from_km" | "to_km" | "discount_percentage", val: string) => {
-    const updated = slabs.map((s) => {
-      if (s.id !== id) return s;
-      if (field === "to_km") {
-        const trimmed = val.trim();
-        return { ...s, to_km: trimmed === "" ? null : Number(trimmed) };
+    const slabIndex = slabs.findIndex((s) => s.id === id);
+    if (slabIndex === -1) return;
+
+    const newSlabs = slabs.map((s) => ({ ...s }));
+    const current = newSlabs[slabIndex];
+
+    if (field === "to_km") {
+      const trimmed = val.trim();
+      const newTo = trimmed === "" ? null : Math.max(0, Number(trimmed));
+      current.to_km = newTo;
+
+      // Auto-chain: when to_km increases or changes, set next slab's from_km to match
+      if (newTo !== null && slabIndex + 1 < newSlabs.length) {
+        newSlabs[slabIndex + 1].from_km = newTo;
+        if (newSlabs[slabIndex + 1].to_km !== null && (newSlabs[slabIndex + 1].to_km as number) <= newTo) {
+          newSlabs[slabIndex + 1].to_km = newTo + 30;
+        }
       }
+    } else if (field === "from_km") {
       const num = Number(val) >= 0 ? Number(val) : 0;
-      return { ...s, [field]: num };
-    });
-    onChange(updated);
+      current.from_km = num;
+
+      // Auto-chain: update previous slab's to_km to match this from_km
+      if (slabIndex > 0) {
+        newSlabs[slabIndex - 1].to_km = num;
+      }
+      if (current.to_km !== null && current.to_km <= num) {
+        current.to_km = num + 30;
+      }
+    } else {
+      const num = Number(val) >= 0 ? Math.min(100, Number(val)) : 0;
+      current.discount_percentage = num;
+    }
+
+    onChange(newSlabs);
+  };
+
+  const handleStepKm = (id: string, field: "from_km" | "to_km", delta: number) => {
+    const idx = slabs.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const currentVal = slabs[idx][field] ?? (field === "to_km" ? slabs[idx].from_km + 30 : 0);
+    const newVal = Math.max(0, currentVal + delta);
+    handleFieldChange(id, field, String(newVal));
   };
 
   return (
@@ -398,27 +432,63 @@ function SlabEditor({
 
                     <div className="flex items-center gap-1">
                       <span className="text-[11px] text-muted-foreground">From</span>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={slab.from_km}
-                        onChange={(e) => handleFieldChange(slab.id, "from_km", e.target.value)}
-                        className="h-7 w-16 text-xs font-mono font-bold"
-                        placeholder="0"
-                      />
+                      <div className="inline-flex items-center rounded-md border shadow-xs overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => handleStepKm(slab.id, "from_km", -5)}
+                          className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-r"
+                          title="Decrease 5 KM"
+                        >
+                          <Minus className="h-2.5 w-2.5" />
+                        </button>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={slab.from_km}
+                          onChange={(e) => handleFieldChange(slab.id, "from_km", e.target.value)}
+                          className="h-7 w-14 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
+                          placeholder="0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepKm(slab.id, "from_km", 5)}
+                          className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-l"
+                          title="Increase 5 KM"
+                        >
+                          <Plus className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
                       <span className="text-[11px] text-muted-foreground">KM</span>
                     </div>
 
                     <div className="flex items-center gap-1">
                       <span className="text-[11px] text-muted-foreground">To</span>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={slab.to_km ?? ""}
-                        onChange={(e) => handleFieldChange(slab.id, "to_km", e.target.value)}
-                        className="h-7 w-16 text-xs font-mono font-bold"
-                        placeholder="Above"
-                      />
+                      <div className="inline-flex items-center rounded-md border shadow-xs overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => handleStepKm(slab.id, "to_km", -5)}
+                          className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-r"
+                          title="Decrease 5 KM"
+                        >
+                          <Minus className="h-2.5 w-2.5" />
+                        </button>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={slab.to_km ?? ""}
+                          onChange={(e) => handleFieldChange(slab.id, "to_km", e.target.value)}
+                          className="h-7 w-14 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
+                          placeholder="Above"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepKm(slab.id, "to_km", 5)}
+                          className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-l"
+                          title="Increase 5 KM"
+                        >
+                          <Plus className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
                       <span className="text-[11px] text-muted-foreground">KM</span>
                     </div>
 

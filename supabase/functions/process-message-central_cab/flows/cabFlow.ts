@@ -248,10 +248,9 @@ export async function handleCabFlowStep(
             data.vehicle_model = directModelMatch;
             data.vehicle_name = `${getVehicleDisplayName(vehicleKey, pricingSettings)} (${directModelMatch.name}${directModelMatch.description ? ` - ${directModelMatch.description}` : ""})`;
             return {
-              replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
-              mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+              replyText: getStepPromptText("CAB_FLOW", "CAB_DISTRICT_VILLAGE", lang),
               nextFlow: "CAB_FLOW",
-              nextStep: "CAB_PICKUP",
+              nextStep: "CAB_DISTRICT_VILLAGE",
               sessionData: data,
             };
           }
@@ -274,10 +273,9 @@ export async function handleCabFlowStep(
 
       data.vehicle_name = getVehicleDisplayName(vehicleKey, pricingSettings);
       return {
-        replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
-        mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+        replyText: getStepPromptText("CAB_FLOW", "CAB_DISTRICT_VILLAGE", lang),
         nextFlow: "CAB_FLOW",
-        nextStep: "CAB_PICKUP",
+        nextStep: "CAB_DISTRICT_VILLAGE",
         sessionData: data,
       };
     }
@@ -317,6 +315,41 @@ export async function handleCabFlowStep(
 
       data.vehicle_model = matchedModel;
       data.vehicle_name = `${getVehicleDisplayName(vehicleKey, pricingSettings)} (${matchedModel.name}${matchedModel.description ? ` - ${matchedModel.description}` : ""})`;
+
+      return {
+        replyText: getStepPromptText("CAB_FLOW", "CAB_DISTRICT_VILLAGE", lang),
+        nextFlow: "CAB_FLOW",
+        nextStep: "CAB_DISTRICT_VILLAGE",
+        sessionData: data,
+      };
+    }
+
+    case "CAB_DISTRICT_VILLAGE": {
+      // 1. If user sent a WhatsApp Location Pin or Google Maps Link directly, accept as pickup
+      if (isValidLocationInput(trimmed, rawPayload)) {
+        const loc = extractLocation(trimmed, rawPayload);
+        if (!loc.coords && loc.text) {
+          const resolved = await resolveLocationCoords(loc, "pickup");
+          if (resolved) loc.coords = resolved;
+        }
+        data.pickup_text = loc.text;
+        data.pickup_coords = loc.coords;
+        data.district_village = loc.text || "Location Pin";
+        data.district = loc.text || "Location Pin";
+
+        return {
+          replyText: getStepPromptText("CAB_FLOW", "CAB_DROPOFF", lang),
+          mediaUrl: "https://app.buildstart.io/guides/dropoff_guide.jpg",
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_DROPOFF",
+          sessionData: data,
+        };
+      }
+
+      // 2. Normal text response with District and Village / City
+      data.district_village = trimmed;
+      const parts = trimmed.split(/,|\n|-|\//).map((s: string) => s.trim()).filter(Boolean);
+      data.district = parts[0] || trimmed;
 
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
@@ -717,6 +750,7 @@ export async function saveOrderToDatabase(
         customer_name: data.customer_name || "Customer",
         customer_phone: data.customer_phone || "",
         whatsapp_phone: data.customer_whatsapp || data.customer_phone || "",
+        district: data.district || data.district_village || null,
         vehicle_type: data.vehicle_name || data.vehicle_key || "Car",
         pickup_address: pickupDisplay,
         dropoff_address: dropoffDisplay,
@@ -736,6 +770,7 @@ export async function saveOrderToDatabase(
           raw_data: data,
           language: data.language || "si",
           created_via: "whatsapp_bot",
+          district_village: data.district_village || data.district || null,
         },
       });
 
@@ -760,6 +795,7 @@ export async function saveOrderToDatabase(
             customer_name: data.customer_name || "Customer",
             customer_phone: data.customer_phone || "",
             whatsapp_phone: data.customer_whatsapp || data.customer_phone || "",
+            district: data.district || data.district_village || null,
             vehicle_type: data.vehicle_name || data.vehicle_key || "Car",
             pickup_address: pickupDisplay,
             dropoff_address: dropoffDisplay,
@@ -779,6 +815,7 @@ export async function saveOrderToDatabase(
               raw_data: data,
               language: data.language || "si",
               created_via: "whatsapp_bot",
+              district_village: data.district_village || data.district || null,
             },
           });
         if (retryErr) {
@@ -832,6 +869,10 @@ export async function broadcastBooking(
     const isScheduled = data.booking_type === "schedule" && data.scheduled_time;
     const timingHeader = isScheduled ? `📅 *ගමන් දිනය/වේලාව:* ${data.scheduled_time} (දුර ගමනක්)\n` : (isRent ? "" : `⚡ *ක්ෂණික ගමනක් (ලග ගමනක්)*\n`);
 
+    const districtText = data.district_village || data.district || "";
+    const districtGroupLine = districtText ? `🏘️ *දිස්ත්‍රික්කය සහ නගරය:* ${districtText}\n` : "";
+    const districtAdminLine = districtText ? `🏘️ *District & Village:* ${districtText}\n` : "";
+
     // Group broadcast text (Sinhala text for service groups)
     // Customer phone numbers are NEVER sent to driver/rider groups. Admin contact numbers are displayed instead.
     let groupBroadcastText = "";
@@ -839,15 +880,15 @@ export async function broadcastBooking(
       const rentLocationText = data.rent_location || data.pickup_text || "N/A";
       const rentDisplay = formatLocationDisplay(rentLocationText, data.pickup_coords);
       const rentAdminPhone = (systemSettings?.rent_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      groupBroadcastText = `🚗 *නව Rent a Car ඉල්ලීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${rentAdminPhone}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *අවශ්‍ය මොඩලය:* ${data.rent_model || "Any Model"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "1 Day"}\n📍 *ස්ථානය (Location):*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම කුලී සේවාව සඳහා 10% ක කොමිස් මුදලක් අදාළ වේ.`;
+      groupBroadcastText = `🚗 *නව Rent a Car ඉල්ලීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name || "Customer"}\n📞 *කාර්යාල දුරකථන:* ${rentAdminPhone}\n🚗 *වාහන වර්ගය:* ${data.rent_vehicle_category || "Car"}\n🚘 *අවශ්‍ය මොඩලය:* ${data.rent_model || "Any Model"}\n⏱️ *කාල සීමාව:* ${data.rent_duration || "1 Day"}\n${districtGroupLine}📍 *ස්ථානය (Location):*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම කුලී සේවාව සඳහා 10% ක කොමිස් මුදලක් අදාළ වේ.`;
     } else if (isDelivery) {
       const dropoffLoc = data.delivery_location || data.dropoff_address || data.dropoff_text || "Customer Location";
       const dropoffDisplay = formatLocationDisplay(dropoffLoc, data.dropoff_coords);
       const deliveryAdminPhone = (systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      groupBroadcastText = `📦 *නව Delivery ඇණවුමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *වර්ගය (Category):* ${data.delivery_category || "සාමාන්‍ය භාණ්ඩ"}\n📝 *අවශ්‍ය භාණ්ඩ:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n🌐 *වෙබ් අඩවිය:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර ඇණවුම පරීක්ෂා කර Shop Pickup Location එක ලබා දෙන්න.`;
+      groupBroadcastText = `📦 *නව Delivery ඇණවුමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *වර්ගය (Category):* ${data.delivery_category || "සාමාන්‍ය භාණ්ඩ"}\n📝 *අවශ්‍ය භාණ්ඩ:* ${data.delivery_products || data.delivery_items || "Package"}\n${districtGroupLine}📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffDisplay}\n📞 *කාර්යාල දුරකථන:* ${deliveryAdminPhone}\n🌐 *වෙබ් අඩවිය:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n⚡ කරුණාකර ඇණවුම පරීක්ෂා කර Shop Pickup Location එක ලබා දෙන්න.`;
     } else if (isRideNow) {
       const riderAdminPhone = (systemSettings?.delivery_rider_admin_number || systemSettings?.delivery_admin_number || systemSettings?.admin_whatsapp_number || "").trim() || "Admin Office";
-      groupBroadcastText = `🛵 *නව කෙටි ගමනක් (Short Trip - Ride Now): ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name}\n📞 *කාර්යාල දුරකථන:* ${riderAdminPhone}\n🛵 *වාහනය:* ${data.vehicle_name}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* එක් පැත්තක් (One-Way)\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n⚡ ළඟම සිටින Rider මහතා මෙම කෙටි ගමන භාරගන්න!`;
+      groupBroadcastText = `🛵 *නව කෙටි ගමනක් (Short Trip - Ride Now): ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${data.customer_name}\n📞 *කාර්යාල දුරකථන:* ${riderAdminPhone}\n🛵 *වාහනය:* ${data.vehicle_name}\n${districtGroupLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* එක් පැත්තක් (One-Way)\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n⚡ ළඟම සිටින Rider මහතා මෙම කෙටි ගමන භාරගන්න!`;
     } else {
       // Group broadcast for Transport / Hire / Cab: Contact number is the Service Admin's number (NOT customer phone)
       const transportAdminPhone = (!isRideNow && systemSettings?.hire_admin_number
@@ -856,7 +897,7 @@ export async function broadcastBooking(
       ).trim() || "Admin Office";
       const groupContactLine = `📞 *කාර්යාල දුරකථන:* ${transportAdminPhone}`;
 
-      groupBroadcastText = `🚖 *නව ප්‍රවාහන වෙන්කිරීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *පාරිභෝගිකයා:* ${data.customer_name}\n${groupContactLine}\n🚗 *වාහනය:* ${data.vehicle_name}\n📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම සවාරිය සඳහා 10% ක කොමිස් මුදලක් අය කෙරේ.`;
+      groupBroadcastText = `🚖 *නව ප්‍රවාහන වෙන්කිරීමක්: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *පාරිභෝගිකයා:* ${data.customer_name}\n${groupContactLine}\n🚗 *වාහනය:* ${data.vehicle_name}\n${districtGroupLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n🛣️ *දුර:* ${data.distance_text}\n💰 *ඇස්තමේන්තුගත ගාස්තුව:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම සවාරිය සඳහා 10% ක කොමිස් මුදලක් අය කෙරේ.`;
     }
 
     // Admin broadcast text (Includes customer phone for direct follow-up)
@@ -864,15 +905,15 @@ export async function broadcastBooking(
     if (isRent) {
       const rentLocationText = data.rent_location || data.pickup_text || "N/A";
       const rentDisplay = formatLocationDisplay(rentLocationText, data.pickup_coords);
-      adminBroadcastText = `🚗 *NEW RENT A CAR INQUIRY: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name || "Customer"}\n📱 *Contact Phone:* ${data.customer_phone || "N/A"}\n💬 *WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model Preference:* ${data.rent_model || "Any Model"}\n⏱️ *Duration:* ${data.rent_duration || "1 Day"}\n📍 *Location:*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━`;
+      adminBroadcastText = `🚗 *NEW RENT A CAR INQUIRY: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name || "Customer"}\n📱 *Contact Phone:* ${data.customer_phone || "N/A"}\n💬 *WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🚗 *Category:* ${data.rent_vehicle_category || "Car"}\n🚘 *Model Preference:* ${data.rent_model || "Any Model"}\n⏱️ *Duration:* ${data.rent_duration || "1 Day"}\n${districtAdminLine}📍 *Location:*\n${rentDisplay}\n━━━━━━━━━━━━━━━━━━━━`;
     } else if (isDelivery) {
       const dropoffLoc = data.delivery_location || data.dropoff_address || data.dropoff_text || "Customer Location";
-      adminBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📱 *Customer Contact:* ${data.customer_phone || "N/A"}\n💬 *Customer WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n💡 *Order Confirmation Steps:*\n1️⃣ Reply with Order ID: *${orderCode}*\n2️⃣ Then send the Shop Pickup Location (Location Pin 📍 or Address)`;
+      adminBroadcastText = `📦 *NEW DELIVERY ORDER: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📂 *Category:* ${data.delivery_category || "General Items"}\n📝 *Products:* ${data.delivery_products || data.delivery_items || "Package"}\n${districtAdminLine}📍 *Customer Delivery Location:*\n${dropoffDisplay}\n📱 *Customer Contact:* ${data.customer_phone || "N/A"}\n💬 *Customer WhatsApp:* ${data.customer_whatsapp || data.customer_phone || "N/A"}\n🌐 *Website:* www.centralonline.lk\n━━━━━━━━━━━━━━━━━━━━\n💡 *Order Confirmation Steps:*\n1️⃣ Reply with Order ID: *${orderCode}*\n2️⃣ Then send the Shop Pickup Location (Location Pin 📍 or Address)`;
     } else if (isRideNow) {
-      adminBroadcastText = `🛵 *NEW SHORT TRIP BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name}\n${contactLine}\n🛵 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign rider.`;
+      adminBroadcastText = `🛵 *NEW SHORT TRIP BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *Customer:* ${data.customer_name}\n${contactLine}\n🛵 *Vehicle:* ${data.vehicle_name}\n${districtAdminLine}📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign rider.`;
     } else {
       // Transport: Admin receives full customer phone and whatsapp details
-      adminBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign driver.`;
+      adminBroadcastText = `🚖 *NEW TRANSPORT BOOKING: ${orderCode}*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *Customer:* ${data.customer_name}\n${contactLine}\n🚗 *Vehicle:* ${data.vehicle_name}\n${districtAdminLine}📍 *Pickup Location:*\n${pickupDisplay}\n🏁 *Drop-off Location:*\n${dropoffDisplay}\n🔄 *Trip Type:* ${data.trip_type === "round_trip" ? "Round Trip (Up & Down)" : "One-Way"}\n🛣️ *Distance:* ${data.distance_text}\n💰 *Estimated Fare:* ${formatLKR(data.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n💡 Reply with *CONFIRM ${orderCode}* or *${orderCode}* and send Driver Voice Note to assign driver.`;
     }
 
     // 1. Send strictly to Dedicated Service Admin WhatsApp Number (No leaking across services)
