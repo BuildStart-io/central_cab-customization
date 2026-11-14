@@ -320,15 +320,22 @@ function SlabEditor({
   const [open, setOpen] = useState(false);
 
   const handleAddSlab = () => {
-    const lastSlab = slabs[slabs.length - 1];
-    const nextFromKm = lastSlab ? (lastSlab.to_km || lastSlab.from_km + 30) : 0;
+    const newSlabs = slabs.map((s) => ({ ...s }));
+    const lastSlab = newSlabs[newSlabs.length - 1];
+    let nextFromKm = 0;
+    if (lastSlab) {
+      if (lastSlab.to_km === null || lastSlab.to_km === undefined) {
+        lastSlab.to_km = (lastSlab.from_km || 0) + 30;
+      }
+      nextFromKm = lastSlab.to_km;
+    }
     const newSlab: DistanceDiscountSlab = {
       id: `slab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       from_km: nextFromKm,
-      to_km: nextFromKm + 50,
+      to_km: null,
       discount_percentage: lastSlab ? Math.min(50, lastSlab.discount_percentage + 5) : 5,
     };
-    onChange([...slabs, newSlab]);
+    onChange([...newSlabs, newSlab]);
     setOpen(true);
   };
 
@@ -352,22 +359,22 @@ function SlabEditor({
       if (newTo !== null && slabIndex + 1 < newSlabs.length) {
         newSlabs[slabIndex + 1].from_km = newTo;
         if (newSlabs[slabIndex + 1].to_km !== null && (newSlabs[slabIndex + 1].to_km as number) <= newTo) {
-          newSlabs[slabIndex + 1].to_km = newTo + 30;
+          newSlabs[slabIndex + 1].to_km = newTo + 20;
         }
       }
     } else if (field === "from_km") {
-      const num = Number(val) >= 0 ? Number(val) : 0;
+      const trimmed = val.trim();
+      const num = trimmed === "" ? 0 : Math.max(0, Number(trimmed));
       current.from_km = num;
-
-      // Auto-chain: update previous slab's to_km to match this from_km
-      if (slabIndex > 0) {
-        newSlabs[slabIndex - 1].to_km = num;
-      }
       if (current.to_km !== null && current.to_km <= num) {
-        current.to_km = num + 30;
+        current.to_km = num + 20;
+        if (slabIndex + 1 < newSlabs.length) {
+          newSlabs[slabIndex + 1].from_km = current.to_km;
+        }
       }
     } else {
-      const num = Number(val) >= 0 ? Math.min(100, Number(val)) : 0;
+      const trimmed = val.trim();
+      const num = trimmed === "" ? 0 : Math.min(100, Math.max(0, Number(trimmed)));
       current.discount_percentage = num;
     }
 
@@ -377,9 +384,16 @@ function SlabEditor({
   const handleStepKm = (id: string, field: "from_km" | "to_km", delta: number) => {
     const idx = slabs.findIndex((s) => s.id === id);
     if (idx === -1) return;
-    const currentVal = slabs[idx][field] ?? (field === "to_km" ? slabs[idx].from_km + 30 : 0);
-    const newVal = Math.max(0, currentVal + delta);
-    handleFieldChange(id, field, String(newVal));
+    const slab = slabs[idx];
+    if (field === "to_km") {
+      const currentVal = slab.to_km !== null && slab.to_km !== undefined ? slab.to_km : (slab.from_km + 30);
+      const newVal = Math.max(slab.from_km + 1, currentVal + delta);
+      handleFieldChange(id, field, String(newVal));
+    } else {
+      const currentVal = slab.from_km ?? 0;
+      const newVal = Math.max(0, currentVal + delta);
+      handleFieldChange(id, field, String(newVal));
+    }
   };
 
   return (
@@ -435,9 +449,9 @@ function SlabEditor({
                       <div className="inline-flex items-center rounded-md border shadow-xs overflow-hidden">
                         <button
                           type="button"
-                          onClick={() => handleStepKm(slab.id, "from_km", -5)}
+                          onClick={() => handleStepKm(slab.id, "from_km", -1)}
                           className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-r"
-                          title="Decrease 5 KM"
+                          title="Decrease 1 KM"
                         >
                           <Minus className="h-2.5 w-2.5" />
                         </button>
@@ -446,14 +460,14 @@ function SlabEditor({
                           min="0"
                           value={slab.from_km}
                           onChange={(e) => handleFieldChange(slab.id, "from_km", e.target.value)}
-                          className="h-7 w-14 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
+                          className="h-7 w-16 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
                           placeholder="0"
                         />
                         <button
                           type="button"
-                          onClick={() => handleStepKm(slab.id, "from_km", 5)}
+                          onClick={() => handleStepKm(slab.id, "from_km", 1)}
                           className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-l"
-                          title="Increase 5 KM"
+                          title="Increase 1 KM"
                         >
                           <Plus className="h-2.5 w-2.5" />
                         </button>
@@ -466,9 +480,9 @@ function SlabEditor({
                       <div className="inline-flex items-center rounded-md border shadow-xs overflow-hidden">
                         <button
                           type="button"
-                          onClick={() => handleStepKm(slab.id, "to_km", -5)}
+                          onClick={() => handleStepKm(slab.id, "to_km", -1)}
                           className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-r"
-                          title="Decrease 5 KM"
+                          title="Decrease 1 KM"
                         >
                           <Minus className="h-2.5 w-2.5" />
                         </button>
@@ -477,14 +491,14 @@ function SlabEditor({
                           min="0"
                           value={slab.to_km ?? ""}
                           onChange={(e) => handleFieldChange(slab.id, "to_km", e.target.value)}
-                          className="h-7 w-14 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
+                          className="h-7 w-16 border-0 rounded-none text-center text-xs font-mono font-bold px-1 focus-visible:ring-0"
                           placeholder="Above"
                         />
                         <button
                           type="button"
-                          onClick={() => handleStepKm(slab.id, "to_km", 5)}
+                          onClick={() => handleStepKm(slab.id, "to_km", 1)}
                           className="h-7 w-6 flex items-center justify-center bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors border-l"
-                          title="Increase 5 KM"
+                          title="Increase 1 KM"
                         >
                           <Plus className="h-2.5 w-2.5" />
                         </button>
@@ -627,6 +641,17 @@ export default function VehiclePricingSettings() {
   const handleFieldChange = (vehicleKey: string, field: keyof VehiclePricing, val: any) => {
     setPricing((prev) => {
       const current = prev[vehicleKey] || DEFAULT_PRICING[vehicleKey];
+
+      if (field === "discount_slabs") {
+        return {
+          ...prev,
+          [vehicleKey]: {
+            ...current,
+            discount_slabs: Array.isArray(val) ? val : [],
+          },
+        };
+      }
+
       const parsedVal = typeof val === "number" || typeof val === "string" ? (Number(val) >= 0 ? Number(val) : val) : val;
 
       let updatedSlabs = current.discount_slabs;
