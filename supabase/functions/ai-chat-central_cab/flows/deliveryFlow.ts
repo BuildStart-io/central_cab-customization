@@ -82,6 +82,10 @@ export async function handleDeliveryFlowStep(
         return await invalidFallback(getStepPromptText("DELIVERY_FLOW", "DELIVERY_ITEMS", lang));
       }
 
+      if (!data.delivery_category) {
+        data.delivery_category = lang === "en" ? "Food & Items" : "ආහාර පාන සහ භාණ්ඩ";
+      }
+
       data.delivery_products = trimmed;
       data.delivery_items = trimmed;
 
@@ -317,15 +321,16 @@ export async function handleDeliveryFlowStep(
     }
 
     // ------------------------------------------------------------------------
-    // Default fallback: Start at DELIVERY_CATEGORY
+    // Default fallback: Start at DELIVERY_ITEMS
     // ------------------------------------------------------------------------
     default: {
+      if (!data.delivery_category) {
+        data.delivery_category = lang === "en" ? "Food & Items" : "ආහාර පාන සහ භාණ්ඩ";
+      }
       return {
-        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_CATEGORY", lang),
-        poll: getDeliveryCategoryPoll(lang),
-        sendTextWithPoll: true,
+        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_ITEMS", lang),
         nextFlow: "DELIVERY_FLOW",
-        nextStep: "DELIVERY_CATEGORY",
+        nextStep: "DELIVERY_ITEMS",
         sessionData: data,
       };
     }

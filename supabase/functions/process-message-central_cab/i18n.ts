@@ -983,9 +983,9 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "DELIVERY_ITEMS":
         if (lang === "en") {
-          return "📝 Please type the specific products, items, or quantities you need:\n\n(e.g., 1kg Chocolate Cake, 2 Chicken Burgers, or Large T-shirt)";
+          return "📦 *Delivery Service (Food & Items Order):*\n\nPlease specify the food, beverages, or items you need delivered (including quantities):\n(e.g., 2 Chicken Kottu, 1 Coca-Cola)";
         }
-        return "📝 කරුණාකර ඔබට අවශ්‍ය විශේෂිත භාණ්ඩ මොනවාදැයි විස්තර (Product Name / Quantity) සමඟ මෙහි Type කරන්න:\n\n(උදා: 1kg Chocolate Cake, Burgers 2ක්, හෝ Large T-shirt)";
+        return "📦 *Delivery සේවාව (භාණ්ඩ / ආහාර පාන ඇණවුම් කිරීම):*\n\nකරුණාකර ඔබට අවශ්‍ය ආහාර පාන හෝ භාණ්ඩ (Delivery Items & Quantities) මෙහි සඳහන් කරන්න:\n(උදා: චිකන් කොත්තු 2, කොකාකෝලා 1)";
 
       case "DELIVERY_VEHICLE":
         if (lang === "en") {

@@ -615,12 +615,11 @@ export async function processCustomerChatStep(
     // 4. Delivery
     if (cat === "delivery") {
       data.service_type = "delivery";
+      data.delivery_category = lang === "en" ? "Food & Items" : "ආහාර පාන සහ භාණ්ඩ";
       return {
-        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_CATEGORY", lang),
-        poll: getDeliveryCategoryPoll(lang),
-        sendTextWithPoll: true,
+        replyText: getStepPromptText("DELIVERY_FLOW", "DELIVERY_ITEMS", lang),
         nextFlow: "DELIVERY_FLOW",
-        nextStep: "DELIVERY_CATEGORY",
+        nextStep: "DELIVERY_ITEMS",
         sessionData: data,
       };
     }
