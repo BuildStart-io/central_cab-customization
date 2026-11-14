@@ -649,8 +649,8 @@ export async function processCustomerChatStep(
         phoneNumber
       );
       const followUpNote = lang === "en"
-        ? "\n\n💡 Feel free to ask another question or select a service from the menu below:"
-        : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ පහත මෙනුවෙන් සේවාවක් තෝරන්න:";
+        ? "\n\n❓ *Would you like to know anything else?*\n💡 Feel free to ask another question or select a service from the menu below:"
+        : "\n\n❓ *තවත් යමක් දැනගැනීමට අවශ්‍යද?*\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ පහත මෙනුවෙන් සේවාවක් තෝරන්න:";
       return {
         replyText: `${answer}${followUpNote}`,
         poll: getCategoryPoll(lang),

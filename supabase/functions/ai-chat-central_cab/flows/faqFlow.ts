@@ -330,8 +330,8 @@ export async function handleFaqFlowStep(
   );
 
   const followUpNote = lang === "en"
-    ? "\n\n💡 Feel free to ask another question or type *Menu* to return to main options."
-    : "\n\n💡 ඔබට වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ මෙනුවට යාමට *Menu* Type කරන්න.";
+    ? "\n\n❓ *Would you like to know anything else?*\n(Feel free to ask another question or type *Menu* to return to main options)"
+    : "\n\n❓ *තවත් යමක් දැනගැනීමට අවශ්‍යද?*\n(වෙනත් ප්‍රශ්නයක් ඇත්නම් Type කරන්න හෝ ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
 
   return {
     replyText: `${answer}${followUpNote}`,

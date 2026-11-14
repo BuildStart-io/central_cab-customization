@@ -150,7 +150,10 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
     text.includes("delivery") ||
     text.includes("භාණ්ඩ") ||
     text.includes("පාර්සල්") ||
-    text.includes("ඇණවුම්")
+    text.includes("ඇණවුම්") ||
+    text.includes("ආහාර") ||
+    text.includes("පාන") ||
+    text.includes("food")
   ) {
     return "delivery";
   }
@@ -361,7 +364,7 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
         "1. ⚡ Short Distance Trip (Motorbike / Three-wheeler)",
         "2. 🚗 Long Distance Trip (Car / Van / Lorry / Bus)",
         "3. 🚗 Rent a Car (Car Rental)",
-        "4. 📦 Delivery (Order Items)",
+        "4. 🍛 Delivery (Order Items including Food & Beverages)",
         "5. ℹ️ More Details & Get App",
       ],
       multipleAnswers: false,
@@ -374,7 +377,7 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
       "1. ⚡ ළඟ ගමනක් යන්න (Motorbike / Three-wheel)",
       "2. 🚗 දුර ගමනක් යන්න (Car / Van / Lorry / Bus)",
       "3. 🚗 Rent a Car (කාර් කුලියට ගන්න)",
-      "4. 📦 Delivery (භාණ්ඩ ඇණවුම් කරන්න)",
+      "4. 🍛 Delivery (ආහාර පාන ඇතුළු භාණ්ඩ ඇණවුම් කරන්න)",
       "5. ℹ️ වැඩිවිස්තර සදහා සහ ඇප් එක ලබාගැනීමට",
     ],
     multipleAnswers: false,
@@ -1052,9 +1055,9 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
   // 5. Ask a Question / More Details & Get App Flow
   if (flow === "FAQ_FLOW" || step === "FAQ_ASK") {
     if (lang === "en") {
-      return "ℹ️ *Central Cabs - Details & Official App*\n\n📱 *Download our Official Android App:*\n🔗 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\n💬 Have any questions? Please type your question or inquiry here.\n(Type *Menu* anytime to return to main options)";
+      return "📱 *Download - Hire Lanka Taxi App:*\n👉 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\nInstall the app and send a WhatsApp message to 0756000500.\n\n💬 Our representative will answer all your questions.\n\n❓ *Would you like to know anything else?*\n(Type any question here, or type *Menu* to return to the main options)";
     }
-    return "ℹ️ *Central Cabs - වැඩිවිස්තර සහ ඇප් එක ලබාගැනීමට*\n\n📱 *අපගේ නිල Android App එක මෙතැනින් Download කරගන්න:*\n🔗 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\n💬 ඔබට යම් ගැටළුවක් හෝ විමසීමක් ඇත්නම් කරුණාකර මෙහි Type කරන්න.\n(ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
+    return "📱 *Download - Hire Lanka Taxi App:*\n👉 https://play.google.com/store/apps/details?id=com.novascript.taxi_app\n\nඇප් එක ඉන්ස්ටෝල් කරගෙන 0756000500 ට WhatsApp මැසේජ් එකක් දාන්න.\n\n💬 ඔබ අසන සියලු ප්‍රශ්න සඳහා අපේ නියෝජිතයෙකු පිළිතුරු සපයනු ඇත.\n\n❓ *තවත් යමක් දැනගැනීමට අවශ්‍යද?*\n(ඔබට ඇති ඕනෑම ප්‍රශ්නයක් මෙහි Type කරන්න, නැතහොත් ප්‍රධාන මෙනුවට යාමට *Menu* Type කරන්න)";
   }
 
   return lang === "en" ? "Please provide your answer." : "කරුණාකර ඔබගේ පිළිතුර ලබා දෙන්න.";
