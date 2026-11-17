@@ -253,40 +253,12 @@ export default function BroadcastManager() {
 
           setDiscoveredWahaGroups(liveWahaGroups);
 
-          if (liveWahaGroups.length > 0) {
-            if (combined.length === 0) {
-              // Initial population if no groups existed in settings
-              combined = liveWahaGroups.map((lg, i) => ({
-                id: `hire_${lg.id}`,
-                name: lg.name || `Hire Driver Group ${i + 1}`,
-                chat_id: lg.id,
-                category: "hire" as ServiceGroupType,
-                categoryLabel: "Hire Driver",
-              }));
-            } else {
-              // Update names of existing groups from fresh live data
-              combined = combined.map((cg) => {
-                const liveMatch = liveWahaGroups.find((lg) => lg.id === cg.chat_id);
-                return liveMatch && liveMatch.name ? { ...cg, name: liveMatch.name } : cg;
-              });
-
-              // Add newly discovered groups that are not in ANY category yet
-              liveWahaGroups.forEach((lg) => {
-                const exists = combined.some((cg) => cg.chat_id === lg.id);
-                if (!exists) {
-                  combined.push({
-                    id: `hire_${lg.id}`,
-                    name: lg.name || "New Group",
-                    chat_id: lg.id,
-                    category: "hire",
-                    categoryLabel: "Hire Driver",
-                  });
-                }
-              });
-            }
-
-            // Persist the synced groups
-            await persistGroupsToSettings(combined);
+          if (liveWahaGroups.length > 0 && combined.length > 0) {
+            // Update display names of existing configured groups if they changed on WhatsApp
+            combined = combined.map((cg) => {
+              const liveMatch = liveWahaGroups.find((lg) => lg.id === cg.chat_id);
+              return liveMatch && liveMatch.name ? { ...cg, name: liveMatch.name } : cg;
+            });
           }
         }
       } catch (wahaErr) {
