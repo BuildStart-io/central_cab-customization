@@ -166,41 +166,30 @@ export default function BroadcastManager() {
       if (showToast) setRefreshing(true);
       else setLoading(true);
 
-      // 1. Fetch saved groups from central_cab.settings
+      // 1. Fetch saved groups from central_cab.settings under dedicated broadcast key
       const { data, error } = await supabase
         .schema("central_cab")
         .from("settings")
         .select("value")
         .eq("user_id", user?.id)
-        .eq("key", "cab_system_settings")
+        .eq("key", "broadcast_groups_settings")
         .maybeSingle();
 
       if (error && error.code !== "PGRST116") {
-        console.error("Failed to load cab system settings:", error);
+        console.error("Failed to load broadcast groups settings:", error);
       }
 
       let combined: GroupItemWithCategory[] = [];
       if (data?.value) {
-        const val = data.value;
-        const parse = (raw: any[], cat: ServiceGroupType, label: string) => {
-          if (!Array.isArray(raw)) return;
-          raw.forEach((g: any, i: number) => {
-            if (g && (g.chat_id || g.name)) {
-              combined.push({
-                id: String(g.id || `${cat}_${i}`),
-                name: String(g.name || `${label} ${i + 1}`),
-                chat_id: String(g.chat_id || ""),
-                category: cat,
-                categoryLabel: label,
-              });
-            }
-          });
-        };
-
-        parse(val.hire_driver_groups, "hire", "Hire Driver");
-        parse(val.rent_a_car_groups, "rent_a_car", "Rent a Car");
-        parse(val.delivery_driver_groups, "delivery_shop", "Delivery Shop");
-        parse(val.delivery_rider_groups, "delivery_riders", "Delivery Rider");
+        if (Array.isArray(data.value.broadcast_groups)) {
+          combined = data.value.broadcast_groups.map((g: any, i: number) => ({
+            id: String(g.id || `bcast_${i}`),
+            name: String(g.name || `Broadcast Group ${i + 1}`),
+            chat_id: String(g.chat_id || ""),
+            category: (g.category || "hire") as ServiceGroupType,
+            categoryLabel: String(g.categoryLabel || "Hire Driver"),
+          }));
+        }
       }
 
       // 2. Query active WhatsApp session
@@ -294,42 +283,22 @@ export default function BroadcastManager() {
   const persistGroupsToSettings = async (groupsList: GroupItemWithCategory[]) => {
     if (!user) return;
     try {
-      const hireGroups = groupsList.filter((g) => g.category === "hire").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-      const rentGroups = groupsList.filter((g) => g.category === "rent_a_car").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-      const shopGroups = groupsList.filter((g) => g.category === "delivery_shop").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-      const riderGroups = groupsList.filter((g) => g.category === "delivery_riders").map((g) => ({ id: g.id, name: g.name, chat_id: g.chat_id }));
-
-      const { data: existingData } = await supabase
-        .schema("central_cab")
-        .from("settings")
-        .select("value")
-        .eq("user_id", user.id)
-        .eq("key", "cab_system_settings")
-        .maybeSingle();
-
-      const updatedVal = {
-        ...(existingData?.value || {}),
-        hire_driver_groups: hireGroups,
-        rent_a_car_groups: rentGroups,
-        delivery_driver_groups: shopGroups,
-        delivery_rider_groups: riderGroups,
-        target_driver_groups: hireGroups,
-      };
-
       await supabase
         .schema("central_cab")
         .from("settings")
         .upsert(
           {
             user_id: user.id,
-            key: "cab_system_settings",
-            value: updatedVal,
+            key: "broadcast_groups_settings",
+            value: {
+              broadcast_groups: groupsList,
+            },
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id,key" }
         );
     } catch (err) {
-      console.error("Failed to persist groups to settings:", err);
+      console.error("Failed to persist groups to broadcast settings:", err);
     }
   };
 
