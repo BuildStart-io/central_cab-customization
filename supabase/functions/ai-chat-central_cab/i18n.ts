@@ -721,7 +721,7 @@ export function getDropoffHelpPoll(lang: SupportedLanguage = "si"): PollDefiniti
     };
   }
   return {
-    name: "ගමනාන්තයේ Link එක share කිරීමට දන්නවාද? (Drop Location):",
+    name: "ගමනාන්තයේ Map Link එක share කිරීමට දන්නවාද? (Drop Location):",
     options: [
       "1. මම දන්නවා (Direct Link යවන්න) 🔗",
       "2. මම දන්නේ නෑ (Help / උපදෙස්) ❓",
@@ -952,8 +952,8 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
         return "කරුණාකර ඔබට අවශ්‍ය වාහනය තෝරන්න:";
 
       case "CAB_DISTRICT_VILLAGE":
-        if (lang === "en") return "🏘️ *District & Village / City:*\n\nPlease enter the District and Village or Town you are in\n(e.g., Colombo, Nugegoda or Batticaloa, Kallady):";
-        return "🏘️ *දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර ඔබ සිටින දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කොළඹ, නුගේගොඩ හෝ මඩකලපුව, කල්ලඩි):";
+        if (lang === "en") return "🏘️ *District & Village / City:*\n\nPlease enter the District and Village or Town you are in\n(e.g., Kalutara / Bombuwala or Colombo, Nugegoda):";
+        return "🏘️ *දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර ඔබ සිටින දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කළුතර / බෝම්බුවල හෝ Kalutara / Bombuwala):";
 
       case "CAB_PICKUP":
         if (lang === "en") return "📍 *Pickup Location (Live Location):*\n\nPlease follow the guide photo above and share your live WhatsApp Location Pin or send a Google Maps Link:";
@@ -1001,9 +1001,9 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "DELIVERY_DISTRICT_VILLAGE":
         if (lang === "en") {
-          return "🏘️ *Delivery District & Village / City:*\n\nPlease enter the District and Village or Town where the items should be delivered\n(e.g., Colombo, Nugegoda or Batticaloa, Kallady):";
+          return "🏘️ *Delivery District & Village / City:*\n\nPlease enter the District and Village or Town where the items should be delivered\n(e.g., Kalutara / Bombuwala or Colombo, Nugegoda):";
         }
-        return "🏘️ *භාණ්ඩ භාරදිය යුතු දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර භාණ්ඩ ලබාදිය යුතු දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කොළඹ, නුගේගොඩ හෝ මඩකලපුව, කල්ලඩි):";
+        return "🏘️ *භාණ්ඩ භාරදිය යුතු දිස්ත්‍රික්කය සහ ගම / නගරය:*\n\nකරුණාකර භාණ්ඩ ලබාදිය යුතු දිස්ත්‍රික්කය සහ ගම හෝ නගරය සඳහන් කරන්න\n(උදා: කළුතර / බෝම්බුවල හෝ Kalutara / Bombuwala):";
 
       case "DELIVERY_LOCATION":
         if (lang === "en") {

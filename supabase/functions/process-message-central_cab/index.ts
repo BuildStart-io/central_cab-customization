@@ -277,26 +277,35 @@ async function handleSingleMessage(
 
     // 4. Send outbound WhatsApp reply or poll if generated
     if (replyText || stepPoll || stepMediaUrl) {
+      let mediaSentOk = false;
       if (stepMediaUrl) {
         console.log(`[${corrId}] Outbound media to ${phoneNumber}: ${stepMediaUrl}`);
-        await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseServiceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: phoneNumber,
-            mediaUrl: stepMediaUrl,
-            message: replyText || undefined,
-            sessionApiKey,
-          }),
-        }).catch(err => console.error("Media send error:", err));
+        try {
+          const mediaRes = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: phoneNumber,
+              mediaUrl: stepMediaUrl,
+              message: replyText || undefined,
+              sessionApiKey,
+            }),
+          });
+          if (mediaRes.ok) {
+            const mJson = await mediaRes.json().catch(() => ({}));
+            if (mJson.success) mediaSentOk = true;
+          }
+        } catch (err) {
+          console.error("Media send error:", err);
+        }
       }
 
       // Send text message if no poll, or if explicitly configured (e.g. welcome message before language poll)
       // If mediaUrl was already sent with replyText caption, do not duplicate text
-      const shouldSendText = replyText && replyText.trim() && !stepMediaUrl && (!stepPoll || stepResult.sendTextWithPoll);
+      const shouldSendText = replyText && replyText.trim() && (!mediaSentOk) && (!stepPoll || stepResult.sendTextWithPoll);
       if (shouldSendText) {
         console.log(`[${corrId}] Outbound reply to ${phoneNumber}: ${replyText.substring(0, 60)}`);
         

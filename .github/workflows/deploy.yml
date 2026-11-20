@@ -1,4 +1,4 @@
-name: Deploy BuildStart
+name: Deploy Central Cab Edge Functions
 
 on:
   push:
@@ -7,54 +7,11 @@ on:
       - master
 
 jobs:
-  build-and-deploy:
+  deploy-functions:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Frontend Dependencies
-        run: |
-          cd frontend
-          npm ci
-
-      - name: Create Frontend Env File and Build
-        run: |
-          cd frontend
-          # Create the build-time env file so Vite is guaranteed to embed these values
-          echo "VITE_SUPABASE_URL=https://supabase.buildstart.io" > .env
-          echo "VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}" >> .env
-          echo "VITE_SUPABASE_PROJECT_ID=selfhosted" >> .env
-          
-          npm run build
-
-      - name: Deploy Frontend files to Web Root
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "frontend/dist/**"
-          target: "${{ secrets.FRONTEND_WEB_ROOT || '/var/www/app.buildstart.io' }}"
-          strip_components: 2
-
-      - name: Deploy Nginx and Database schema files to temp folder
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          password: ${{ secrets.SSH_PASSWORD }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "nginx/app.buildstart.io.conf,db/**"
-          target: "/tmp/buildstart-deploy"
 
       - name: Deploy Edge Functions directly to Supabase volume
         uses: appleboy/scp-action@v0.1.7
@@ -64,11 +21,10 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT || 22 }}
           source: "supabase/functions/**"
-          # Syncs directly into your running Supabase edge-runtime mount folder
           target: "${{ secrets.SUPABASE_FUNCTIONS_PATH || '/root/supabase/supabase/docker/volumes/functions' }}"
           strip_components: 2
 
-      - name: Run Server Setup, SSL Installation, and Database Migrations
+      - name: Restart Edge Functions Container
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -76,54 +32,7 @@ jobs:
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            FRONTEND_WEB_ROOT="${{ secrets.FRONTEND_WEB_ROOT || '/var/www/app.buildstart.io' }}"
-            
-            # 1. FIX FRONTEND WEB ROOT OWNERSHIP
-            sudo mkdir -p $FRONTEND_WEB_ROOT
-            sudo chown -R ${{ secrets.SSH_USER }}:${{ secrets.SSH_USER }} $FRONTEND_WEB_ROOT
-            
-            # 2. CONFIGURE NGINX
-            sudo cp /tmp/buildstart-deploy/nginx/app.buildstart.io.conf /etc/nginx/sites-available/
-            sudo ln -sf /etc/nginx/sites-available/app.buildstart.io.conf /etc/nginx/sites-enabled/
-            
-            # Test Nginx syntax and reload
-            sudo nginx -t
-            sudo systemctl reload nginx || true
-            
-            # 3. CONFIGURE LET'S ENCRYPT SSL (HTTPS)
-            if ! command -v certbot &> /dev/null; then
-              sudo apt-get update && sudo apt-get install certbot python3-certbot-nginx -y
-            fi
-            sudo certbot --nginx -d app.buildstart.io --non-interactive --agree-tos --email "${{ secrets.SSL_EMAIL || 'admin@buildstart.io' }}" --redirect --reinstall --keep-until-expiring
-            sudo systemctl reload nginx || true
-            
-            # 4. RUN DATABASE MIGRATIONS (IF SUPABASE CONTAINER IS ACTIVE)
-            if docker ps --format '{{.Names}}' | grep -q "^supabase-db$"; then
-              echo "Applying schema migrations to running 'supabase-db' database..."
-              
-              # Copy SQL schema files into the DB container
-              docker cp /tmp/buildstart-deploy/db/01_schema.sql supabase-db:/tmp/01_schema.sql
-              docker cp /tmp/buildstart-deploy/db/02_seed.sql supabase-db:/tmp/02_seed.sql
-              docker cp /tmp/buildstart-deploy/db/04_central_cab_schema.sql supabase-db:/tmp/04_central_cab_schema.sql || true
-              docker cp /tmp/buildstart-deploy/db/05_multilingual_services_faqs_schema.sql supabase-db:/tmp/05_multilingual_services_faqs_schema.sql || true
-              
-              # Run SQL schema and seeds inside the container
-              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/01_schema.sql || true
-              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/02_seed.sql || true
-              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/04_central_cab_schema.sql || true
-              docker exec -i supabase-db psql -U postgres -d postgres -f /tmp/05_multilingual_services_faqs_schema.sql || true
-              
-              # Cleanup files inside container
-              docker exec -i supabase-db rm -f /tmp/01_schema.sql /tmp/02_seed.sql /tmp/04_central_cab_schema.sql /tmp/05_multilingual_services_faqs_schema.sql || true
-            else
-              echo "WARNING: 'supabase-db' container not found or not running. Schema migrations skipped."
-            fi
-            
-            # Restart the edge functions container to bind the updated volume mounts
             if docker ps --format '{{.Names}}' | grep -q "^supabase-edge-functions$"; then
               echo "Restarting supabase-edge-functions container..."
               docker restart supabase-edge-functions
             fi
-            
-            # 5. CLEAN UP TEMP FILES
-            rm -rf /tmp/buildstart-deploy

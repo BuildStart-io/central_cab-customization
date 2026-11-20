@@ -61,6 +61,8 @@ function isExpectedStepAnswer(
       if (extractNaturalDate(trimmed).isRecognized) return true;
     } else if (step === "CAB_SCHEDULE_TIME") {
       if (extractNaturalTime(trimmed).isRecognized) return true;
+    } else if (step === "CAB_DISTRICT_VILLAGE") {
+      if (trimmed.length >= 2) return true;
     } else if (step === "CAB_PICKUP" || step === "CAB_DROPOFF") {
       if (
         lower === "1" || lower.startsWith("1.") || lower.includes("දන්නවා") || lower.includes("direct link") || lower.includes("i know") ||
@@ -88,7 +90,9 @@ function isExpectedStepAnswer(
       if (digits.length >= 7) return true;
     }
   } else if (flow === "DELIVERY_FLOW") {
-    if (step === "DELIVERY_CATEGORY") {
+    if (step === "DELIVERY_DISTRICT_VILLAGE") {
+      if (trimmed.length >= 2) return true;
+    } else if (step === "DELIVERY_CATEGORY") {
       const cat = detectDeliveryCategory(trimmed);
       if (cat) return true;
     } else if (step === "DELIVERY_VEHICLE") {

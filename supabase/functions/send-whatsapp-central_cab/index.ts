@@ -232,6 +232,28 @@ serve(async (req) => {
     console.log(`[send-whatsapp-central_cab] WAHA response [${res.status}]: ${responseText.substring(0, 300)}`);
 
     if (!res.ok) {
+      // If media send failed and caption/message is available, gracefully fallback to sending text
+      if (url && (message || "")) {
+        console.warn(`[send-whatsapp-central_cab] Media send failed [${res.status}], attempting text fallback for ${chatId}...`);
+        try {
+          const fallbackRes = await wahaFetch("/api/sendText", {
+            session: sessionName,
+            chatId,
+            text: message,
+          });
+          if (fallbackRes.ok) {
+            const fallbackText = await fallbackRes.text();
+            let fData = null;
+            try { fData = JSON.parse(fallbackText); } catch { /* ignore */ }
+            return new Response(JSON.stringify({ success: true, fallbackToText: true, data: fData }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        } catch (fbErr) {
+          console.error("[send-whatsapp-central_cab] Fallback text send error:", fbErr);
+        }
+      }
+
       let parsed: any = null;
       try { parsed = JSON.parse(responseText); } catch { /* ignore */ }
       throw new Error(parsed?.message || parsed?.error || `WAHA send failed (${res.status}): ${responseText.substring(0, 200)}`);

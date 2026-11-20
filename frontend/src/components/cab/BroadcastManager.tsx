@@ -180,6 +180,7 @@ export default function BroadcastManager() {
       }
 
       let combined: GroupItemWithCategory[] = [];
+      let savedSelectedIds: string[] | null = null;
       if (data?.value) {
         if (Array.isArray(data.value.broadcast_groups)) {
           combined = data.value.broadcast_groups.map((g: any, i: number) => ({
@@ -189,6 +190,9 @@ export default function BroadcastManager() {
             category: (g.category || "hire") as ServiceGroupType,
             categoryLabel: String(g.categoryLabel || "Hire Driver"),
           }));
+        }
+        if (Array.isArray(data.value.selected_group_ids)) {
+          savedSelectedIds = data.value.selected_group_ids.map(String);
         }
       }
 
@@ -256,9 +260,22 @@ export default function BroadcastManager() {
 
       setAllGroups(combined);
 
-      // Select all groups by default if none selected yet, or on refresh
-      if (showToast || selectedGroupIds.size === 0) {
-        setSelectedGroupIds(new Set(combined.map((g) => g.id)));
+      // Restore saved group selection if user previously configured it
+      if (savedSelectedIds !== null) {
+        const validSaved = savedSelectedIds.filter((id) => combined.some((g) => g.id === id));
+        setSelectedGroupIds(new Set(validSaved));
+      } else {
+        // Fallback to local storage persistence
+        try {
+          const cached = localStorage.getItem("central_cab_broadcast_selected_groups");
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const validCached = parsed.filter((id) => combined.some((g) => g.id === id));
+              setSelectedGroupIds(new Set(validCached));
+            }
+          }
+        } catch (_) {}
       }
 
       if (showToast) {
@@ -280,6 +297,55 @@ export default function BroadcastManager() {
     }
   };
 
+  const [isSavingSelection, setIsSavingSelection] = useState(false);
+
+  const handleSaveSelectedGroups = async () => {
+    if (!user) return;
+    try {
+      setIsSavingSelection(true);
+      const selectedList = Array.from(selectedGroupIds);
+
+      // Persist locally for instant tab-switch reliability
+      try {
+        localStorage.setItem("central_cab_broadcast_selected_groups", JSON.stringify(selectedList));
+      } catch (_) {}
+
+      const { error } = await supabase
+        .schema("central_cab")
+        .from("settings")
+        .upsert(
+          {
+            user_id: user.id,
+            key: "broadcast_groups_settings",
+            value: {
+              broadcast_groups: allGroups,
+              selected_group_ids: selectedList,
+            },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,key" }
+        );
+
+      if (error) {
+        console.error("Save selection error:", error);
+      }
+
+      toast({
+        title: "Group Selection Saved",
+        description: `Saved ${selectedList.length} group(s) as your default broadcast selection.`,
+      });
+    } catch (err: any) {
+      console.error("Save selection error:", err);
+      toast({
+        title: "Failed to Save Selection",
+        description: err.message || "An error occurred while saving selection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingSelection(false);
+    }
+  };
+
   const persistGroupsToSettings = async (groupsList: GroupItemWithCategory[]) => {
     if (!user) return;
     try {
@@ -292,6 +358,7 @@ export default function BroadcastManager() {
             key: "broadcast_groups_settings",
             value: {
               broadcast_groups: groupsList,
+              selected_group_ids: Array.from(selectedGroupIds),
             },
             updated_at: new Date().toISOString(),
           },
@@ -1355,6 +1422,16 @@ export default function BroadcastManager() {
                   <Button variant="outline" size="sm" onClick={handleDeselectAll} className="text-xs h-8">
                     Clear Selection
                   </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSaveSelectedGroups}
+                    disabled={isSavingSelection}
+                    className="text-xs h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {isSavingSelection ? "Saving..." : "Save Selection"}
+                  </Button>
                   {activeCategoryFilter !== "all" && (
                     <Button
                       variant="secondary"
@@ -1440,8 +1517,20 @@ export default function BroadcastManager() {
                   🛵 Delivery Riders ({allGroups.filter((g) => g.category === "delivery_riders").length})
                 </Button>
 
-                <div className="ml-auto text-xs font-semibold text-primary">
-                  {selectedGroupIds.size} of {allGroups.length} groups selected
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-xs font-semibold text-primary">
+                    {selectedGroupIds.size} of {allGroups.length} groups selected
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSaveSelectedGroups}
+                    disabled={isSavingSelection}
+                    className="h-7 text-xs font-semibold gap-1 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
+                  >
+                    <Check className="h-3 w-3" />
+                    Save
+                  </Button>
                 </div>
               </div>
 
