@@ -339,7 +339,8 @@ export async function handleCabFlowStep(
 
         return {
           replyText: getStepPromptText("CAB_FLOW", "CAB_DROPOFF", lang),
-          mediaUrl: "https://app.buildstart.io/guides/dropoff_guide.jpg",
+          poll: getDropoffHelpPoll(lang),
+          sendTextWithPoll: true,
           nextFlow: "CAB_FLOW",
           nextStep: "CAB_DROPOFF",
           sessionData: data,
@@ -353,7 +354,7 @@ export async function handleCabFlowStep(
 
       return {
         replyText: getStepPromptText("CAB_FLOW", "CAB_PICKUP", lang),
-        mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+        mediaUrl: "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg",
         nextFlow: "CAB_FLOW",
         nextStep: "CAB_PICKUP",
         sessionData: data,
@@ -365,7 +366,7 @@ export async function handleCabFlowStep(
       if (!isValidLocationInput(trimmed, rawPayload)) {
         return {
           replyText: getLocationRejectMessage(lang, "pickup"),
-          mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+          mediaUrl: "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg",
           nextFlow: "CAB_FLOW",
           nextStep: "CAB_PICKUP",
           sessionData: data,
@@ -426,7 +427,7 @@ export async function handleCabFlowStep(
       if (isHelpChoice) {
         return {
           replyText: getDropoffHelpGuide(lang),
-          mediaUrl: "https://app.buildstart.io/guides/dropoff_guide.mp4",
+          mediaUrl: "https://central-cab-customization.vercel.app/guides/dropoff_guide.mp4",
           nextFlow: "CAB_FLOW",
           nextStep: "CAB_DROPOFF",
           sessionData: data,

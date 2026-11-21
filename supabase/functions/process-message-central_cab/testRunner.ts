@@ -143,7 +143,7 @@ export async function runAllAutomatedTests(
       defaultPricing,
       defaultSystemSettings
     );
-    record("3.8 Vehicle selection to CAB_PICKUP includes pickup guide mediaUrl", vehiclePickupGuideRes.nextStep === "CAB_PICKUP" && vehiclePickupGuideRes.mediaUrl === "https://app.buildstart.io/guides/pickup_guide.jpg", vehiclePickupGuideRes.mediaUrl);
+    record("3.8 Vehicle selection to CAB_PICKUP includes pickup guide mediaUrl", vehiclePickupGuideRes.nextStep === "CAB_PICKUP" && vehiclePickupGuideRes.mediaUrl === "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg", vehiclePickupGuideRes.mediaUrl);
 
     // 3.9 Selecting Reset / Main Menu poll option from CAB_VEHICLE returns LANGUAGE_CHOICE
     const menuResetRes = await processCustomerChatStep(

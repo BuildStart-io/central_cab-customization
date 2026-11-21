@@ -170,19 +170,39 @@ serve(async (req) => {
 
       // If base64 conversion was not applicable or failed, fallback to url
       if (!file) {
+        let inferredMime: string | undefined = undefined;
+        if (detectedType === "video") inferredMime = "video/mp4";
+        else if (detectedType === "audio") inferredMime = "audio/ogg; codecs=opus";
+        else if (detectedType === "image") inferredMime = "image/jpeg";
+
         file = {
           url: url.replace("http://localhost:3000", WAHA_BASE || "http://waha:3000"),
           filename: fileName,
-          mimetype: detectedType === "audio" ? "audio/ogg; codecs=opus" : undefined,
+          mimetype: inferredMime,
         };
       }
 
       const caption = message || "";
 
       switch (detectedType) {
-        case "video":
-          res = await wahaFetch("/api/sendVideo", { session: sessionName, chatId, file, caption });
+        case "video": {
+          let videoOk = false;
+          try {
+            res = await wahaFetch("/api/sendVideo", { session: sessionName, chatId, file, caption });
+            if (res.ok) {
+              videoOk = true;
+            } else {
+              const errBody = await res.text();
+              console.warn(`[send-whatsapp-central_cab] /api/sendVideo failed [${res.status}]: ${errBody}. Retrying via /api/sendFile...`);
+            }
+          } catch (vErr) {
+            console.warn(`[send-whatsapp-central_cab] /api/sendVideo request error:`, vErr);
+          }
+          if (!videoOk) {
+            res = await wahaFetch("/api/sendFile", { session: sessionName, chatId, file, caption });
+          }
           break;
+        }
         case "audio": {
           let voiceOk = false;
           const voiceFile = {

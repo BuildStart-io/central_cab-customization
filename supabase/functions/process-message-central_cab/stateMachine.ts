@@ -431,7 +431,7 @@ export async function processCustomerChatStep(
           replyText: lang === "en"
             ? "We noticed your location or distance seems incorrect. Please enter your pickup location again as shown in the guide above:"
             : "ඔබගේ Location එක හෝ දුර ප්‍රමාණය වැරදි බව අපි හඳුනා ගත්තෙමු. කරුණාකර ඉහත Guide එකේ පරිදි ඔබගේ Pickup Location එක නැවත ලබා දෙන්න:",
-          mediaUrl: "https://app.buildstart.io/guides/pickup_guide.jpg",
+          mediaUrl: "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg",
           nextFlow: flow,
           nextStep,
           sessionData: data,
