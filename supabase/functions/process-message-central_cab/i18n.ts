@@ -829,8 +829,8 @@ export function getTripTypePoll(lang: SupportedLanguage = "si"): PollDefinition 
   return {
     name: "ගමන් වර්ගය (Trip Type) තෝරන්න:",
     options: [
-      "1. One-Way ➡️",
-      "2. Round Trip (Up & Down) 🔄",
+      "1. යාමට පමණයි (One-Way) ➡️",
+      "2. යාමට සහ ඒමට (Up & Down) 🔄",
       resetOption,
     ],
     multipleAnswers: false,
@@ -965,7 +965,7 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
 
       case "CAB_TRIP_TYPE":
         if (lang === "en") return "Is this a One-Way ride or a Round Trip (Up & Down)?";
-        return "මෙය One-Way ගමනක් ද නැතහොත් Round Trip (Up & Down) ගමනක් ද?";
+        return "මෙය යාමට පමණක් (One-Way) ගමනක් ද නැතහොත් යාමට සහ ඒමට (Up & Down) ගමනක් ද?";
 
       case "CAB_CONFIRM":
         return getBookingConfirmManualPrompt(lang);
@@ -1185,7 +1185,7 @@ export function getBookingSummaryCard(data: any, lang: SupportedLanguage, isDeli
 
   const timingHeader = isScheduled ? `📅 *දුර ගමනක් (Schedule):* ${data.scheduled_time}\n` : `⚡ *ලග ගමනක් (Short Trip)*\n`;
   const disclaimer = isDelivery ? "" : `\n──────────────────────\n⚠️ *සැලකිය යුතුයි:*\n• ඉහත සඳහන් මිල ගමන් වාරය සඳහා පමණි.\n• අධිවේගී මාර්ග (Expressway) භාවිතා කරන්නේ නම්, ටිකට්පත් ගාස්තු මගියා විසින් දැරිය යුතුය.\n• පැය 1කට වඩා රැඳී සිටින්නේ නම්, දෙවන පැයේ සිට අමතර පොරොත්තු ගාස්තු (Waiting Charges) අය කෙරේ.\n_(Booking එක Confirm කිරීමෙන් ඔබ ඉහත කොන්දේසි වලට එකඟ වේ)_`;
-  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "දෙපැත්තම (Round Trip)" : "එක් පැත්තක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
+  return `📋 *වෙන්කිරීමේ විස්තරය (Booking Summary)*\n━━━━━━━━━━━━━━━━━━━━\n${timingHeader}👤 *නම:* ${data.customer_name}\n📱 *දුරකථන:* ${data.customer_phone}\n🚗 *වාහනය:* ${vehicleText}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickup}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoff}\n${isDelivery ? `📦 *භාණ්ඩ:* ${data.delivery_items}\n` : `🔄 *ගමන් වර්ගය:* ${data.trip_type === "round_trip" ? "යාමට සහ ඒමට (Round Trip)" : "යාමට පමණක් (One-Way)"}\n`}🛣️ *දුර:* ${data.distance_text}\n💰 *ගාස්තුව:* LKR ${Number(data.total_fare || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}${disclaimer}\n━━━━━━━━━━━━━━━━━━━━`;
 }
 
 export function getBookingSuccessMessage(orderCode: string, lang: SupportedLanguage, category: string = ""): string {

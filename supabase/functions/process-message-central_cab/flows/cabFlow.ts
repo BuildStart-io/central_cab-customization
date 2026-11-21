@@ -468,7 +468,11 @@ export async function handleCabFlowStep(
         lower.startsWith("1 ") ||
         lower.includes("one-way") ||
         lower.includes("one way") ||
-        lower.includes("single")
+        lower.includes("single") ||
+        lower.includes("යාමට පමණ") ||
+        lower.includes("පමණක්") ||
+        lower.includes("පමණයි") ||
+        lower.includes("එක් පැත්ත")
       ) {
         tripType = "one_way";
       } else if (
@@ -477,7 +481,10 @@ export async function handleCabFlowStep(
         lower.startsWith("2 ") ||
         lower.includes("round") ||
         lower.includes("up & down") ||
-        lower.includes("two")
+        lower.includes("two") ||
+        lower.includes("යාමට සහ ඒමට") ||
+        lower.includes("ඒමට") ||
+        lower.includes("දෙපැත්ත")
       ) {
         tripType = "round_trip";
       }
