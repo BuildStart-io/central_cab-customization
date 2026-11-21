@@ -117,7 +117,7 @@ export async function runAllAutomatedTests(
     const siGuide = getDropoffHelpGuide("si");
     record("3.7 Sinhala Help Guide has 5-step tutorial", siGuide.includes("1️⃣") && siGuide.includes("Copy") && siGuide.includes("Paste"));
 
-    // 3.8 Selecting vehicle prompts CAB_PICKUP with pickup guide media URL
+    // 3.8 Selecting vehicle prompts CAB_DISTRICT_VILLAGE, and providing district prompts CAB_PICKUP with guide
     const vehicleSelectSession: BotSessionState = {
       phone_number: testPhone,
       user_id: userId,
@@ -130,7 +130,7 @@ export async function runAllAutomatedTests(
         customer_phone: "0771234567",
       },
     };
-    const vehiclePickupGuideRes = await processCustomerChatStep(
+    const vehicleDistrictRes = await processCustomerChatStep(
       supabase,
       supabaseUrl,
       supabaseServiceKey,
@@ -143,7 +143,30 @@ export async function runAllAutomatedTests(
       defaultPricing,
       defaultSystemSettings
     );
-    record("3.8 Vehicle selection to CAB_PICKUP includes pickup guide mediaUrl", vehiclePickupGuideRes.nextStep === "CAB_PICKUP" && vehiclePickupGuideRes.mediaUrl === "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg", vehiclePickupGuideRes.mediaUrl);
+    const districtPickupGuideRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "Colombo, Wellawatte",
+      "text",
+      {},
+      {
+        ...vehicleSelectSession,
+        current_step: vehicleDistrictRes.nextStep as any,
+        session_data: vehicleDistrictRes.sessionData || vehicleSelectSession.session_data,
+      },
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "3.8 Vehicle selection to CAB_DISTRICT_VILLAGE and CAB_PICKUP includes pickup guide mediaUrl",
+      vehicleDistrictRes.nextStep === "CAB_DISTRICT_VILLAGE" &&
+      districtPickupGuideRes.nextStep === "CAB_PICKUP" &&
+      districtPickupGuideRes.mediaUrl === "https://central-cab-customization.vercel.app/guides/pickup_guide.jpg",
+      `Step 1: ${vehicleDistrictRes.nextStep}, Step 2: ${districtPickupGuideRes.nextStep}, media: ${districtPickupGuideRes.mediaUrl}`
+    );
 
     // 3.9 Selecting Reset / Main Menu poll option from CAB_VEHICLE returns LANGUAGE_CHOICE
     const menuResetRes = await processCustomerChatStep(
@@ -625,7 +648,7 @@ export async function runAllAutomatedTests(
       defaultSystemSettings
     );
 
-    record("9.6 Selecting model transitions to CAB_PICKUP", modelSelectRes.nextStep === "CAB_PICKUP");
+    record("9.6 Selecting model transitions to CAB_DISTRICT_VILLAGE", modelSelectRes.nextStep === "CAB_DISTRICT_VILLAGE");
     record("9.7 Model name stored in session data", modelSelectRes.sessionData?.vehicle_model?.name === "Sedan");
 
     // ------------------------------------------------------------------------
