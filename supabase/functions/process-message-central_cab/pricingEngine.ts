@@ -498,7 +498,7 @@ export async function expandShortUrl(url: string): Promise<{ finalUrl: string; r
  * Geocode a Sri Lanka town or place name using local registry and OpenStreetMap Nominatim.
  */
 export async function geocodeSriLankaPlace(name: string): Promise<{ lat: number; lng: number } | null> {
-  if (!name) return null;
+  if (!name || name.includes("http://") || name.includes("https://")) return null;
   const clean = name.replace(/\+/g, " ").replace(/loc:/i, "").trim();
   if (!clean || clean.length < 2) return null;
 
@@ -509,25 +509,46 @@ export async function geocodeSriLankaPlace(name: string): Promise<{ lat: number;
     }
   }
 
-  // OpenStreetMap Nominatim with explicit Sri Lanka scope
-  try {
-    const q = textLower.includes("sri lanka") ? clean : `${clean}, Sri Lanka`;
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, {
-      headers: { "User-Agent": "CentralCabService/1.0" },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
-        const lat = parseFloat(data[0].lat);
-        const lng = parseFloat(data[0].lon);
-        if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
-          return { lat, lng };
-        }
+  // Generate candidate tokens: full name first, then individual segments (e.g. "Arawwala - Bokundara Rd, Pannipitiya" -> "Pannipitiya", "Arawwala", "Bokundara")
+  const rawSegments = clean
+    .split(/,|\n|-|\/|;|\|/)
+    .map((s) => s.replace(/\b(rd|road|street|lane|junction|mawatha|place|st)\b/gi, "").trim())
+    .filter((s) => s.length >= 3);
+
+  // Check candidate tokens against local SRI_LANKA_TOWNS dictionary first
+  for (const seg of rawSegments) {
+    const segLower = seg.toLowerCase();
+    for (const [town, coords] of Object.entries(SRI_LANKA_TOWNS)) {
+      if (segLower.includes(town) || town.includes(segLower)) {
+        console.log(`[geocodeSriLankaPlace] Matched token '${seg}' to '${town}'`);
+        return coords;
       }
     }
-  } catch (err) {
-    console.warn("Nominatim lookup notice:", (err as Error).message);
+  }
+
+  // OpenStreetMap Nominatim with candidates: full name, then segments in reverse order (city/town usually at the end)
+  const candidates = [clean, ...[...rawSegments].reverse()];
+  for (const query of candidates) {
+    try {
+      const q = query.toLowerCase().includes("sri lanka") ? query : `${query}, Sri Lanka`;
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, {
+        headers: { "User-Agent": "CentralCabService/1.0" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0 && data[0].lat && data[0].lon) {
+          const lat = parseFloat(data[0].lat);
+          const lng = parseFloat(data[0].lon);
+          if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
+            console.log(`[geocodeSriLankaPlace] Nominatim matched '${query}': ${lat}, ${lng}`);
+            return { lat, lng };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Nominatim lookup notice:", (err as Error).message);
+    }
   }
 
   return null;
@@ -677,7 +698,7 @@ export async function extractCoordinatesFromTextOrUrl(
           }
         }
 
-        // If URL parsing didn't find coordinates, fetch HTML of finalUrl and inspect !3d!4d coordinates
+        // If URL parsing didn't find coordinates, fetch HTML of finalUrl and inspect metadata & staticmap
         try {
           const res = await fetch(finalUrl, {
             headers: {
@@ -688,7 +709,19 @@ export async function extractCoordinatesFromTextOrUrl(
           });
           const html = await res.text();
 
-          // Extract all !3d<lat>!4d<lng> coordinates
+          // A. Staticmap center metadata extraction (Google Maps meta content & staticmap tags)
+          // e.g. center=6.9009408%2C79.8949376 or center=6.9009408,79.8949376
+          const staticMapMatch = html.match(/staticmap\?[^"']*center=([+-]?\d+\.?\d*)(?:%2C|,)([+-]?\d+\.?\d*)/i);
+          if (staticMapMatch) {
+            const lat = parseFloat(staticMapMatch[1]);
+            const lng = parseFloat(staticMapMatch[2]);
+            if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
+              console.log(`[Google Maps HTML Parser] Extracted coordinates from staticmap metadata: ${lat}, ${lng}`);
+              return { lat, lng };
+            }
+          }
+
+          // B. Extract all !3d<lat>!4d<lng> coordinates
           const dMatches = [...html.matchAll(/!3d([+-]?\d+\.?\d*)!4d([+-]?\d+\.?\d*)/g)];
           const validCoords: { lat: number; lng: number }[] = [];
           for (const m of dMatches) {
@@ -705,7 +738,20 @@ export async function extractCoordinatesFromTextOrUrl(
             return selected;
           }
 
-          // Check if there is a meta or title with place name
+          // C. Meta tag og:image or twitter:image for staticmap center
+          const ogImgMatch = html.match(/content=["'](https?:\/\/[^"']*staticmap[^"']*)["']/i);
+          if (ogImgMatch) {
+            const ogCoordM = ogImgMatch[1].match(/center=([+-]?\d+\.?\d*)(?:%2C|,)([+-]?\d+\.?\d*)/i);
+            if (ogCoordM) {
+              const lat = parseFloat(ogCoordM[1]);
+              const lng = parseFloat(ogCoordM[2]);
+              if (isValidLatLng(lat, lng) && isSriLankaCoords(lat, lng)) {
+                return { lat, lng };
+              }
+            }
+          }
+
+          // D. Check if there is a meta or title with place name
           const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
           if (titleMatch && !titleMatch[1].trim().toLowerCase().startsWith("google maps")) {
             const cleanTitle = titleMatch[1].replace(/- Google Maps/i, "").trim();
@@ -739,8 +785,12 @@ export async function resolveLocationCoords(
     return parsedCoords;
   }
 
-  // 2. Geocode as place or town name
-  return await geocodeSriLankaPlace(input.text);
+  // 2. Geocode as place or town name (ONLY if text is a plain place name, NOT a URL)
+  if (!input.text.includes("http://") && !input.text.includes("https://")) {
+    return await geocodeSriLankaPlace(input.text);
+  }
+
+  return null;
 }
 
 function calculateHaversineDistance(
@@ -814,7 +864,7 @@ export async function getRoutingDistance(
     if (originCoords && destCoords) {
       // 2. Primary Engine: OSRM Route API
       const osrmResult = await getOSRMRouteDistance(originCoords, destCoords);
-      if (osrmResult) {
+      if (osrmResult && osrmResult.distanceKm > 0) {
         console.log(`[OSRM Primary Engine] Road distance: ${osrmResult.distanceKm} km`);
         return {
           distanceKm: osrmResult.distanceKm,
@@ -834,8 +884,9 @@ export async function getRoutingDistance(
     console.warn("Distance calculation notice:", err);
   }
 
-  // 4. Fallback Estimation if geocoding completely fails
-  return { distanceKm: 8, distanceText: "8.0 km (Estimated)" };
+  // 4. Geocoding completely failed: return null to prevent fake / undercharged bookings
+  console.warn("[getRoutingDistance] Unable to resolve valid coordinates for pickup or dropoff. Returning null.");
+  return null;
 }
 
 // Backward-compatible alias for existing imports

@@ -698,7 +698,7 @@ export async function runAllAutomatedTests(
     const pickupInput = { text: "Batticaloa", coords: { lat: 7.7305, lng: 81.6804 } };
     const dropoffInput = { text: userShortUrl, coords: resolvedDropoff || undefined };
     const routeDist = await getRoutingDistance(pickupInput, dropoffInput);
-    record("11.5 Route distance between Batticaloa and Maho Junction is realistic (~216 km)", routeDist.distanceKm >= 200 && routeDist.distanceKm <= 240, `Distance: ${routeDist.distanceKm} km`);
+    record("11.5 Route distance between Batticaloa and Maho Junction is realistic (~216 km)", routeDist != null && routeDist.distanceKm >= 200 && routeDist.distanceKm <= 240, `Distance: ${routeDist?.distanceKm} km`);
 
     // ------------------------------------------------------------------------
     // TEST 12: FARE CALCULATION ACROSS ALL VEHICLE CATEGORIES & VARIATIONS

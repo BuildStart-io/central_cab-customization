@@ -156,8 +156,8 @@ export async function dispatchConfirmedDeliveryOrder(
 
   const vehicleKey = targetOrder.vehicle_key || targetOrder.custom_fields?.raw_data?.vehicle_key || "motorbike";
   const fareResult = calculateDeliveryFare(
-    distanceInfo.distanceKm,
-    distanceInfo.distanceText,
+    distanceInfo?.distanceKm || 0,
+    distanceInfo?.distanceText || "0 km",
     vehicleKey,
     activePricing
   );

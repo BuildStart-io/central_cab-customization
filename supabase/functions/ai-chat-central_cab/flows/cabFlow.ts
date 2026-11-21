@@ -511,10 +511,23 @@ export async function handleCabFlowStep(
           }
         }
         const distResult = await getGoogleMapsDistance(pickupLoc, dropoffLoc);
-        distanceKm = distResult.distanceKm;
-        distanceText = distResult.distanceText;
+        if (distResult && distResult.distanceKm > 0) {
+          distanceKm = distResult.distanceKm;
+          distanceText = distResult.distanceText;
+        } else {
+          // Distance calculation could not resolve valid coordinates: prevent fake bookings
+          console.warn(`[cabFlow] Distance calculation failed between pickup and dropoff for ${phoneNumber}`);
+          return {
+            replyText: lang === "en"
+              ? `⚠️ *Unable to calculate trip distance.*\n\nWe could not detect the exact map point of your destination link. Please share a valid *Google Maps Link* or your live *WhatsApp Location Pin* for your drop-off:`
+              : `⚠️ *ගමන් දුර ප්‍රමාණය ගණනය කිරීමට නොහැකි විය.*\n\nඔබ එවූ Link එකෙන් නිශ්චිත සිතියම් ලක්ෂ්‍යය (Location Point) හඳුනා ගැනීමට නොහැකි විය. කරුණාකර ඔබගේ ගමනාන්තයේ (Drop-off) වලංගු *Google Maps Link* එකක් හෝ සජීවී *WhatsApp Location Pin* එකක් නැවත එවන්න:`,
+            nextFlow: "CAB_FLOW",
+            nextStep: "CAB_DROPOFF",
+            sessionData: data,
+          };
+        }
       } catch (err) {
-        console.warn("Distance Matrix calculation fallback:", err);
+        console.warn("Distance Matrix calculation notice:", err);
       }
 
       // Calculate Fare
