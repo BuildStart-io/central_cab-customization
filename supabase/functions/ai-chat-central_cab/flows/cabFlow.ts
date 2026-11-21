@@ -570,6 +570,59 @@ export async function handleCabFlowStep(
     }
 
     case "CAB_CONFIRM": {
+      // 1. Check if user tapped a trip type poll option at confirmation step (e.g. changed mind or async vote)
+      const lowerInput = trimmed.toLowerCase();
+      const isOneWayChoice =
+        lowerInput.includes("one-way") ||
+        lowerInput.includes("one way") ||
+        lowerInput.includes("එක් පැත්ත") ||
+        lowerInput.includes("යාමට පමණක්") ||
+        (trimmed === "1" && data.trip_type === "round_trip" && !isAffirmativeInput(trimmed));
+      const isRoundTripChoice =
+        lowerInput.includes("round trip") ||
+        lowerInput.includes("up & down") ||
+        lowerInput.includes("දෙපැත්ත") ||
+        lowerInput.includes("යාමට සහ ඒමට") ||
+        (trimmed === "2" && data.trip_type === "one_way" && !isNegativeInput(trimmed));
+
+      if (isOneWayChoice || isRoundTripChoice) {
+        const newTripType = isOneWayChoice ? "one_way" : "round_trip";
+        console.log(`[CAB_CONFIRM] Trip type selection at confirmation: current=${data.trip_type}, requested=${newTripType} for ${phoneNumber}`);
+
+        if (data.trip_type !== newTripType) {
+          data.trip_type = newTripType;
+
+          // Recalculate Fare with new trip type
+          const fareResult: FareCalculationResult = calculateFare(
+            data.distance_km || 10,
+            data.distance_text || "10.0 km",
+            data.vehicle_key || "car",
+            newTripType,
+            pricingSettings,
+            data.vehicle_model
+          );
+
+          data.distance_km = fareResult.distanceKm;
+          data.distance_text = fareResult.distanceText;
+          data.base_price = fareResult.basePrice;
+          data.per_km_rate = fareResult.perKmRate;
+          data.coverage_km = fareResult.coverageKm;
+          data.gross_fare = fareResult.grossFare;
+          data.discount_amount = fareResult.discountAmount;
+          data.total_fare = fareResult.totalFare;
+        }
+
+        const summary = getBookingSummaryCard(data, lang, false);
+        return {
+          replyText: summary,
+          poll: getBookingConfirmPoll(lang),
+          sendTextWithPoll: true,
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_CONFIRM",
+          sessionData: data,
+        };
+      }
+
       if (isAffirmativeInput(trimmed)) {
         if (data.order_code) {
           console.warn(`[CAB_CONFIRM] Order ${data.order_code} already created for this session, returning existing confirmation.`);

@@ -14,6 +14,7 @@ import {
   getCancellationSuccessMessage,
 } from "../i18n.ts";
 import { StepProcessResult } from "./types.ts";
+import { runInBackground } from "./cabFlow.ts";
 
 export async function handleCancelFlowStep(
   supabase: any,
@@ -35,20 +36,36 @@ export async function handleCancelFlowStep(
       const serviceType = sessionData?.service_type || "Booking";
 
       if (orderCode) {
+        // 1. Immediately update orders table in DB
         await supabase
           .schema("central_cab")
           .from("orders")
-          .update({ status: "cancelled" })
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
           .eq("order_code", orderCode);
 
-        await broadcastCancellation(
-          supabaseUrl,
-          supabaseServiceKey,
-          sessionApiKey,
-          orderCode,
-          serviceType,
-          phoneNumber,
-          systemSettings
+        // 2. Cancel pending broadcast queue items immediately so driver groups don't receive them
+        try {
+          await supabase
+            .schema("central_cab")
+            .from("order_broadcast_queue")
+            .update({ status: "cancelled", updated_at: new Date().toISOString() })
+            .eq("order_code", orderCode)
+            .eq("status", "pending");
+        } catch (qErr) {
+          console.warn(`[handleCancelFlowStep] Error cancelling broadcast queue for ${orderCode}:`, qErr);
+        }
+
+        // 3. Forward cancellation alert to admin & driver groups in background (non-blocking)
+        runInBackground(
+          broadcastCancellation(
+            supabaseUrl,
+            supabaseServiceKey,
+            sessionApiKey,
+            orderCode,
+            serviceType,
+            phoneNumber,
+            systemSettings
+          )
         );
       }
 
@@ -179,73 +196,85 @@ export async function broadcastCancellation(
   phoneNumber: string,
   systemSettings: CabSystemSettings
 ) {
-  const adminCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n📱 *Customer:* ${phoneNumber}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
-  const groupCancelText = `🚫 *ඇණවුම අවලංගු කරන ලදී (Order Cancelled)*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order Code:* ${orderCode}\n📁 *සේවාව:* ${serviceType}\n━━━━━━━━━━━━━━━━━━━━\nමෙම වෙන්කිරීම පාරිභෝගිකයා විසින් අවලංගු කර ඇති බැවින් තවදුරටත් වලංගු නොවේ.`;
+  try {
+    const adminCancelText = `🚫 *ORDER CANCELLED BY CUSTOMER*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order ID:* ${orderCode}\n📁 *Service:* ${serviceType}\n📱 *Customer:* ${phoneNumber}\n━━━━━━━━━━━━━━━━━━━━\nThis booking has been cancelled and is no longer available.`;
+    const groupCancelText = `🚫 *ඇණවුම අවලංගු කරන ලදී (Order Cancelled)*\n━━━━━━━━━━━━━━━━━━━━\n🆔 *Order Code:* ${orderCode}\n📁 *සේවාව:* ${serviceType}\n━━━━━━━━━━━━━━━━━━━━\nමෙම වෙන්කිරීම පාරිභෝගිකයා විසින් අවලංගු කර ඇති බැවින් තවදුරටත් වලංගු නොවේ.`;
 
-  const adminRecipients = new Set<string>();
-  if (systemSettings?.admin_whatsapp_number) {
-    adminRecipients.add(systemSettings.admin_whatsapp_number.trim());
-  }
-  const sType = (serviceType || "").toLowerCase();
-  if (sType.includes("rent") && systemSettings?.rent_admin_number) {
-    adminRecipients.add(systemSettings.rent_admin_number.trim());
-  } else if (sType.includes("delivery") && systemSettings?.delivery_admin_number) {
-    adminRecipients.add(systemSettings.delivery_admin_number.trim());
-  } else if (!sType.includes("rent") && !sType.includes("delivery") && systemSettings?.hire_admin_number) {
-    adminRecipients.add(systemSettings.hire_admin_number.trim());
-  }
-
-  for (const adminPhone of adminRecipients) {
-    if (adminPhone) {
-      fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${supabaseServiceKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: adminPhone,
-          message: adminCancelText,
-          sessionApiKey,
-        }),
-      }).catch(err => console.error(`Admin cancel alert failed for ${adminPhone}:`, err));
+    const adminRecipients = new Set<string>();
+    if (systemSettings?.admin_whatsapp_number) {
+      adminRecipients.add(systemSettings.admin_whatsapp_number.trim());
     }
-  }
-
-  let driverGroups: any[] = [];
-  if (sType.includes("delivery")) {
-    const deliveryDriverGroups = systemSettings?.delivery_driver_groups || [];
-    const deliveryRiderGroups = systemSettings?.delivery_rider_groups || [];
-    driverGroups = [...deliveryDriverGroups, ...deliveryRiderGroups];
-    if (driverGroups.length === 0) {
-      driverGroups = systemSettings?.target_driver_groups || [];
+    const sType = (serviceType || "").toLowerCase();
+    if (sType.includes("rent") && systemSettings?.rent_admin_number) {
+      adminRecipients.add(systemSettings.rent_admin_number.trim());
+    } else if (sType.includes("delivery") && systemSettings?.delivery_admin_number) {
+      adminRecipients.add(systemSettings.delivery_admin_number.trim());
+    } else if (!sType.includes("rent") && !sType.includes("delivery") && systemSettings?.hire_admin_number) {
+      adminRecipients.add(systemSettings.hire_admin_number.trim());
     }
-  } else if (sType.includes("rent")) {
-    driverGroups = systemSettings?.rent_a_car_groups?.length
-      ? systemSettings.rent_a_car_groups
-      : systemSettings?.target_driver_groups || [];
-  } else {
-    driverGroups = systemSettings?.hire_driver_groups?.length
-      ? systemSettings.hire_driver_groups
-      : systemSettings?.target_driver_groups || [];
-  }
 
-  for (const group of driverGroups) {
-    const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
-    if (targetChatId) {
-      console.log(`[broadcastCancellation] Forwarding cancellation to group: ${group.name} (${targetChatId})`);
-      fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${supabaseServiceKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: targetChatId,
-          message: groupCancelText,
-          sessionApiKey,
-        }),
-      }).catch(err => console.error(`Group cancel alert ${group.name} (${targetChatId}) failed:`, err));
+    const adminPromises: Promise<any>[] = [];
+    for (const adminPhone of adminRecipients) {
+      if (adminPhone) {
+        adminPromises.push(
+          fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: adminPhone,
+              message: adminCancelText,
+              sessionApiKey,
+            }),
+          }).catch(err => console.error(`Admin cancel alert failed for ${adminPhone}:`, err))
+        );
+      }
     }
+    await Promise.allSettled(adminPromises);
+
+    let driverGroups: any[] = [];
+    if (sType.includes("delivery")) {
+      const deliveryDriverGroups = systemSettings?.delivery_driver_groups || [];
+      const deliveryRiderGroups = systemSettings?.delivery_rider_groups || [];
+      driverGroups = [...deliveryDriverGroups, ...deliveryRiderGroups];
+      if (driverGroups.length === 0) {
+        driverGroups = systemSettings?.target_driver_groups || [];
+      }
+    } else if (sType.includes("rent")) {
+      driverGroups = systemSettings?.rent_a_car_groups?.length
+        ? systemSettings.rent_a_car_groups
+        : systemSettings?.target_driver_groups || [];
+    } else {
+      driverGroups = systemSettings?.hire_driver_groups?.length
+        ? systemSettings.hire_driver_groups
+        : systemSettings?.target_driver_groups || [];
+    }
+
+    const groupPromises: Promise<any>[] = [];
+    for (const group of driverGroups) {
+      const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
+      if (targetChatId) {
+        console.log(`[broadcastCancellation] Forwarding cancellation to group: ${group.name} (${targetChatId})`);
+        groupPromises.push(
+          fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: targetChatId,
+              message: groupCancelText,
+              sessionApiKey,
+            }),
+          }).catch(err => console.error(`Group cancel alert ${group.name} (${targetChatId}) failed:`, err))
+        );
+      }
+    }
+    await Promise.allSettled(groupPromises);
+  } catch (err) {
+    console.error("[broadcastCancellation] Unexpected error:", err);
   }
 }

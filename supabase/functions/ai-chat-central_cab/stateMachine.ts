@@ -14,6 +14,7 @@ import {
   detectDeliveryVehicle,
   isAffirmativeInput,
   isNegativeInput,
+  isCancelCommand,
   isHomeOrResetInput,
   isResetChoice,
   isHelpChoice,
@@ -74,10 +75,34 @@ function isExpectedStepAnswer(
     } else if (step === "CAB_TRIP_TYPE") {
       if (lower.includes("one-way") || lower.includes("one way") || lower.includes("round") || lower.includes("single")) return true;
     } else if (step === "CAB_CONFIRM") {
-      if (isAffirmativeInput(trimmed) || isNegativeInput(trimmed)) return true;
+      if (
+        isAffirmativeInput(trimmed) ||
+        isNegativeInput(trimmed) ||
+        lower.includes("one-way") ||
+        lower.includes("one way") ||
+        lower.includes("round") ||
+        lower.includes("up & down") ||
+        lower.includes("පැත්ත")
+      ) {
+        return true;
+      }
     } else if (step === "CAB_PHONE") {
       const digits = trimmed.replace(/\D/g, "");
       if (digits.length >= 7) return true;
+    }
+  } else if (flow === "CANCEL_FLOW") {
+    if (step === "CANCEL_CONFIRM") {
+      if (
+        isAffirmativeInput(trimmed) ||
+        isNegativeInput(trimmed) ||
+        lower.includes("cancel") ||
+        lower.includes("keep") ||
+        lower.includes("අවලංගු") ||
+        lower.includes("එපා") ||
+        lower.includes("අත්හැර")
+      ) {
+        return true;
+      }
     }
   } else if (flow === "RENT_A_CAR_FLOW") {
     if (step === "RENT_VEHICLE_CHOICE") {
@@ -245,7 +270,7 @@ export async function processCustomerChatStep(
   // =========================================================================
   // 2. GLOBAL CANCEL ORDER INTERCEPTION
   // =========================================================================
-  const isDirectCancelCommand = lower === "cancel" || lower === "cancel order" || lower === "අවලංගු";
+  const isDirectCancelCommand = isCancelCommand(trimmed);
   const isConfirmationStep =
     (session.current_step || "WELCOME") === "CANCEL_CONFIRM" ||
     (session.current_step || "WELCOME") === "CAB_CONFIRM" ||
@@ -576,6 +601,9 @@ export async function processCustomerChatStep(
   }
 
   if (step === "CATEGORY_CHOICE" || (flow === "IDLE" && step !== "LANGUAGE_CHOICE" && step !== "WELCOME")) {
+    if (isDirectCancelCommand) {
+      return await startCancelFlow(supabase, userId, phoneNumber, step, lang, welcomeSetting);
+    }
     const cat = detectServiceCategory(trimmed);
 
     // 1. Ride Now: immediately enter CAB_FLOW and ask Name directly

@@ -88,44 +88,91 @@ export function isResetChoice(input: string): boolean {
 
 export function detectServiceCategory(input: string): ServiceCategory | null {
   const text = (input || "").trim().toLowerCase();
+  if (!text) return null;
+
+  // Never match cancellation commands as service categories!
+  if (
+    text === "cancel" ||
+    text.startsWith("cancel") ||
+    text.includes("cancel booking") ||
+    text.includes("cancel order") ||
+    text.includes("අවලංගු") ||
+    text.includes("keep order") ||
+    text.includes("keep booking") ||
+    text.includes("cancel - cancel") ||
+    text.includes("cancel - අවලංගු")
+  ) {
+    return null;
+  }
 
   // 1. Short Trip / Ride Now (Immediate)
+  const isExcludedFromRideNow =
+    text.includes("one-way") ||
+    text.includes("one way") ||
+    text.includes("round") ||
+    text.includes("car") ||
+    text.includes("van") ||
+    text.includes("bike") ||
+    text.includes("direct link") ||
+    text.includes("දන්නවා") ||
+    text.includes("sinhala") ||
+    text.includes("සිංහල") ||
+    text.includes("yes") ||
+    text.includes("confirm");
+
   if (
-    text === "1" ||
-    text.startsWith("1.") ||
-    text.startsWith("1 ") ||
-    text.includes("ride now") ||
-    text.includes("now ride") ||
-    text.includes("short trip") ||
-    text.includes("short") ||
-    text.includes("ලග") ||
-    text.includes("ලඟ") ||
-    text.includes("laga") ||
-    text.includes("දැන්ම") ||
-    text.includes("danma") ||
-    text.includes("damma")
+    !isExcludedFromRideNow &&
+    (
+      text === "1" ||
+      text === "1." ||
+      text.includes("ride now") ||
+      text.includes("now ride") ||
+      text.includes("short trip") ||
+      text.includes("short") ||
+      text.includes("ලග") ||
+      text.includes("ලඟ") ||
+      text.includes("laga") ||
+      text.includes("දැන්ම") ||
+      text.includes("danma") ||
+      text.includes("damma")
+    )
   ) {
     return "ride_now";
   }
 
   // 2. Long Trip / Schedule Ride (Advance reservation)
+  const isExcludedFromRideSchedule =
+    text.includes("cancel") ||
+    text.includes("අවලංගු") ||
+    text.includes("round trip") ||
+    text.includes("up & down") ||
+    text.includes("දෙපැත්ත") ||
+    text.includes("van") ||
+    text.includes("bike") ||
+    text.includes("sedan") ||
+    text.includes("guide") ||
+    text.includes("දන්නේ නෑ") ||
+    text.includes("english");
+
   if (
-    text === "2" ||
-    text.startsWith("2.") ||
-    text.startsWith("2 ") ||
-    text.includes("schedule ride") ||
-    text.includes("schedule") ||
-    text.includes("long trip") ||
-    text.includes("long distance") ||
-    text.includes("long") ||
-    text.includes("දුර") ||
-    text.includes("dura") ||
-    text.includes("outstation") ||
-    text.includes("reserve") ||
-    text.includes("පසුවට") ||
-    text.includes("passe") ||
-    text.includes("pasuwata") ||
-    text.includes("later")
+    !isExcludedFromRideSchedule &&
+    (
+      text === "2" ||
+      text === "2." ||
+      text.includes("schedule ride") ||
+      text.includes("schedule") ||
+      text.includes("long trip") ||
+      text.includes("long distance") ||
+      text.includes("long") ||
+      text.includes("දුර") ||
+      text.includes("dura") ||
+      text.includes("outstation") ||
+      text.includes("reserve") ||
+      text.includes("පසුවට") ||
+      text.includes("passe") ||
+      text.includes("pasuwata") ||
+      text.includes("later")
+    )
   ) {
     return "ride_schedule";
   }
@@ -193,22 +240,62 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
  */
 export function isAffirmativeInput(text: string): boolean {
   const l = (text || "").toLowerCase().trim();
+  if (!l) return false;
+
+  // Reject selections from other polls that happen to be option 1
+  if (
+    l.includes("one-way") ||
+    l.includes("one way") ||
+    l.includes("round trip") ||
+    l.includes("up & down") ||
+    l.includes("එක් පැත්ත") ||
+    l.includes("දෙපැත්ත") ||
+    l.includes("යාමට පමණක්") ||
+    l.includes("යාමට සහ ඒමට") ||
+    l.includes("car") ||
+    l.includes("van") ||
+    l.includes("bike") ||
+    l.includes("kdh") ||
+    l.includes("prius") ||
+    l.includes("help") ||
+    l.includes("faq") ||
+    l.includes("support") ||
+    l.includes("සහාය") ||
+    l.includes("short trip") ||
+    l.includes("ride now") ||
+    l.includes("schedule ride") ||
+    l.includes("direct link") ||
+    l.includes("දන්නවා") ||
+    l.includes("sinhala") ||
+    l.includes("සිංහල")
+  ) {
+    return false;
+  }
+
   if (
     l === "yes" ||
     l === "y" ||
-    l.startsWith("yes") ||
-    l === "confirm" ||
-    l.startsWith("confirm") ||
     l === "1" ||
-    l.startsWith("1.") ||
-    l.startsWith("1 ") ||
+    l === "1." ||
     l === "ow" ||
     l === "ඔව්" ||
     l === "ok" ||
     l === "done" ||
+    l === "confirm" ||
+    l.startsWith("yes") ||
+    l.startsWith("confirm") ||
+    l.startsWith("තහවුරු") ||
     l.includes("confirm booking") ||
     l.includes("yes, confirm") ||
-    l.includes("yes confirm")
+    l.includes("yes confirm") ||
+    l.includes("yes - confirm") ||
+    l.includes("yes - booking") ||
+    l.includes("yes, cancel order") ||
+    l.includes("yes cancel") ||
+    l.includes("yes, cancel") ||
+    l.includes("booking එක confirm කරන්න") ||
+    ((l.startsWith("1.") || l.startsWith("1 ") || l.startsWith("1)") || l.startsWith("1-")) &&
+      (l.includes("yes") || l.includes("confirm") || l.includes("තහවුරු") || l.includes("ඔව්") || l.includes("ow") || l.includes("ok")))
   ) {
     return true;
   }
@@ -220,27 +307,73 @@ export function isAffirmativeInput(text: string): boolean {
  */
 export function isNegativeInput(text: string): boolean {
   const l = (text || "").toLowerCase().trim();
+  if (!l) return false;
+
+  // Reject non-negative selections from other polls that happen to be option 2
+  if (
+    l.includes("round trip") ||
+    l.includes("up & down") ||
+    l.includes("දෙපැත්ත") ||
+    l.includes("යාමට සහ ඒමට") ||
+    l.includes("english") ||
+    l.includes("van") ||
+    l.includes("sedan") ||
+    l.includes("schedule ride") ||
+    l.includes("long trip") ||
+    l.includes("guide") ||
+    l.includes("දන්නේ නෑ")
+  ) {
+    return false;
+  }
+
   if (
     l === "no" ||
     l === "n" ||
-    l.startsWith("no") ||
     l === "2" ||
-    l.startsWith("2.") ||
-    l.startsWith("2 ") ||
-    l.includes("keep order") ||
-    l.includes("keep") ||
-    l === "cancel" ||
-    l.startsWith("cancel") ||
-    l.includes("cancel booking") ||
-    l.includes("no, cancel") ||
-    l.includes("no cancel") ||
+    l === "2." ||
     l === "epa" ||
     l === "ne" ||
-    l === "නැත"
+    l === "නැත" ||
+    l === "cancel" ||
+    l.startsWith("no") ||
+    l.startsWith("cancel") ||
+    l.includes("cancel booking") ||
+    l.includes("cancel order") ||
+    l.includes("no, cancel") ||
+    l.includes("no cancel") ||
+    l.includes("keep order") ||
+    l.includes("keep booking") ||
+    l.includes("අත්හැර") ||
+    l.includes("අවලංගු") ||
+    l.includes("එපා") ||
+    ((l.startsWith("2.") || l.startsWith("2 ") || l.startsWith("2)") || l.startsWith("2-")) &&
+      (l.includes("cancel") || l.includes("no") || l.includes("අවලංගු") || l.includes("keep") || l.includes("නැත") || l.includes("එපා")))
   ) {
     return true;
   }
   return false;
+}
+
+/**
+ * Direct cancel command checks across Sinhala, English
+ */
+export function isCancelCommand(text: string): boolean {
+  const l = (text || "").toLowerCase().trim();
+  if (!l) return false;
+  return (
+    l === "cancel" ||
+    l === "cancel order" ||
+    l === "cancel booking" ||
+    l === "අවලංගු" ||
+    l === "අවලංගු කරන්න" ||
+    l.includes("cancel booking") ||
+    l.includes("cancel order") ||
+    l.includes("booking එක අවලංගු කරන්න") ||
+    l.includes("cancel - cancel booking") ||
+    l.includes("cancel - අවලංගු") ||
+    l.includes("❌ cancel") ||
+    l.includes("cancel ❌")
+  );
 }
 
 /**

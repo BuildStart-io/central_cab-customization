@@ -108,6 +108,29 @@ serve(async (req: Request) => {
       continue;
     }
 
+    // Verify that the underlying order has not been cancelled
+    try {
+      const { data: orderRow } = await supabase
+        .from("orders")
+        .select("status")
+        .eq("order_code", item.order_code)
+        .maybeSingle();
+
+      if (orderRow && orderRow.status === "cancelled") {
+        console.log(`[send-broadcast-central_cab] Skipping broadcast for cancelled order ${item.order_code}`);
+        await supabase
+          .from("order_broadcast_queue")
+          .update({
+            status: "cancelled",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id);
+        continue;
+      }
+    } catch (checkErr) {
+      console.warn(`[send-broadcast-central_cab] Error checking order status for ${item.order_code}:`, checkErr);
+    }
+
     if (i > 0 && delaySec > 0) {
       await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
     }
