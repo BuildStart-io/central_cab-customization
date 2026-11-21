@@ -233,13 +233,36 @@ async function handleSingleMessage(
       .eq("phone_number", phoneNumber)
       .maybeSingle();
 
-    const currentSession: BotSessionState = sessionRecord || {
+    let currentSession: BotSessionState = sessionRecord || {
       phone_number: phoneNumber,
       user_id: userId,
       flow_type: "IDLE",
       current_step: "WELCOME",
       session_data: {},
     };
+
+    // Stale session guard (inactive > 3 hours resets in-progress booking to WELCOME, preserving language)
+    if (sessionRecord) {
+      const lastActive = sessionRecord.last_interaction || sessionRecord.updated_at;
+      if (lastActive) {
+        const lastActiveTime = new Date(lastActive).getTime();
+        const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+        const isStale = (Date.now() - lastActiveTime) > THREE_HOURS_MS;
+        const isCompletedOrIdle = sessionRecord.flow_type === "IDLE" && (sessionRecord.current_step === "WELCOME" || sessionRecord.current_step === "BOOKING_COMPLETED");
+        if (isStale && !isCompletedOrIdle) {
+          console.log(`[${corrId}] Stale session detected for ${phoneNumber} (inactive for ${Math.round((Date.now() - lastActiveTime) / 60000)} mins). Resetting to WELCOME.`);
+          currentSession = {
+            phone_number: phoneNumber,
+            user_id: userId,
+            flow_type: "IDLE",
+            current_step: "WELCOME",
+            session_data: {
+              language: sessionRecord.session_data?.language || "si",
+            },
+          };
+        }
+      }
+    }
 
     const stepResult = await processCustomerChatStep(
       supabase,
@@ -277,26 +300,35 @@ async function handleSingleMessage(
 
     // 4. Send outbound WhatsApp reply or poll if generated
     if (replyText || stepPoll || stepMediaUrl) {
+      let mediaSentOk = false;
       if (stepMediaUrl) {
         console.log(`[${corrId}] Outbound media to ${phoneNumber}: ${stepMediaUrl}`);
-        await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseServiceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            to: phoneNumber,
-            mediaUrl: stepMediaUrl,
-            message: replyText || undefined,
-            sessionApiKey,
-          }),
-        }).catch(err => console.error("Media send error:", err));
+        try {
+          const mediaRes = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-central_cab`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${supabaseServiceKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: phoneNumber,
+              mediaUrl: stepMediaUrl,
+              message: replyText || undefined,
+              sessionApiKey,
+            }),
+          });
+          if (mediaRes.ok) {
+            const mJson = await mediaRes.json().catch(() => ({}));
+            if (mJson.success) mediaSentOk = true;
+          }
+        } catch (err) {
+          console.error("Media send error:", err);
+        }
       }
 
       // Send text message if no poll, or if explicitly configured (e.g. welcome message before language poll)
       // If mediaUrl was already sent with replyText caption, do not duplicate text
-      const shouldSendText = replyText && replyText.trim() && !stepMediaUrl && (!stepPoll || stepResult.sendTextWithPoll);
+      const shouldSendText = replyText && replyText.trim() && (!mediaSentOk) && (!stepPoll || stepResult.sendTextWithPoll);
       if (shouldSendText) {
         console.log(`[${corrId}] Outbound reply to ${phoneNumber}: ${replyText.substring(0, 60)}`);
         

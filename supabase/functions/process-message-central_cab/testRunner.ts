@@ -34,6 +34,7 @@ import {
   extractShopPickupLocation,
   CabSystemSettings,
 } from "./adminHandler.ts";
+import { generateOrderCode } from "./flows/cabFlow.ts";
 
 export interface TestResultItem {
   name: string;
@@ -1322,6 +1323,43 @@ export async function runAllAutomatedTests(
       .eq("order_code", "HIRS 991")
       .maybeSingle();
     record("13.24 Short Trip HIRS 991 status in DB is confirmed with voice URL", verifiedHirs?.status === "confirmed" && verifiedHirs?.assigned_voice_url === "https://example.com/test-hirs-voice.ogg");
+
+    // ------------------------------------------------------------------------
+    // TEST 14: PRODUCTION HARDENING & SYSTEM RESILIENCE
+    // ------------------------------------------------------------------------
+    // 14.1 Order Code Prefix Isolation: 'transport' yields 'HIR ...' and is isolated from 'HIRS'
+    const generatedHireCode = await generateOrderCode(supabase, userId, "transport");
+    record("14.1 generateOrderCode isolates HIR from HIRS prefix", generatedHireCode.startsWith("HIR ") && !generatedHireCode.startsWith("HIRS "), `Got: ${generatedHireCode}`);
+
+    // 14.2 Stale Session Auto-Expiry: session inactive > 3 hours resets to WELCOME
+    const staleFourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+    const staleSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "CAB_FLOW",
+      current_step: "CAB_PICKUP",
+      session_data: { language: "si", booking_type: "now" },
+      last_interaction: staleFourHoursAgo,
+      updated_at: staleFourHoursAgo,
+    };
+    const staleStepRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "Good morning",
+      "text",
+      {},
+      staleSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.2 Stale session inactive > 3 hours automatically resets to WELCOME / LANGUAGE_CHOICE",
+      staleStepRes.nextFlow === "IDLE" && (staleStepRes.nextStep === "LANGUAGE_CHOICE" || staleStepRes.nextStep === "WELCOME"),
+      `nextFlow: ${staleStepRes.nextFlow}, nextStep: ${staleStepRes.nextStep}`
+    );
 
     // Clean up test orders
     await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "HIRS 991", "RNT 991", "DEL 991", "DELR 991", "DEL 992", "DELR 992"]);

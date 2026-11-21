@@ -224,6 +224,25 @@ export async function processCustomerChatStep(
   const lower = trimmed.toLowerCase();
   const data = session.session_data || {};
 
+  // Session Expiration Guard: If an in-progress session has been idle for > 3 hours, reset to WELCOME
+  const lastActive = session.last_interaction || session.updated_at;
+  if (lastActive) {
+    const lastActiveTime = new Date(lastActive).getTime();
+    const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+    const isStale = (Date.now() - lastActiveTime) > THREE_HOURS_MS;
+    const isCompletedOrIdle = session.flow_type === "IDLE" && (session.current_step === "WELCOME" || session.current_step === "BOOKING_COMPLETED");
+    if (isStale && !isCompletedOrIdle) {
+      console.log(`[stateMachine] Stale session detected for ${phoneNumber} (inactive for ${Math.round((Date.now() - lastActiveTime) / 60000)} mins). Resetting to WELCOME.`);
+      session.flow_type = "IDLE";
+      session.current_step = "WELCOME";
+      data.language = data.language || "si";
+      Object.keys(data).forEach((k) => {
+        if (k !== "language") delete data[k];
+      });
+      session.session_data = data;
+    }
+  }
+
   // Retrieve session language or allow explicit keyword switches (sinhala, english)
   if (lower === "sinhala" || lower === "සිංහල" || lower === "singlish") {
     data.language = "si";
@@ -1094,6 +1113,7 @@ OUTPUT ONLY THE JSON OBJECT. No markdown code blocks, no backticks, no extra exp
           temperature: 0.4,
           maxTokens: 800
         }),
+        signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
         const j = await res.json();
@@ -1104,6 +1124,7 @@ OUTPUT ONLY THE JSON OBJECT. No markdown code blocks, no backticks, no extra exp
         method: "POST",
         headers: { Authorization: `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "google/gemini-2.5-flash", messages, temperature: 0.4, max_tokens: 800 }),
+        signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
         const j = await res.json();

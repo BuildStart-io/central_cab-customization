@@ -765,11 +765,14 @@ export async function generateOrderCode(
 
   if (supabase) {
     try {
+      // Isolate prefixes with space so HIR does not match HIRS, and DEL does not match DELR
       const { data, error } = await supabase
         .schema("central_cab")
         .from("orders")
         .select("order_code")
-        .ilike("order_code", `${prefix}%`);
+        .ilike("order_code", `${prefix} %`)
+        .order("created_at", { ascending: false })
+        .limit(50);
 
       if (!error && Array.isArray(data)) {
         let maxNum = 0;
