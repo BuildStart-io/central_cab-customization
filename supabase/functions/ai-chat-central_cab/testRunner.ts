@@ -1361,6 +1361,53 @@ export async function runAllAutomatedTests(
       `nextFlow: ${staleStepRes.nextFlow}, nextStep: ${staleStepRes.nextStep}`
     );
 
+    // 14.3 Category Choice Option 2 (Long Distance Trip) transitions to CAB_SCHEDULE_DATE
+    const categoryScheduleSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "IDLE",
+      current_step: "CATEGORY_CHOICE",
+      session_data: { language: "si" },
+    };
+    const categoryScheduleRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "2. 🚗 දුර ගමනක් යන්න (Car / Van / Lorry / Bus)",
+      "poll_response",
+      {},
+      categoryScheduleSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.3 Category Option 2 (Long Distance Trip) transitions to CAB_SCHEDULE_DATE",
+      categoryScheduleRes.nextFlow === "CAB_FLOW" && categoryScheduleRes.nextStep === "CAB_SCHEDULE_DATE",
+      `nextFlow: ${categoryScheduleRes.nextFlow}, nextStep: ${categoryScheduleRes.nextStep}`
+    );
+
+    // 14.4 Category Choice Option 1 (Short Distance Trip) transitions to CAB_NAME
+    const categoryRideNowRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "1. ⚡ ළඟ ගමනක් යන්න (Motorbike / Three-wheel)",
+      "poll_response",
+      {},
+      categoryScheduleSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.4 Category Option 1 (Short Distance Trip) transitions to CAB_NAME",
+      categoryRideNowRes.nextFlow === "CAB_FLOW" && categoryRideNowRes.nextStep === "CAB_NAME",
+      `nextFlow: ${categoryRideNowRes.nextFlow}, nextStep: ${categoryRideNowRes.nextStep}`
+    );
+
     // Clean up test orders
     await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "HIRS 991", "RNT 991", "DEL 991", "DELR 991", "DEL 992", "DELR 992"]);
 

@@ -106,13 +106,21 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
   }
 
   // 1. Short Trip / Ride Now (Immediate)
+  const isDirectRideNowOption =
+    text.includes("ළඟ") ||
+    text.includes("short distance") ||
+    text.includes("short trip") ||
+    text.includes("ride now") ||
+    text.includes("now ride") ||
+    text.includes("දැන්ම") ||
+    text.includes("danma") ||
+    text.includes("damma") ||
+    text.includes("laga");
+
   const isExcludedFromRideNow =
     text.includes("one-way") ||
     text.includes("one way") ||
     text.includes("round") ||
-    text.includes("car") ||
-    text.includes("van") ||
-    text.includes("bike") ||
     text.includes("direct link") ||
     text.includes("දන්නවා") ||
     text.includes("sinhala") ||
@@ -120,61 +128,49 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
     text.includes("yes") ||
     text.includes("confirm");
 
-  if (
-    !isExcludedFromRideNow &&
-    (
-      text === "1" ||
-      text === "1." ||
-      text.includes("ride now") ||
-      text.includes("now ride") ||
-      text.includes("short trip") ||
-      text.includes("short") ||
-      text.includes("ලග") ||
-      text.includes("ලඟ") ||
-      text.includes("laga") ||
-      text.includes("දැන්ම") ||
-      text.includes("danma") ||
-      text.includes("damma")
-    )
-  ) {
-    return "ride_now";
+  if (!isExcludedFromRideNow) {
+    if (isDirectRideNowOption) {
+      return "ride_now";
+    }
+    if (text === "1" || text === "1.") {
+      return "ride_now";
+    }
   }
 
   // 2. Long Trip / Schedule Ride (Advance reservation)
+  const isDirectRideScheduleOption =
+    text.includes("දුර") ||
+    text.includes("long distance") ||
+    text.includes("long trip") ||
+    text.includes("schedule ride") ||
+    text.includes("schedule") ||
+    text.includes("outstation") ||
+    text.includes("reserve") ||
+    text.includes("පසුවට") ||
+    text.includes("passe") ||
+    text.includes("pasuwata") ||
+    text.includes("dura") ||
+    text.includes("later");
+
   const isExcludedFromRideSchedule =
     text.includes("cancel") ||
     text.includes("අවලංගු") ||
     text.includes("round trip") ||
     text.includes("up & down") ||
     text.includes("දෙපැත්ත") ||
-    text.includes("van") ||
-    text.includes("bike") ||
-    text.includes("sedan") ||
     text.includes("guide") ||
     text.includes("දන්නේ නෑ") ||
-    text.includes("english");
+    text.includes("english") ||
+    text.includes("no") ||
+    text.includes("නැත");
 
-  if (
-    !isExcludedFromRideSchedule &&
-    (
-      text === "2" ||
-      text === "2." ||
-      text.includes("schedule ride") ||
-      text.includes("schedule") ||
-      text.includes("long trip") ||
-      text.includes("long distance") ||
-      text.includes("long") ||
-      text.includes("දුර") ||
-      text.includes("dura") ||
-      text.includes("outstation") ||
-      text.includes("reserve") ||
-      text.includes("පසුවට") ||
-      text.includes("passe") ||
-      text.includes("pasuwata") ||
-      text.includes("later")
-    )
-  ) {
-    return "ride_schedule";
+  if (!isExcludedFromRideSchedule) {
+    if (isDirectRideScheduleOption) {
+      return "ride_schedule";
+    }
+    if (text === "2" || text === "2.") {
+      return "ride_schedule";
+    }
   }
 
   // 3. Rent a Car
@@ -213,16 +209,10 @@ export function detectServiceCategory(input: string): ServiceCategory | null {
     text.includes("වැඩිවිස්තර") ||
     text.includes("වැඩි විස්තර") ||
     text.includes("ලබාගැනීමට") ||
-    text.includes("ඇප්") ||
-    text.includes("app") ||
+    text.includes("app එක") ||
+    text.includes("get app") ||
     text.includes("more details") ||
-    text.includes("details") ||
-    text.includes("ask") ||
-    text.includes("question") ||
-    text.includes("help") ||
-    text.includes("inquiry") ||
-    text.includes("ප්‍රශ්න") ||
-    text.includes("විස්තර")
+    text.includes("ask a question")
   ) {
     return "ask_a_question";
   }
