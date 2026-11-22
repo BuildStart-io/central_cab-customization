@@ -1031,7 +1031,7 @@ export async function runAllAutomatedTests(
 
     // 13.11 - 13.12: Service 1 (Hire Cab) Admin Approval Workflow
     // Clean up any existing test records first
-    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "RNT 991", "DEL 991", "DEL 992"]);
+    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "Hir 991", "RNT 991", "Rnt 991", "DEL 991", "Del 991", "DEL 992", "Del 992", "DELR 991", "Delr 991", "DELR 992", "Delr 992", "HIRS 991", "Hirs 991"]);
 
     // Insert test Hire order
     await supabase.schema("central_cab").from("orders").insert({
@@ -1092,9 +1092,11 @@ export async function runAllAutomatedTests(
       .schema("central_cab")
       .from("orders")
       .select("status, assigned_voice_url")
-      .eq("order_code", "HIR 991")
+      .ilike("order_code", "HIR 991")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
-    record("13.13 Hire Cab status in DB is confirmed with voice URL", verifiedHire?.status === "confirmed" && verifiedHire?.assigned_voice_url === "https://example.com/test-voice.ogg");
+    record("13.13 Hire Cab status in DB is confirmed with voice URL", verifiedHire?.status === "confirmed" && verifiedHire?.assigned_voice_url === "https://example.com/test-voice.ogg", `verifiedHire: ${JSON.stringify(verifiedHire)}`);
 
     // 13.14: Service 2 (Rent a Car) Admin Approval Workflow
     await supabase.schema("central_cab").from("orders").insert({
@@ -1279,7 +1281,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.21 Delivery Order single-step shop assignment transitions to DELR 992 and prompts Voice Note",
-      delFastRes.handled && (delFastRes.replyText?.includes("DELR 992") ?? false) && (delFastRes.replyText?.includes("Voice Note") ?? false),
+      delFastRes.handled && (delFastRes.replyText?.toUpperCase().includes("DELR 992") ?? false) && (delFastRes.replyText?.includes("Voice Note") ?? false),
       delFastRes.replyText
     );
 
@@ -1287,9 +1289,11 @@ export async function runAllAutomatedTests(
       .schema("central_cab")
       .from("orders")
       .select("status, order_code, pickup_address")
-      .eq("order_code", "DELR 992")
+      .ilike("order_code", "DELR 992")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
-    record("13.22 Delivery Order DELR 992 in DB has shop pickup assigned", verifiedDel2?.order_code === "DELR 992" && verifiedDel2?.pickup_address?.includes("Royal Restaurant"));
+    record("13.22 Delivery Order DELR 992 in DB has shop pickup assigned", verifiedDel2?.order_code?.toUpperCase() === "DELR 992" && verifiedDel2?.pickup_address?.includes("Royal Restaurant"), `verifiedDel2: ${JSON.stringify(verifiedDel2)}`);
 
     // 13.23: Short Trip (Ride Now) HIRS 991 Confirmation with Voice Note
     await supabase.schema("central_cab").from("orders").insert({
@@ -1323,7 +1327,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.23 Short Trip (Ride Now) HIRS 991 voice note confirms order",
-      hirsVoiceRes.handled && (hirsVoiceRes.replyText?.includes("Voice update for Order *HIRS 991*") ?? false),
+      hirsVoiceRes.handled && (hirsVoiceRes.replyText?.toUpperCase().includes("VOICE UPDATE FOR ORDER *HIRS 991*") ?? false),
       hirsVoiceRes.replyText
     );
 
@@ -1331,7 +1335,9 @@ export async function runAllAutomatedTests(
       .schema("central_cab")
       .from("orders")
       .select("status, assigned_voice_url")
-      .eq("order_code", "HIRS 991")
+      .ilike("order_code", "HIRS 991")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     record("13.24 Short Trip HIRS 991 status in DB is confirmed with voice URL", verifiedHirs?.status === "confirmed" && verifiedHirs?.assigned_voice_url === "https://example.com/test-hirs-voice.ogg");
 

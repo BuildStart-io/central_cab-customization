@@ -261,6 +261,16 @@ export async function processCustomerChatStep(
   // 1. GLOBAL RESET INTERCEPTION (Poll vote or text command)
   // =========================================================================
   if (isResetChoice(trimmed) || isHomeOrResetInput(trimmed, session.current_step)) {
+    if (session.current_step === "CAB_MULTI_DEST_INFO") {
+      return {
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
+      };
+    }
     console.log(`[stateMachine] Reset/Menu requested by ${phoneNumber}`);
     return {
       replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
@@ -356,6 +366,16 @@ export async function processCustomerChatStep(
 
   // 0. Global Menu / Reset handler - Immediately returns to Language Choice
   if (isHomeOrResetInput(trimmed, step)) {
+    if (step === "CAB_MULTI_DEST_INFO") {
+      return {
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
+      };
+    }
     console.log(`[stateMachine] Reset/Menu requested by ${phoneNumber} from ${flow}/${step}`);
     return {
       replyText: "Please choose your preferred language / කරුණාකර ඔබගේ භාෂාව තෝරන්න:",
