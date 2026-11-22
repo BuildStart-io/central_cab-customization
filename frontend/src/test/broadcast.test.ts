@@ -97,4 +97,47 @@ describe("WhatsApp Group Broadcast Suite", () => {
     expect(validGroupJid.endsWith("@g.us")).toBe(true);
     expect(invalidPhone.endsWith("@g.us")).toBe(false);
   });
+
+  it("calculates category-filtered selected count vs all groups count correctly", () => {
+    type Group = { id: string; category: "hire" | "rent_a_car" | "delivery_shop" | "delivery_riders" };
+    const dummyGroups: Group[] = [
+      ...Array.from({ length: 95 }, (_, i) => ({ id: `h_${i}`, category: "hire" as const })),
+      ...Array.from({ length: 95 }, (_, i) => ({ id: `r_${i}`, category: "rent_a_car" as const })),
+      ...Array.from({ length: 95 }, (_, i) => ({ id: `ds_${i}`, category: "delivery_shop" as const })),
+      ...Array.from({ length: 95 }, (_, i) => ({ id: `dr_${i}`, category: "delivery_riders" as const })),
+    ];
+    expect(dummyGroups).toHaveLength(380);
+
+    // Select 10 groups in Hire, and 5 in Rent a Car
+    const selectedIds = new Set<string>([
+      ...Array.from({ length: 10 }, (_, i) => `h_${i}`),
+      ...Array.from({ length: 5 }, (_, i) => `r_${i}`),
+    ]);
+    expect(selectedIds.size).toBe(15);
+
+    const getSelectedCountByCategory = (cat: "hire" | "rent_a_car" | "delivery_shop" | "delivery_riders") =>
+      dummyGroups.filter((g) => g.category === cat && selectedIds.has(g.id)).length;
+
+    // When filter is "all"
+    const allText = `${selectedIds.size} of ${dummyGroups.length} groups selected`;
+    expect(allText).toBe("15 of 380 groups selected");
+
+    // When filter is "hire" (95 groups total, 10 selected)
+    const hireFiltered = dummyGroups.filter((g) => g.category === "hire");
+    const hireCount = getSelectedCountByCategory("hire");
+    const hireText = `${hireCount} of ${hireFiltered.length} groups selected`;
+    expect(hireText).toBe("10 of 95 groups selected");
+
+    // When filter is "rent_a_car" (95 groups total, 5 selected)
+    const rentFiltered = dummyGroups.filter((g) => g.category === "rent_a_car");
+    const rentCount = getSelectedCountByCategory("rent_a_car");
+    const rentText = `${rentCount} of ${rentFiltered.length} groups selected`;
+    expect(rentText).toBe("5 of 95 groups selected");
+
+    // When filter is "delivery_shop" (95 groups total, 0 selected)
+    const dsFiltered = dummyGroups.filter((g) => g.category === "delivery_shop");
+    const dsCount = getSelectedCountByCategory("delivery_shop");
+    const dsText = `${dsCount} of ${dsFiltered.length} groups selected`;
+    expect(dsText).toBe("0 of 95 groups selected");
+  });
 });
