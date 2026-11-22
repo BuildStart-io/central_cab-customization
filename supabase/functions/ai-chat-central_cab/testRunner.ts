@@ -1245,7 +1245,9 @@ export async function runAllAutomatedTests(
       .schema("central_cab")
       .from("orders")
       .select("status, assigned_voice_url")
-      .eq("order_code", "DELR 991")
+      .ilike("order_code", "DELR 991")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
     record("13.20 Delivery Order DELR 991 status in DB is confirmed with voice URL", verifiedDelConfirmed?.status === "confirmed" && verifiedDelConfirmed?.assigned_voice_url === "https://example.com/test-del-voice.ogg");
 
