@@ -3,7 +3,7 @@
 // Native Dual Language Support: Sinhala and English
 // ============================================================================
 
-export type SupportedLanguage = "si" | "en";
+export type SupportedLanguage = "si" | "en" | "ta";
 
 export interface PollDefinition {
   name: string;
@@ -383,6 +383,7 @@ export function isHomeOrResetInput(text: string, currentStep?: string): boolean 
     l.includes("main menu") ||
     l.includes("මුල් මෙනුව") ||
     l.includes("ප්‍රධාන මෙනුව") ||
+    l.includes("பிரதான மெனு") ||
     l.includes("home page") ||
     l.includes("go to home") ||
     l.includes("goto home")
@@ -403,6 +404,47 @@ export function isHomeOrResetInput(text: string, currentStep?: string): boolean 
     }
   }
 
+  if (currentStep === "CAB_MULTI_DEST_INFO") {
+    if (l === "1" || l.startsWith("1.") || l.startsWith("1 ") || l.startsWith("1)")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function isSingleDestinationChoice(text: string): boolean {
+  const l = (text || "").toLowerCase().trim();
+  if (l === "1" || l.startsWith("1.") || l.startsWith("1 ") || l.startsWith("1)")) return true;
+  if (
+    l.includes("single") ||
+    l.includes("එක් ස්ථාන") ||
+    l.includes("එක් තැන") ||
+    l.includes("තනි") ||
+    l.includes("one place") ||
+    l.includes("one location") ||
+    l.includes("ஒரு இடம்") ||
+    l.includes("ஒரு இடத்திற்கு")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isMultiDestinationChoice(text: string): boolean {
+  const l = (text || "").toLowerCase().trim();
+  if (l === "2" || l.startsWith("2.") || l.startsWith("2 ") || l.startsWith("2)")) return true;
+  if (
+    l.includes("multiple") ||
+    l.includes("කිහිපය") ||
+    l.includes("ස්ථාන කිහිපයකට") ||
+    l.includes("තැන් කිහිපයකට") ||
+    l.includes("பல இடம்") ||
+    l.includes("பல இடங்களுக்கு") ||
+    l.includes("multi")
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -503,6 +545,71 @@ export function getCategoryPoll(lang?: SupportedLanguage): PollDefinition {
       "4. 🍛 Delivery (ආහාර පාන ඇතුළු භාණ්ඩ ඇණවුම් කරන්න)",
       "5. ℹ️ වැඩිවිස්තර සදහා සහ ඇප් එක ලබාගැනීමට",
     ],
+    multipleAnswers: false,
+  };
+}
+
+export function getDestinationTypePoll(lang?: SupportedLanguage): PollDefinition {
+  if (lang === "en") {
+    return {
+      name: "Central Cabs - Select your destination type:",
+      options: [
+        "1. 📍 Single Destination (One location)",
+        "2. 🗺️ Multiple Destinations (Multiple locations)",
+      ],
+      multipleAnswers: false,
+    };
+  }
+  if (lang === "ta") {
+    return {
+      name: "Central Cabs - உங்கள் பயண இலக்கு வகையைத் தேர்ந்தெடுக்கவும்:",
+      options: [
+        "1. 📍 ஒரு இடத்திற்கு மட்டும் (Single Destination)",
+        "2. 🗺️ பல இடங்களுக்கு (Multiple Destinations)",
+      ],
+      multipleAnswers: false,
+    };
+  }
+  // Default: Sinhala
+  return {
+    name: "Central Cabs - ඔබගේ ගමනාන්ත වර්ගය තෝරන්න:",
+    options: [
+      "1. 📍 එක් ස්ථානයකට පමණක් (Single Destination)",
+      "2. 🗺️ ස්ථාන කිහිපයකට (Multiple Destinations)",
+    ],
+    multipleAnswers: false,
+  };
+}
+
+export function getMultiDestinationNotice(lang?: SupportedLanguage): string {
+  if (lang === "en") {
+    return "🗺️ *Multiple Destinations Trip*\n\nFor long distance trips covering multiple destinations, custom route planning, and special package rates, please call our admin hotline:\n\n📞 *Hotline:* *0775996191*\n\nThank you for contacting Central Cabs! 🚗";
+  }
+  if (lang === "ta") {
+    return "🗺️ *பல இடங்களுக்கான பயணம் (Multiple Destinations)*\n\nபல இடங்களுக்கு செல்லும் நீண்ட தூர பயணங்களுக்கான பாதை விபரங்கள் (Route Details) மற்றும் விசேட கட்டண விபரங்களை அறிந்து கொள்ள தயவுசெய்து எமது நிர்வாக இலக்கத்திற்கு அழைக்கவும்:\n\n📞 *Hotline:* *0775996191*\n\nநன்றி! Central Cabs 🚗";
+  }
+  // Default: Sinhala
+  return "🗺️ *ස්ථාන කිහිපයකට ගමන් කිරීම (Multiple Destinations)*\n\nස්ථාන කිහිපයකට ගමන් කරන දුර ගමන් සඳහා මාර්ග විස්තර (Route Details) සහ විශේෂ මිල ගණන් දැනගැනීමට කරුණාකර අපගේ ක්ෂණික ඇමතුම් අංකයට කතා කරන්න:\n\n📞 *Hotline:* *0775996191*\n\nස්තූතියි! Central Cabs 🚗";
+}
+
+export function getReturnToMenuPoll(lang?: SupportedLanguage): PollDefinition {
+  if (lang === "en") {
+    return {
+      name: "Central Cabs - Return to Main Menu:",
+      options: ["🏠 Main Menu (මුල් මෙනුව)"],
+      multipleAnswers: false,
+    };
+  }
+  if (lang === "ta") {
+    return {
+      name: "Central Cabs - பிரதான மெனுவுக்கு செல்ல:",
+      options: ["🏠 Main Menu (මුල් මෙනුව)"],
+      multipleAnswers: false,
+    };
+  }
+  return {
+    name: "Central Cabs - ප්‍රධාන මෙනුවට (Main Menu) යාමට පහත බටනය ඔබන්න:",
+    options: ["🏠 Main Menu (මුල් මෙනුව)"],
     multipleAnswers: false,
   };
 }
@@ -1053,6 +1160,11 @@ export function getStepPromptText(flow: string, step: string, lang: SupportedLan
       case "CAB_TIMING_CHOICE":
         if (lang === "en") return "Do you need a Short Distance Trip or a Long Distance Trip?";
         return "ඔබට අවශ්‍ය ලග ගමනක්ද නැතහොත් දුර ගමනක්ද?";
+
+      case "CAB_DESTINATION_CHOICE":
+        if (lang === "en") return "Please select whether you are travelling to a single destination or multiple destinations:\n\n1️⃣ Single Destination (One location)\n2️⃣ Multiple Destinations (Multiple locations)";
+        if (lang === "ta") return "நீங்கள் ஒரு இடத்திற்கு மட்டும் பயணிக்கிறீர்களா அல்லது பல இடங்களுக்குச் செல்கிறீர்களா என்பதைத் தேர்ந்தெடுக்கவும்:\n\n1️⃣ ஒரு இடத்திற்கு மட்டும் (Single Destination)\n2️⃣ பல இடங்களுக்கு (Multiple Destinations)";
+        return "ඔබ ගමන් කරන්නේ එක් ස්ථානයකට පමණක්ද නැතහොත් ස්ථාන කිහිපයකටදැයි තෝරන්න:\n\n1️⃣ එක් ස්ථානයකට පමණක් (Single Destination)\n2️⃣ ස්ථාන කිහිපයකට (Multiple Destinations)";
 
       case "CAB_SCHEDULE_DATE":
         if (lang === "en") return "Please specify the date for your ride:\n(e.g., 2026/10/25, Tomorrow, or Friday)";

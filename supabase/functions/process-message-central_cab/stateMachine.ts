@@ -20,6 +20,7 @@ import {
   isHelpChoice,
   getLanguagePoll,
   getCategoryPoll,
+  getDestinationTypePoll,
   getRentVehiclePoll,
   getDeliveryCategoryPoll,
   getPostBookingPoll,
@@ -51,7 +52,12 @@ function isExpectedStepAnswer(
   }
 
   if (flow === "CAB_FLOW") {
-    if (step === "CAB_VEHICLE") {
+    if (step === "CAB_DESTINATION_CHOICE") {
+      if (
+        lower === "1" || lower.startsWith("1.") || lower.includes("single") || lower.includes("එක්") || lower.includes("තනි") || lower.includes("ஒரு") ||
+        lower === "2" || lower.startsWith("2.") || lower.includes("multiple") || lower.includes("කිහිපයක") || lower.includes("பல")
+      ) return true;
+    } else if (step === "CAB_VEHICLE") {
       const vKey = normalizeVehicleKey(trimmed, data.booking_type, pricingSettings);
       if (vKey) return true;
     } else if (step === "CAB_MODEL") {
@@ -638,14 +644,16 @@ export async function processCustomerChatStep(
       };
     }
 
-    // 2. Schedule Ride: immediately enter CAB_FLOW and ask Date directly
+    // 2. Schedule Ride: ask single vs multiple destinations
     if (cat === "ride_schedule") {
       data.service_type = "transport";
       data.booking_type = "schedule";
       return {
-        replyText: getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_DATE", lang),
+        replyText: getStepPromptText("CAB_FLOW", "CAB_DESTINATION_CHOICE", lang),
+        poll: getDestinationTypePoll(lang),
+        sendTextWithPoll: true,
         nextFlow: "CAB_FLOW",
-        nextStep: "CAB_SCHEDULE_DATE",
+        nextStep: "CAB_DESTINATION_CHOICE",
         sessionData: data,
       };
     }

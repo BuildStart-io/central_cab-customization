@@ -93,7 +93,12 @@ export function extractOrderCode(text: string): string | null {
   // Match HIRS 001, DELR 001, HIR 001, DEL 001, RNT 001 (with optional #, -, _, multiple spaces)
   const prefixMatch = text.match(/\b(?:#)?(HIRS|HIR|DELR|DEL|RNT)\s*[-_]?\s*(\d{1,6})\b/i);
   if (prefixMatch) {
-    const prefix = prefixMatch[1].toUpperCase();
+    const rawPrefix = prefixMatch[1].toUpperCase();
+    let prefix = "Hir";
+    if (rawPrefix === "HIRS") prefix = "Hirs";
+    else if (rawPrefix === "DELR") prefix = "Delr";
+    else if (rawPrefix === "DEL") prefix = "Del";
+    else if (rawPrefix === "RNT") prefix = "Rnt";
     const num = prefixMatch[2].padStart(3, "0");
     return `${prefix} ${num}`;
   }
@@ -162,8 +167,10 @@ export async function dispatchConfirmedDeliveryOrder(
     activePricing
   );
 
-  const baseCode = (targetOrder.order_code || "DEL 001").trim();
-  const riderCode = baseCode.startsWith("DELR") ? baseCode : baseCode.replace(/^DEL\b/i, "DELR");
+  const baseCode = (targetOrder.order_code || "Del 001").trim();
+  const riderCode = baseCode.toUpperCase().startsWith("DELR")
+    ? baseCode
+    : baseCode.replace(/^DEL\b/i, "Delr").replace(/^Del\b/i, "Delr");
 
   // 3. Update order in database: status -> awaiting_rider, set shop pickup, distance, fare, and rider code
   await supabase
@@ -198,12 +205,12 @@ export async function dispatchConfirmedDeliveryOrder(
   const shopLocationDisplay = formatLocationDisplay(shopLocationText, shopCoords);
   const dropoffLocationDisplay = formatLocationDisplay(customerDropoff, targetOrder.dropoff_coords);
 
-  // 5. Send Shop confirmation notice to Delivery Shop Groups (Sinhala text)
+  // 5. Send clean Shop confirmation notice to Delivery Shop Groups (no customer dropoff/maps or office contact)
   const shopGroups = (systemSettings.delivery_driver_groups && systemSettings.delivery_driver_groups.length > 0)
     ? systemSettings.delivery_driver_groups
     : (systemSettings.target_driver_groups || []);
 
-  const shopConfirmNotice = `✅ *Delivery ඇණවුම සඳහා කඩය තහවුරු කරන ලදී: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${shopLocationDisplay}\n\n📦 *භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Delivery Location):*\n${dropoffLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 කඩයේ ස්ථානය සටහන් කරගන්නා ලදී. Delivery Rider යොමු කරනු ලැබේ.`;
+  const shopConfirmNotice = `✅ *Delivery ඇණවුම තහවුරු කරන ලදී: ${targetOrder.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n📦 *භාණ්ඩ:* ${productList}\n📂 *වර්ගය:* ${category}\n━━━━━━━━━━━━━━━━━━━━\n📌 කඩයේ ස්ථානය සටහන් කරගන්නා ලදී. Delivery Rider යොමු කරනු ලැබේ.`;
 
   for (const group of shopGroups) {
     const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -576,9 +583,9 @@ export async function handleAdminMessage(
     console.log(`[AdminHandler] Found Order ${targetOrderCode} for customer ${order.customer_phone}. Dispatching voice note to driver groups...`);
 
     const sType = String(order.service_type || "").toLowerCase();
-    const isShortTrip = targetOrderCode.startsWith("HIRS") || order.booking_type === "now";
-    const isDeliveryRider = targetOrderCode.startsWith("DELR") || sType.includes("delivery");
-    const isRent = sType.includes("rent") || targetOrderCode.startsWith("RNT");
+    const isShortTrip = targetOrderCode.toUpperCase().startsWith("HIRS") || order.booking_type === "now";
+    const isDeliveryRider = targetOrderCode.toUpperCase().startsWith("DELR") || sType.includes("delivery");
+    const isRent = sType.includes("rent") || targetOrderCode.toUpperCase().startsWith("RNT");
     const isHire = !isShortTrip && !isDeliveryRider && !isRent;
 
     let targetGroups: DriverGroup[] = [];
@@ -612,16 +619,16 @@ export async function handleAdminMessage(
     const districtText = order.district || order.custom_fields?.district_village || order.custom_fields?.raw_data?.district_village || "";
     const districtLine = districtText ? `🏘️ *දිස්ත්‍රික්කය සහ නගරය:* ${districtText}\n` : "";
 
+    // Clean group confirmation notice: Only confirmation status + voice note indicator (no customer name, no district, no pickup/dropoff links, no maps link, no office contact)
     let broadcastTag = "";
     if (isDeliveryRider) {
-      const productList = order.delivery_items || order.custom_fields?.raw_data?.delivery_products || "Items";
-      broadcastTag = `✅ *Delivery සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🏪 *කඩයේ ස්ථානය (Shop Pickup):*\n${pickupDisplay}\n\n📦 *භාණ්ඩ (Delivery Items):*\n${productList}\n\n📍 *භාණ්ඩ භාරදිය යුතු ස්ථානය (Customer Drop-off):*\n${dropoffDisplay}\n${districtLine}🛵 *වාහනය:* ${order.vehicle_type || "Motorbike"}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *Delivery ගාස්තුව:* ${formatLKR(order.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම Delivery සවාරිය සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
+      broadcastTag = `✅ *Delivery සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම Delivery සවාරිය සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
     } else if (isShortTrip) {
-      broadcastTag = `✅ *කෙටි ගමන තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n🛵 *වාහනය:* ${order.vehicle_type || "Ride Now Vehicle"}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n🛣️ *දුර:* ${order.distance_km ? `${order.distance_km} km` : "N/A"}\n💰 *ගාස්තුව:* ${formatLKR(order.total_fare)}\n━━━━━━━━━━━━━━━━━━━━\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම කෙටි ගමන සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
+      broadcastTag = `✅ *කෙටි ගමන තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 මෙම කෙටි ගමන සඳහා රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි!`;
     } else if (isHire) {
-      broadcastTag = `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "N/A"}\n${districtLine}📍 *ආරම්භක ස්ථානය (Pickup):*\n${pickupDisplay}\n🏁 *ගමනාන්තය (Drop-off):*\n${dropoffDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`;
+      broadcastTag = `✅ *සවාරිය තහවුරු කර රියදුරු යොමු කරන ලදී: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n🎙️ *රියදුරු හඬ පණිවිඩය (Driver Voice Note) පහතින් අමුණා ඇත.*\n📌 රියදුරු මහතා යොමු කර ඇත. සවාරිය තහවුරුයි.`;
     } else if (isRent) {
-      broadcastTag = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n👤 *පාරිභෝගිකයා:* ${order.customer_name || "Customer"}\n🚗 *වාහන වර්ගය:* ${order.vehicle_type || "Vehicle"}\n${districtLine}📍 *ස්ථානය:*\n${pickupDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📞 *කාර්යාල දුරකථන:* ${groupContact}\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
+      broadcastTag = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${targetOrderCode}*\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
     }
 
     const delaySec = Math.max(1, Number(systemSettings.broadcast_delay_seconds || 3));
@@ -760,11 +767,11 @@ export async function handleAdminMessage(
       if (altOrder) order = altOrder;
     }
 
-    // Fallback: Check if DEL vs DELR swapped (e.g. order in DB is DELR 019 but admin typed DEL 019, or vice versa)
-    if (!order && (orderCode.startsWith("DEL") || orderCode.startsWith("DELR"))) {
-      const swappedCode = orderCode.startsWith("DELR")
-        ? orderCode.replace(/^DELR\b/i, "DEL")
-        : orderCode.replace(/^DEL\b/i, "DELR");
+    // Fallback: Check if Del vs Delr swapped (e.g. order in DB is Delr 019 but admin typed Del 019, or vice versa)
+    if (!order && (orderCode.toUpperCase().startsWith("DEL") || orderCode.toUpperCase().startsWith("DELR"))) {
+      const swappedCode = orderCode.toUpperCase().startsWith("DELR")
+        ? orderCode.replace(/^DELR\b/i, "Del").replace(/^Delr\b/i, "Del")
+        : orderCode.replace(/^DEL\b/i, "Delr").replace(/^Del\b/i, "Delr");
       const cleanSwapped = swappedCode.replace(/\s+/g, "");
       const { data: swappedOrder } = await supabase
         .schema("central_cab")
@@ -799,7 +806,7 @@ export async function handleAdminMessage(
     }
 
     const sType = String(order.service_type || "").toLowerCase();
-    const isRent = sType.includes("rent") || orderCode.startsWith("RNT");
+    const isRent = sType.includes("rent") || orderCode.toUpperCase().startsWith("RNT");
 
     // Case A: Rent a Car Order: sending the RNT order number immediately confirms & marks it booked in group!
     if (isRent) {
@@ -826,14 +833,13 @@ export async function handleAdminMessage(
           updated_at: new Date().toISOString(),
         });
 
-      // 2. Forward "Order Booked" message to Rent a Car driver groups (100% English)
+      // 2. Forward clean "Order Booked" message to Rent a Car driver groups (no customer links/maps or office contact)
       const rentGroups = (systemSettings.rent_a_car_groups && systemSettings.rent_a_car_groups.length > 0)
         ? systemSettings.rent_a_car_groups
         : (systemSettings.target_driver_groups || []);
 
       const rentDuration = order.custom_fields?.raw_data?.rent_duration || "N/A";
-      const rentLocationDisplay = formatLocationDisplay(order.pickup_address, order.pickup_coords);
-      const rentBookedText = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n⏱️ *කාල සීමාව:* ${rentDuration}\n📍 *ස්ථානය (Location):*\n${rentLocationDisplay}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
+      const rentBookedText = `✅ *Rent a Car වෙන්කිරීම තහවුරුයි: ${order.order_code}*\n━━━━━━━━━━━━━━━━━━━━\n🚗 *වාහනය:* ${order.vehicle_type || "Vehicle"}\n⏱️ *කාල සීමාව:* ${rentDuration}\n━━━━━━━━━━━━━━━━━━━━\n📌 මෙම වාහනය වෙන්කර ඇති බැවින් තවදුරටත් ලබාගත නොහැක.`;
 
       for (const group of rentGroups) {
         const targetChatId = group.chat_id || (group.id?.includes("@g.us") ? group.id : null);
@@ -871,8 +877,8 @@ export async function handleAdminMessage(
       };
     }
 
-    const isDeliveryRider = orderCode.startsWith("DELR") || (order.order_code && order.order_code.startsWith("DELR") && Boolean(order.pickup_address));
-    const isDeliveryShop = (sType.includes("delivery") || orderCode.startsWith("DEL")) && !isDeliveryRider;
+    const isDeliveryRider = orderCode.toUpperCase().startsWith("DELR") || (order.order_code && order.order_code.toUpperCase().startsWith("DELR") && Boolean(order.pickup_address));
+    const isDeliveryShop = (sType.includes("delivery") || orderCode.toUpperCase().startsWith("DEL")) && !isDeliveryRider;
 
     // Case B-1: Delivery Rider Order: Admin typed DELR code -> prompt for Driver Voice Note
     if (isDeliveryRider) {

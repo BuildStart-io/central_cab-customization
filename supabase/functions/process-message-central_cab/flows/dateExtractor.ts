@@ -128,7 +128,12 @@ export function extractNaturalDate(input: string, now = new Date()): ParsedDate 
  * Intelligent Code-based Time Extractor
  */
 export function extractNaturalTime(input: string): ParsedTime {
-  const text = (input || "").trim();
+  let text = (input || "").trim();
+  // Strip recognized calendar date patterns so numbers like 2026.11.26 don't falsely match "11.26" as time
+  text = text.replace(/\b20\d{2}[-/.\s](0?[1-9]|1[0-2])[-/.\s](0?[1-9]|[12]\d|3[01])\b/g, " ");
+  text = text.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.\s](0?[1-9]|1[0-2])[-/.\s](20\d{2}|2[5-9]|3\d)\b/g, " ");
+  text = text.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])\b/g, " ");
+  text = text.trim();
   const lower = text.toLowerCase();
 
   // 1. Standard 12h or 24h Time matching
@@ -214,7 +219,15 @@ export function extractNaturalTime(input: string): ParsedTime {
  */
 export function extractNaturalSchedule(input: string, now = new Date()): ParsedSchedule {
   const dateResult = extractNaturalDate(input, now);
-  const timeResult = extractNaturalTime(input);
+  let timeInput = input;
+  if (dateResult.isRecognized) {
+    timeInput = timeInput.replace(/\b20\d{2}[-/.\s](0?[1-9]|1[0-2])[-/.\s](0?[1-9]|[12]\d|3[01])\b/g, " ");
+    timeInput = timeInput.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.\s](0?[1-9]|1[0-2])[-/.\s](20\d{2}|2[5-9]|3\d)\b/g, " ");
+    timeInput = timeInput.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])\b/g, " ");
+    timeInput = timeInput.replace(/\b(heta|හෙට|tomorrow|tmrw|tomo|anidda|අනිද්දා|ada|අද|today|tonight)\b/gi, " ");
+    timeInput = timeInput.trim();
+  }
+  const timeResult = timeInput ? extractNaturalTime(timeInput) : { raw: "", formatted: "", isRecognized: false };
 
   const isRecognized = dateResult.isRecognized || timeResult.isRecognized;
   let formatted = "";

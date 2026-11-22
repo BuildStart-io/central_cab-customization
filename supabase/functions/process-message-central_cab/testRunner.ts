@@ -26,7 +26,13 @@ import {
   getDeliveryOrderSummaryCard,
   getTripTypePoll,
   getShortTripCustomerConfirmedMessage,
+  getDestinationTypePoll,
+  getMultiDestinationNotice,
+  getReturnToMenuPoll,
+  isSingleDestinationChoice,
+  isMultiDestinationChoice,
 } from "./i18n.ts";
+import { extractNaturalDate, extractNaturalTime } from "./flows/dateExtractor.ts";
 import {
   handleAdminMessage,
   isAdminUser,
@@ -1000,14 +1006,19 @@ export async function runAllAutomatedTests(
     record("13.5a Delivery Rider Admin phone authentication", isAdminUser("94770009900", adminSystemSettings) === true);
     record("13.6 Rejects non-admin phone", isAdminUser("94719998877", adminSystemSettings) === false);
 
-    // 13.7 - 13.9: Order Code Extraction
-    record("13.7 Extract HIR order code", extractOrderCode("CONFIRM HIR 015") === "HIR 015");
-    record("13.7a Extract HIRS order code", extractOrderCode("HIRS 022") === "HIRS 022");
-    record("13.8 Extract RNT order code", extractOrderCode("RNT 003") === "RNT 003");
-    record("13.9 Extract DEL order code", extractOrderCode("DEL 008") === "DEL 008");
-    record("13.9a Extract DELR order code", extractOrderCode("DELR 008") === "DELR 008");
-    record("13.9b Extract DELR with multiple spaces", extractOrderCode("DELR  020") === "DELR 020");
-    record("13.9c Extract HIRS with multiple spaces", extractOrderCode("HIRS   004") === "HIRS 004");
+    // 13.7 - 13.9: Order Code Extraction (Title Case normalized)
+    record("13.7 Extract HIR order code", extractOrderCode("CONFIRM HIR 015") === "Hir 015");
+    record("13.7a Extract HIRS order code", extractOrderCode("HIRS 022") === "Hirs 022");
+    record("13.8 Extract RNT order code", extractOrderCode("RNT 003") === "Rnt 003");
+    record("13.9 Extract DEL order code", extractOrderCode("DEL 008") === "Del 008");
+    record("13.9a Extract DELR order code", extractOrderCode("DELR 008") === "Delr 008");
+    record("13.9b Extract DELR with multiple spaces", extractOrderCode("DELR  020") === "Delr 020");
+    record("13.9c Extract HIRS with multiple spaces", extractOrderCode("HIRS   004") === "Hirs 004");
+    record("13.9f Extract lowercase hir order code", extractOrderCode("confirm hir 015") === "Hir 015");
+    record("13.9g Extract lowercase hirs order code", extractOrderCode("hirs 022") === "Hirs 022");
+    record("13.9h Extract lowercase rnt order code", extractOrderCode("rnt 003") === "Rnt 003");
+    record("13.9i Extract lowercase del order code", extractOrderCode("del 008") === "Del 008");
+    record("13.9j Extract lowercase delr order code", extractOrderCode("delr 008") === "Delr 008");
     record("13.9d Short Trip customer notification includes driver call notice", getShortTripCustomerConfirmedMessage("HIRS 004", "Loc A", "Loc B", "Motorbike", "3 km", "Rs. 300", "si").includes("Call කරනු ඇත"));
     record("13.9e Short Trip customer notification Tamil includes driver call notice", getShortTripCustomerConfirmedMessage("HIRS 004", "Loc A", "Loc B", "Motorbike", "3 km", "Rs. 300", "ta").includes("Call செய்வார்"));
 
@@ -1073,7 +1084,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.12 Hire Cab Order step 2 voice note confirms order",
-      hireRes2.handled && (hireRes2.replyText?.includes("Voice update for Order *HIR 991*") ?? false),
+      hireRes2.handled && ((hireRes2.replyText?.includes("Voice update for Order *Hir 991*") || hireRes2.replyText?.includes("Voice update for Order *HIR 991*")) ?? false),
       hireRes2.replyText
     );
 
@@ -1116,7 +1127,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.14 Rent a Car immediate approval confirms order",
-      rentRes.handled && (rentRes.replyText?.includes("Rent a Car Order *RNT 991* confirmed") ?? false),
+      rentRes.handled && ((rentRes.replyText?.includes("Rent a Car Order *Rnt 991* confirmed") || rentRes.replyText?.includes("Rent a Car Order *RNT 991* confirmed")) ?? false),
       rentRes.replyText
     );
 
@@ -1178,7 +1189,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.17 Delivery Order step 2 assigning shop location transitions to DELR and prompts Voice Note",
-      delRes2.handled && (delRes2.replyText?.includes("DELR 991") ?? false) && (delRes2.replyText?.includes("Voice Note") ?? false),
+      delRes2.handled && (delRes2.replyText?.toLowerCase().includes("delr 991") ?? false) && (delRes2.replyText?.includes("Voice Note") ?? false),
       delRes2.replyText
     );
 
@@ -1186,9 +1197,9 @@ export async function runAllAutomatedTests(
       .schema("central_cab")
       .from("orders")
       .select("status, order_code, pickup_address")
-      .eq("order_code", "DELR 991")
+      .ilike("order_code", "DELR 991")
       .maybeSingle();
-    record("13.18 Delivery Order in DB transitioned to DELR 991 with shop pickup", verifiedDel1?.order_code === "DELR 991" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
+    record("13.18 Delivery Order in DB transitioned to DELR 991 with shop pickup", verifiedDel1?.order_code?.toUpperCase() === "DELR 991" && verifiedDel1?.pickup_address?.includes("Cargills Food City"));
 
     // Step 2b: Admin sends "DELR 991" code text -> prompts for Driver Voice Note
     const delRes2b = await handleAdminMessage(
@@ -1205,7 +1216,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.18b Admin typing DELR 991 prompts for Driver Voice Note",
-      delRes2b.handled && (delRes2b.replyText?.includes("DELR 991") ?? false) && (delRes2b.replyText?.includes("Voice Note") ?? false),
+      delRes2b.handled && (delRes2b.replyText?.toLowerCase().includes("delr 991") ?? false) && (delRes2b.replyText?.includes("Voice Note") ?? false),
       delRes2b.replyText
     );
 
@@ -1224,7 +1235,7 @@ export async function runAllAutomatedTests(
     );
     record(
       "13.19 Delivery Order step 3 voice note confirms DELR 991",
-      delRes3.handled && (delRes3.replyText?.includes("Voice update for Order *DELR 991*") ?? false),
+      delRes3.handled && (delRes3.replyText?.toLowerCase().includes("voice update for order *delr 991*") ?? false),
       delRes3.replyText
     );
 
@@ -1327,9 +1338,9 @@ export async function runAllAutomatedTests(
     // ------------------------------------------------------------------------
     // TEST 14: PRODUCTION HARDENING & SYSTEM RESILIENCE
     // ------------------------------------------------------------------------
-    // 14.1 Order Code Prefix Isolation: 'transport' yields 'HIR ...' and is isolated from 'HIRS'
+    // 14.1 Order Code Prefix Isolation: 'transport' yields 'Hir ...' and is isolated from 'Hirs'
     const generatedHireCode = await generateOrderCode(supabase, userId, "transport");
-    record("14.1 generateOrderCode isolates HIR from HIRS prefix", generatedHireCode.startsWith("HIR ") && !generatedHireCode.startsWith("HIRS "), `Got: ${generatedHireCode}`);
+    record("14.1 generateOrderCode isolates Hir from Hirs prefix", (generatedHireCode.startsWith("Hir ") || generatedHireCode.startsWith("HIR ")) && !generatedHireCode.toUpperCase().startsWith("HIRS"), `Got: ${generatedHireCode}`);
 
     // 14.2 Stale Session Auto-Expiry: session inactive > 3 hours resets to WELCOME
     const staleFourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
@@ -1361,7 +1372,7 @@ export async function runAllAutomatedTests(
       `nextFlow: ${staleStepRes.nextFlow}, nextStep: ${staleStepRes.nextStep}`
     );
 
-    // 14.3 Category Choice Option 2 (Long Distance Trip) transitions to CAB_SCHEDULE_DATE
+    // 14.3 Category Choice Option 2 (Long Distance Trip) transitions to CAB_DESTINATION_CHOICE with poll
     const categoryScheduleSession: BotSessionState = {
       phone_number: testPhone,
       user_id: userId,
@@ -1383,9 +1394,83 @@ export async function runAllAutomatedTests(
       defaultSystemSettings
     );
     record(
-      "14.3 Category Option 2 (Long Distance Trip) transitions to CAB_SCHEDULE_DATE",
-      categoryScheduleRes.nextFlow === "CAB_FLOW" && categoryScheduleRes.nextStep === "CAB_SCHEDULE_DATE",
+      "14.3 Category Option 2 (Long Distance Trip) transitions to CAB_DESTINATION_CHOICE with Destination Poll",
+      categoryScheduleRes.nextFlow === "CAB_FLOW" && categoryScheduleRes.nextStep === "CAB_DESTINATION_CHOICE" && Boolean(categoryScheduleRes.poll),
       `nextFlow: ${categoryScheduleRes.nextFlow}, nextStep: ${categoryScheduleRes.nextStep}`
+    );
+
+    // 14.3a CAB_DESTINATION_CHOICE Option 1 (Single Destination) advances to CAB_SCHEDULE_DATE
+    const destChoiceSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "CAB_FLOW",
+      current_step: "CAB_DESTINATION_CHOICE",
+      session_data: { language: "si", booking_type: "schedule" },
+    };
+    const destSingleRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "1. 📍 එක් ස්ථානයකට පමණක් (Single Destination)",
+      "poll_response",
+      {},
+      destChoiceSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.3a Destination Option 1 (Single Destination) advances to CAB_SCHEDULE_DATE",
+      destSingleRes.nextFlow === "CAB_FLOW" && destSingleRes.nextStep === "CAB_SCHEDULE_DATE",
+      `nextFlow: ${destSingleRes.nextFlow}, nextStep: ${destSingleRes.nextStep}`
+    );
+
+    // 14.3b CAB_DESTINATION_CHOICE Option 2 (Multiple Destinations) provides Hotline 0775996191 and Main Menu poll
+    const destMultiRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "2. 🗺️ ස්ථාන කිහිපයකට (Multiple Destinations)",
+      "poll_response",
+      {},
+      destChoiceSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.3b Destination Option 2 (Multiple Destinations) provides Hotline 0775996191 & Main Menu poll",
+      destMultiRes.replyText?.includes("0775996191") && Boolean(destMultiRes.poll),
+      `replyText: ${destMultiRes.replyText}`
+    );
+
+    // 14.3c CAB_MULTI_DEST_INFO tapping Main Menu poll returns to CATEGORY_CHOICE
+    const multiInfoSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "CAB_FLOW",
+      current_step: "CAB_MULTI_DEST_INFO",
+      session_data: { language: "si", destination_type: "multiple" },
+    };
+    const returnMenuRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "🏠 Main Menu (මුල් මෙනුව)",
+      "poll_response",
+      {},
+      multiInfoSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.3c CAB_MULTI_DEST_INFO tapping Main Menu poll returns to CATEGORY_CHOICE",
+      returnMenuRes.nextFlow === "IDLE" && returnMenuRes.nextStep === "CATEGORY_CHOICE" && Boolean(returnMenuRes.poll),
+      `nextFlow: ${returnMenuRes.nextFlow}, nextStep: ${returnMenuRes.nextStep}`
     );
 
     // 14.4 Category Choice Option 1 (Short Distance Trip) transitions to CAB_NAME
@@ -1408,8 +1493,35 @@ export async function runAllAutomatedTests(
       `nextFlow: ${categoryRideNowRes.nextFlow}, nextStep: ${categoryRideNowRes.nextStep}`
     );
 
+    // 14.5 Dotted Date "2026.11.26" does NOT trigger time skip to CAB_NAME
+    const dateInputSession: BotSessionState = {
+      phone_number: testPhone,
+      user_id: userId,
+      flow_type: "CAB_FLOW",
+      current_step: "CAB_SCHEDULE_DATE",
+      session_data: { language: "si", booking_type: "schedule" },
+    };
+    const dottedDateRes = await processCustomerChatStep(
+      supabase,
+      supabaseUrl,
+      supabaseServiceKey,
+      userId,
+      testPhone,
+      "2026.11.26",
+      "text",
+      {},
+      dateInputSession,
+      defaultPricing,
+      defaultSystemSettings
+    );
+    record(
+      "14.5 Dotted Date '2026.11.26' prompts for CAB_SCHEDULE_TIME without auto-skipping to CAB_NAME",
+      dottedDateRes.nextFlow === "CAB_FLOW" && dottedDateRes.nextStep === "CAB_SCHEDULE_TIME" && dottedDateRes.sessionData?.schedule_date === "2026/11/26",
+      `nextStep: ${dottedDateRes.nextStep}, schedule_date: ${dottedDateRes.sessionData?.schedule_date}`
+    );
+
     // Clean up test orders
-    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "HIRS 991", "RNT 991", "DEL 991", "DELR 991", "DEL 992", "DELR 992"]);
+    await supabase.schema("central_cab").from("orders").delete().in("order_code", ["HIR 991", "Hir 991", "HIRS 991", "Hirs 991", "RNT 991", "Rnt 991", "DEL 991", "Del 991", "DELR 991", "Delr 991", "DEL 992", "Del 992", "DELR 992", "Delr 992"]);
 
   } catch (err: any) {
     record("Fatal Test Exception", false, err.message + "\n" + err.stack);

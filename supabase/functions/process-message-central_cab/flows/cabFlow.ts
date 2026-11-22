@@ -27,8 +27,13 @@ import {
   isHomeOrResetInput,
   isTimingNowChoice,
   isTimingScheduleChoice,
+  isSingleDestinationChoice,
+  isMultiDestinationChoice,
   getLanguagePoll,
   getCategoryPoll,
+  getDestinationTypePoll,
+  getMultiDestinationNotice,
+  getReturnToMenuPoll,
   getVehiclePoll,
   getVehicleModelPoll,
   getTripTypePoll,
@@ -80,9 +85,11 @@ export async function handleCabFlowStep(
       } else if (isTimingScheduleChoice(trimmed)) {
         data.booking_type = "schedule";
         return {
-          replyText: getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_DATE", lang),
+          replyText: getStepPromptText("CAB_FLOW", "CAB_DESTINATION_CHOICE", lang),
+          poll: getDestinationTypePoll(lang),
+          sendTextWithPoll: true,
           nextFlow: "CAB_FLOW",
-          nextStep: "CAB_SCHEDULE_DATE",
+          nextStep: "CAB_DESTINATION_CHOICE",
           sessionData: data,
         };
       } else {
@@ -92,6 +99,45 @@ export async function handleCabFlowStep(
       }
     }
 
+    case "CAB_DESTINATION_CHOICE": {
+      if (isSingleDestinationChoice(trimmed)) {
+        data.destination_type = "single";
+        return {
+          replyText: getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_DATE", lang),
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_SCHEDULE_DATE",
+          sessionData: data,
+        };
+      } else if (isMultiDestinationChoice(trimmed)) {
+        data.destination_type = "multiple";
+        return {
+          replyText: getMultiDestinationNotice(lang),
+          poll: getReturnToMenuPoll(lang),
+          sendTextWithPoll: true,
+          nextFlow: "CAB_FLOW",
+          nextStep: "CAB_MULTI_DEST_INFO",
+          sessionData: data,
+        };
+      } else {
+        return await invalidFallback(
+          getStepPromptText("CAB_FLOW", "CAB_DESTINATION_CHOICE", lang),
+          getDestinationTypePoll(lang)
+        );
+      }
+    }
+
+    case "CAB_MULTI_DEST_INFO": {
+      // User tapped Main Menu poll button or typed any text: return to Main Menu
+      return {
+        replyText: getStepPromptText("IDLE", "CATEGORY_CHOICE", lang),
+        poll: getCategoryPoll(lang),
+        sendTextWithPoll: true,
+        nextFlow: "IDLE",
+        nextStep: "CATEGORY_CHOICE",
+        sessionData: { language: lang },
+      };
+    }
+
     case "CAB_SCHEDULE_DATE": {
       if (!trimmed || trimmed.length < 2) {
         return await invalidFallback(getStepPromptText("CAB_FLOW", "CAB_SCHEDULE_DATE", lang));
@@ -99,7 +145,19 @@ export async function handleCabFlowStep(
 
       // Code-based Date Extraction (Uses "/" as separator)
       const dateParsed = extractNaturalDate(trimmed);
-      const timeParsed = extractNaturalTime(trimmed);
+
+      // Strip recognized date part from trimmed text BEFORE checking for time!
+      // This prevents dotted dates like "2026.11.26" from falsely matching "11.26" as 11:26 AM!
+      let remainingText = trimmed;
+      if (dateParsed.isRecognized) {
+        remainingText = remainingText.replace(/\b20\d{2}[-/.\s](0?[1-9]|1[0-2])[-/.\s](0?[1-9]|[12]\d|3[01])\b/g, " ");
+        remainingText = remainingText.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.\s](0?[1-9]|1[0-2])[-/.\s](20\d{2}|2[5-9]|3\d)\b/g, " ");
+        remainingText = remainingText.replace(/\b(0?[1-9]|[12]\d|3[01])[-/.](0?[1-9]|1[0-2])\b/g, " ");
+        remainingText = remainingText.replace(/\b(heta|හෙට|tomorrow|tmrw|tomo|anidda|අනිද්දා|ada|අද|today|tonight)\b/gi, " ");
+        remainingText = remainingText.trim();
+      }
+
+      const timeParsed = remainingText ? extractNaturalTime(remainingText) : { raw: "", formatted: "", isRecognized: false };
 
       if (dateParsed.isRecognized && timeParsed.isRecognized) {
         data.booking_type = "schedule";
@@ -752,20 +810,21 @@ export async function generateOrderCode(
   category = "transport"
 ): Promise<string> {
   const cat = (category || "").toLowerCase();
-  let prefix = "HIR";
+  let prefix = "Hir";
   if (cat.includes("rider") || cat.includes("delr")) {
-    prefix = "DELR";
+    prefix = "Delr";
   } else if (cat.includes("delivery")) {
-    prefix = "DEL";
+    prefix = "Del";
   } else if (cat.includes("rent")) {
-    prefix = "RNT";
+    prefix = "Rnt";
   } else if (cat.includes("short") || cat.includes("now") || cat.includes("hirs")) {
-    prefix = "HIRS";
+    prefix = "Hirs";
   }
 
   if (supabase) {
     try {
-      // Isolate prefixes with space so HIR does not match HIRS, and DEL does not match DELR
+      // Isolate prefixes with space so Hir does not match Hirs, and Del does not match Delr
+      // Note: .ilike in Postgres is case-insensitive, matching both 'Hir 001' and legacy 'HIR 001'
       const { data, error } = await supabase
         .schema("central_cab")
         .from("orders")
